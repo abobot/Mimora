@@ -6,6 +6,41 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Model weights are not part of a release. They are downloaded on the first start
 and stay in the user data directory across upgrades.
 
+## [Unreleased]
+
+### Added
+
+- **Dictation mode** (the ✍ button in the header): hear a spoken sentence, type
+  what you heard, and get scored word by word. One word per input slot (the slot
+  count matches the sentence's word count); Enter advances to the next slot and
+  submits on the last one. The score is the share of reference words matched,
+  and the feedback line marks each word correct / missed / misspelled / extra.
+  A session is a set of sentences from a configurable source, with a pass
+  threshold and a sentence count (settings: `dictation_pass_threshold`,
+  `dictation_max_attempts`); mastering requires the last three attempts to pass.
+  Sessions are saved to `stats.json` and listed in the history browser with
+  their outcome and words to review.
+- A "Hint" button shows only the first letter of each reference word, so the
+  user can get unstuck without revealing the whole sentence, and a "Show
+  sentence" button reveals the full reference.
+- The dictation sentence source can be changed mid-session: the current
+  practice text, a custom text you type, or a built-in fallback pool.
+- Wrong words (missed or misspelled) and extra words are collected per attempt
+  and aggregated per session, so a finished report and the history browser can
+  list the words to review.
+
+### Fixed
+
+- Dictation mode buttons no longer take keyboard focus (`takefocus=0`), so a
+  space press while typing never re-activates the last clicked control and
+  cannot advance or check a sentence unintentionally.
+- Pressing Enter again in the last word slot after a sentence is scored no
+  longer re-scores the same sentence (which inflated the completed counter
+  without changing the sentence); it now advances to the next sentence.
+- The session counter now tracks the current sentence position, so **Previous**
+  moves it down by one and **Next** up by one (clamped at the first sentence),
+  instead of only changing when a sentence is scored.
+
 ## [1.1.0] - 2026-08-23
 
 Mimora becomes an installable application: one command to install, one word to

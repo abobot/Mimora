@@ -93,6 +93,8 @@ class DictationView:
         self._window.protocol("WM_DELETE_WINDOW", self._on_close_requested)
         # Whether the reference answer is currently revealed (after a check).
         self._revealed = False
+        # Whether the current sentence has been scored (blocks re-submission).
+        self._submitted = False
         # The reference sentence for the current slot (hidden until revealed).
         self._current_reference = ""
         # One Entry per reference word; the slot count equals word count.
@@ -118,9 +120,9 @@ class DictationView:
                  bg=THEME["bg_main"], fg=THEME["text_emph"]
                  ).pack(side=tk.LEFT)
         ttk.Button(header, text="Finish & report",
-                   command=self._on_finish).pack(side=tk.RIGHT, padx=(0, 8))
+                   command=self._on_finish, takefocus=0).pack(side=tk.RIGHT, padx=(0, 8))
         ttk.Button(header, text="Cancel",
-                   command=self._on_cancel).pack(side=tk.RIGHT)
+                   command=self._on_cancel, takefocus=0).pack(side=tk.RIGHT)
 
         # Source selector row (sentence source can be changed mid-session).
         source_frame = tk.Frame(self._window, bg=THEME["bg_main"])
@@ -132,7 +134,7 @@ class DictationView:
         self._source_var = tk.StringVar(value=_SOURCE_LABELS[0])
         self._source_cb = ttk.Combobox(source_frame, textvariable=self._source_var,
                                        values=_SOURCE_LABELS, state="readonly",
-                                       width=16)
+                                       width=16, takefocus=0)
         self._source_cb.pack(side=tk.LEFT, padx=4)
         self._source_cb.bind("<<ComboboxSelected>>", self._on_source_selected)
 
@@ -164,13 +166,13 @@ class DictationView:
         play_frame = tk.Frame(self._window, bg=THEME["bg_main"])
         play_frame.pack(fill=tk.X, padx=16, pady=4)
         ttk.Button(play_frame, text="🔊  播放",
-                   command=self._on_play).pack(side=tk.LEFT, padx=4)
+                   command=self._on_play, takefocus=0).pack(side=tk.LEFT, padx=4)
         ttk.Button(play_frame, text="🐢  慢速播放",
-                   command=self._on_play_slow).pack(side=tk.LEFT, padx=4)
+                   command=self._on_play_slow, takefocus=0).pack(side=tk.LEFT, padx=4)
         ttk.Button(play_frame, text="💡  提示",
-                   command=self._on_hint).pack(side=tk.LEFT, padx=4)
+                   command=self._on_hint, takefocus=0).pack(side=tk.LEFT, padx=4)
         ttk.Button(play_frame, text="👁  显示例句",
-                   command=self._on_show_sentence).pack(side=tk.LEFT, padx=4)
+                   command=self._on_show_sentence, takefocus=0).pack(side=tk.LEFT, padx=4)
         self._listen_label = tk.Label(play_frame, text="Listen, then type what you hear.",
                                       font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                                       bg=THEME["bg_main"], fg=THEME["text_dim"])
@@ -228,12 +230,12 @@ class DictationView:
         controls = tk.Frame(self._window, bg=THEME["bg_main"])
         controls.pack(fill=tk.X, padx=16, pady=(0, 16))
         self._check_btn = ttk.Button(controls, text="✓  Check answer",
-                                     command=self._on_submit)
+                                     command=self._on_submit, takefocus=0)
         self._check_btn.pack(side=tk.LEFT, padx=4)
         ttk.Button(controls, text="⏮  Previous",
-                   command=self._on_previous).pack(side=tk.LEFT, padx=4)
+                   command=self._on_previous, takefocus=0).pack(side=tk.LEFT, padx=4)
         ttk.Button(controls, text="⏭  Next",
-                   command=self._on_skip).pack(side=tk.LEFT, padx=4)
+                   command=self._on_skip, takefocus=0).pack(side=tk.LEFT, padx=4)
 
     # ------------------------------------------------------------------
     # Word slots
@@ -265,7 +267,12 @@ class DictationView:
 
     def _make_slot_return(self, index: int, total: int):
         def handler(event):
-            if index + 1 < total:
+            if self._submitted:
+                # Already scored: Enter now advances to the next sentence
+                # instead of re-submitting the same one (the counter would
+                # increment without the sentence changing).
+                self._advance_phrase()
+            elif index + 1 < total:
                 self._slot_entries[index + 1].focus_set()
             else:
                 self._on_submit()
@@ -286,17 +293,25 @@ class DictationView:
     # Actions
     # ------------------------------------------------------------------
 
+    def _refresh_progress_label(self) -> None:
+        """Update the progress read-out from the engine (navigation-aware)."""
+        p = self.engine.progress()
+        self._progress_var.set(
+            f"{p['current']} / {p['total']}  ·  {p['passed']} passed")
+
     def _advance_phrase(self) -> None:
         """Advance to the next sentence, clearing input and hiding the answer."""
         phrase = self._cb.next_phrase()
         self._current_reference = phrase
         self._revealed = False
+        self._submitted = False
         self._answer_label.configure(text="")
         self._feedback_label.configure(text="")
         self._hint_label.configure(text="")
         self._listen_label.configure(text="Listen, then type what you hear.")
         self._check_btn.configure(state=tk.NORMAL)
         self._build_slots(phrase)
+        self._refresh_progress_label()
 
     def _on_play(self) -> None:
         self._cb.on_play_clicked()
@@ -314,6 +329,11 @@ class DictationView:
         self.reveal_answer(self._current_reference)
 
     def _on_submit(self) -> None:
+        if self._submitted:
+            # Already scored this sentence; ignore repeat Enter / button
+            # presses rather than re-scoring (counter would inflate).
+            return
+        self._submitted = True
         user_text = self._collect_slots_text()
         self._cb.on_submit(user_text)
 
@@ -326,11 +346,13 @@ class DictationView:
         phrase = self._cb.previous_phrase()
         self._current_reference = phrase
         self._revealed = False
+        self._submitted = False
         self._answer_label.configure(text="")
         self._feedback_label.configure(text="")
         self._hint_label.configure(text="")
         self._listen_label.configure(text="Previous sentence - type what you hear.")
         self._build_slots(phrase)
+        self._refresh_progress_label()
 
     def _on_source_selected(self, event=None) -> None:
         """Apply the chosen sentence source to the engine."""

@@ -168,6 +168,26 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(p["scores"], [90.0])
         self.assertIn("threshold", p)
 
+    def test_position_tracks_navigation(self):
+        engine = DictationEngine(source_text="A. B. C. D. E.")
+        # Fresh engine: the first next_phrase() is sentence 1 (the view consumes
+        # one phrase on open, so its counter starts at 1).
+        engine.next_phrase()
+        self.assertEqual(engine.position, 1)
+        engine.next_phrase()
+        self.assertEqual(engine.position, 2)
+        engine.previous_phrase()
+        self.assertEqual(engine.position, 1)
+        p = engine.progress()
+        self.assertEqual(p["current"], 1)
+
+    def test_position_clamped_to_floor(self):
+        engine = DictationEngine(source_text="A. B. C.")
+        engine.next_phrase()
+        for _ in range(3):
+            engine.previous_phrase()
+        self.assertEqual(engine.position, 1)
+
     def test_finish_summary(self):
         engine = DictationEngine(pass_threshold=80.0, source_text="A. B. C.")
         engine.record_attempt("a", "a", 70)

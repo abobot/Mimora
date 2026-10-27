@@ -123,6 +123,17 @@ class PronunciationTrainerGUI:
         window_icon.apply_window_icon(self.root)
         self.root.title(f"Mimora · {config.TARGET_LANGUAGE} - Pronunciation Trainer v{__version__}")
 
+        # Tk swallows exceptions raised in widget callbacks (button commands,
+        # event handlers, after() callbacks) unless we install a handler. A
+        # raised exception in a button command would otherwise appear as a
+        # "button does nothing" to the user. Log them instead so they are
+        # never silent. See the AGENTS.md note on callback exceptions.
+        def _tk_callback_exception(exc_type, exc_value, exc_tb):
+            logging.error("Unhandled exception in Tk callback:",
+                          exc_info=(exc_type, exc_value, exc_tb))
+
+        self.root.report_callback_exception = _tk_callback_exception
+
         # Fixed width; the window spans the full usable screen height. We query the
         # Windows desktop work area (screen minus the taskbar) so the window fits
         # without being clipped, and fall back to the full screen height on other
@@ -903,11 +914,15 @@ class PronunciationTrainerGUI:
         """Open the Toplevel named by ``attr`` or lift it if already open."""
         view = getattr(self, attr)
         if view is not None and getattr(view, "exists", lambda: False)():
-            try:
-                view.lift()
-                view.focus()
-            except tk.TclError:
-                pass
+            # The view classes expose the Toplevel as ``_window``; they do
+            # not define ``lift``/``focus`` themselves, so lift the window.
+            window = getattr(view, "_window", None)
+            if window is not None:
+                try:
+                    window.lift()
+                    window.focus()
+                except tk.TclError:
+                    pass
             return
         setattr(self, attr, factory())
 
@@ -979,8 +994,10 @@ class PronunciationTrainerGUI:
         return {"type": "free_form", "value": phrase or "The thought is a thought."}
 
     def _start_drill(self, target: dict) -> None:
+        logging.info("Drill: _start_drill called with target=%r", target)
         self._cancel_drill_if_active()
         self._saved_current_phrase = self.current_phrase
+        logging.info("Drill: saved current_phrase=%r", self._saved_current_phrase)
         engine = DrillEngine(
             target=target,
             source_text=self._get_source_text(),
@@ -1025,6 +1042,17 @@ class PronunciationTrainerGUI:
                 is_auto_next=lambda: self._drill_auto_next,
                 on_auto_next_toggled=self._drill_on_auto_next_toggled,
             ), engine=engine))
+        dv = self._drill_view
+        if dv is not None:
+            try:
+                w = getattr(dv, "_window", None)
+                state = (f"exists={w.winfo_exists()} mapped={w.winfo_ismapped()} "
+                         f"viewable={w.winfo_viewable()} geo={w.winfo_geometry()}" if w else "no _window")
+            except tk.TclError as e:
+                state = f"tclerr={e}"
+            logging.info("Drill: DrillView created (%s)", state)
+        else:
+            logging.error("Drill: _start_drill finished but self._drill_view is None!")
 
     def _drill_on_take_scored(self, phrase: str, score: float,
                               graded: bool, details: Optional[dict]) -> None:

@@ -68,6 +68,13 @@ class DrillView:
         self._window.protocol("WM_DELETE_WINDOW", self._on_close_requested)
         self._build_ui()
         self._advance_phrase()
+        # Bring the drill window to the foreground. Tk places a new Toplevel
+        # in the default stacking order, which can land behind the main window
+        # when the parent is not the focused window (e.g. the user clicked a
+        # button in a weakness Toplevel rather than the main window). Without
+        # this, a "clicked Drill but nothing happened" symptom is possible.
+        self._window.lift()
+        self._window.focus_force()
 
     def exists(self) -> bool:
         try:

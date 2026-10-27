@@ -245,6 +245,16 @@ class DictationEngine:
     def done(self) -> bool:
         return self.mastered or len(self.attempts) >= self.max_attempts
 
+    @property
+    def position(self) -> int:
+        """1-indexed position of the current sentence in the session.
+
+        Tracks navigation (``next_phrase`` / ``previous_phrase``), not
+        scoring, so the counter moves when the user browses with Next or
+        Previous. Clamped to ``[1, max_attempts]`` for the progress read-out.
+        """
+        return max(1, min(len(self._phrase_history), self.max_attempts))
+
     # ------------------------------------------------------------------
     # Reporting
     # ------------------------------------------------------------------
@@ -253,7 +263,7 @@ class DictationEngine:
         """A snapshot for the UI to render progress."""
         return {
             "total": self.max_attempts,
-            "current": len(self.attempts),
+            "current": self.position,
             "passed": sum(1 for a in self.attempts if a.passed),
             "streak": self.mastered_streak(),
             "mastered": self.mastered,

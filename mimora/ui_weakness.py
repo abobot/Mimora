@@ -22,6 +22,7 @@ suggestion to the Drill engine.
 
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from dataclasses import dataclass
 from tkinter import messagebox
@@ -274,5 +275,6 @@ class WeaknessView:
     # ------------------------------------------------------------------
 
     def _start_drill(self, target: Dict[str, str]) -> None:
+        logging.info("Weakness: _start_drill target=%r", target)
         self._cb.start_drill(target)
         self._window.destroy()
