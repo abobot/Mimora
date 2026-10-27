@@ -82,3 +82,5 @@ installer/Output/
 # record
 config/daily
 sessions
+stats.json
+stats.json.*
