@@ -1,0 +1,1347 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Valeriy Kovalev
+
+"""Phoneme pronunciation engine for Mimora (text-only scoring).
+
+Pipeline::
+
+    text --espeak-ng--> reference IPA phonemes -+
+                                                +-- feature-weighted edit distance
+    user audio --w2v2 phoneme ASR--> phonemes --+        |
+                                                         v
+                                          score (0-100) + per-word / per-phone tags
+
+Unlike the acoustic core it needs no per-phrase reference *recording* to score --
+the reference phonemes come from espeak. The reference audio is still accepted and,
+in the default ``good_mode="ceiling"``, recognized once to anchor a flawless read
+to 100 per phrase; the alternative ``good_mode="global"`` scores against the single
+calibrated PHONEME_GOOD (matching how the 0-5 buckets were fit).
+
+Public API mirrors ``acoustic/`` exactly so the dispatcher can treat both engines
+the same:
+    load_models()  -- load the wav2vec2 phoneme weights once (call in a thread).
+    warm_up()      -- dummy pass to remove first-call latency.
+    analyze(...)   -- single entry point returning a PronunciationResult.
+
+Implementation notes:
+    * The recognizer works on in-memory waveforms, not file paths, so only the
+      model is cached.
+    * panphon's bundled data is UTF-8; on a cp1252 Windows process its load raises
+      UnicodeDecodeError. Instead of an unconditional ``pathlib.Path.open``
+      monkey-patch we build the table normally and only fall back to a narrowly
+      scoped UTF-8 default on that error (never triggered when the app runs in
+      UTF-8 mode -- set PYTHONUTF8=1 at launch).
+    * Scoring constants (GOOD anchor, recall threshold, axis weights, insertion
+      cap/gate, buckets) load from a per-language model file next to this module
+      (``<lang>_model_calibration.json``, committed), selected by the configured
+      espeak language. A machine-local ``calibration.json`` (gitignored) overrides
+      only ``phoneme_good`` per language and user. ``config.AnalyzerConfig`` holds
+      only host settings.
+
+This module never touches the GUI.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import threading
+from dataclasses import dataclass
+from datetime import datetime
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+
+# Settings come from the library's own AnalyzerConfig (see config.py), never from
+# the host application: a host injects its values once at startup via configure().
+from .config import get_config
+
+# Engine-neutral result type shared with the acoustic engine, so the GUI reads one
+# stable shape regardless of the active engine. This engine fills the
+# phoneme-specific fields (per_phone_distance / phoneme_score / recall / good_anchor);
+# the acoustic_* fields stay at their defaults.
+from pronunciation.common import PronunciationResult
+
+# Shared waveform preparation (single torch-free copy in pronunciation.common).
+# The underscored alias keeps this module's established local name intact.
+from pronunciation.common.audio import (
+    TARGET_SAMPLE_RATE,
+    prepare_waveform as _prepare_waveform,
+    waveform_digest,
+)
+
+# Bundled espeak-ng registration, shared with the acoustic engine rather than
+# copied per engine. See that module for why the engines register it themselves
+# rather than relying on Kokoro/misaki's import side effect.
+from pronunciation.common.espeak import ensure_espeak
+
+
+# =====================================================================
+# Constants and config.
+# =====================================================================
+# The wav2vec2 recognizer expects strictly 16 kHz mono input: TARGET_SAMPLE_RATE
+# (imported above from pronunciation.common.audio).
+# Kokoro synthesises at 24 kHz; used as the default reference sample rate for
+# STANDALONE use of this engine only. Mimora's main.py always passes
+# reference_sr explicitly (the active TTS backend's native rate, e.g. 44.1 kHz
+# for Supertonic Spanish), so this default never applies there.
+KOKORO_SAMPLE_RATE = 24_000
+
+# Tunable scoring constants live in JSON files next to this module, split into two
+# layers so per-user calibration never contaminates the shared engine baseline:
+#   * <lang>_model_calibration.json -- the base (model) calibration: anchors,
+#     buckets, gates and axis weights. Committed to the repo and selected by the
+#     configured espeak language ("en-us" -> "en").
+#   * calibration.json             -- the machine-local user override (gitignored).
+#     Holds only a re-anchored ``phoneme_good`` per language and user, shaped
+#     {lang: {"users": {user_name: {"phoneme_good": float, ...}}}}; it overrides
+#     the model's ``phoneme_good`` and nothing else.
+# A missing/malformed file degrades silently to the literal defaults so scoring
+# never breaks. Keys prefixed with ``_`` (``_meta``) are informational.
+_DIR = Path(__file__).resolve().parent
+_DEFAULT_LANG = "en"
+# Standalone default for the user anchor: beside this package, which is where a
+# host-less caller and the eval tooling expect it. A host overrides it through
+# AnalyzerConfig.calibration_file - see current_calibration_file(), which is
+# what every read and write below actually goes through.
+CALIBRATION_FILE = _DIR / "calibration.json"
+
+# Intrinsic scoring constants -- not part of the data-fit calibration, so they
+# stay fixed regardless of language/user.
+BAD_MIN_SPAN = 0.10                                 # keep bad strictly above good
+BAD_BASELINE_DEFAULT = 0.5                          # ceiling when a sequence is empty
+
+
+def _read_json(path: Path) -> dict:
+    """Return a JSON object from *path*, or ``{}`` when absent/malformed."""
+    try:
+        with path.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def current_calibration_file() -> Path:
+    """The user-calibration file in effect: the host's, else the package default.
+
+    Asked at every read and write rather than resolved once, for the same
+    reason the host injects it at all: configure() may not have run yet when
+    this module is imported, and the answer must reflect the configuration that
+    is active now.
+    """
+    return get_config().calibration_file or CALIBRATION_FILE
+
+
+def _lang_key(espeak_language: str) -> str:
+    """Map an espeak dialect ("en-us"/"en-gb") to a calibration language key ("en")."""
+    return (espeak_language or "").split("-")[0] or _DEFAULT_LANG
+
+
+def _model_calibration_path(lang: str) -> Path:
+    """Path of the committed model calibration for *lang* (e.g. en_model_calibration.json)."""
+    return _DIR / f"{lang}_model_calibration.json"
+
+
+def _load_model_calibration(lang: str) -> Tuple[dict, Path]:
+    """Read the model calibration for *lang*, falling back to English when absent.
+
+    Returns the constants together with the file they came from. The path is
+    part of the result rather than recomputed by the caller because the two can
+    differ: on the fallback the data is English while *lang* is not, and a
+    caller that spelled the name itself would report a file that does not
+    exist - a startup log reading "no model calibration for 'es'" immediately
+    followed by "file=es_model_calibration.json".
+    """
+    path = _model_calibration_path(lang)
+    data = _read_json(path)
+    if not data and lang != _DEFAULT_LANG:
+        logging.warning("[phoneme] no model calibration for %r; using %r defaults",
+                        lang, _DEFAULT_LANG)
+        path = _model_calibration_path(_DEFAULT_LANG)
+        data = _read_json(path)
+    return data, path
+
+
+def _user_phoneme_good(lang: str, user_name: str) -> Optional[float]:
+    """The user's re-anchored ``phoneme_good`` for *lang*, or None when uncalibrated.
+
+    User file shape: ``{lang: {"users": {user_name: {"phoneme_good": float, ...}}}}``.
+    """
+    data = _read_json(current_calibration_file())
+    lang_block = data.get(lang) if isinstance(data, dict) else None
+    users = lang_block.get("users") if isinstance(lang_block, dict) else None
+    entry = users.get(user_name) if isinstance(users, dict) else None
+    if isinstance(entry, dict) and "phoneme_good" in entry:
+        try:
+            return float(entry["phoneme_good"])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+# Data-fit scoring constants, declared with their built-in defaults so the
+# module's attribute set is explicit (visible to readers, IDEs and static
+# analysis). _apply_model_calibration() below overwrites them from the model
+# calibration JSON - at import time and again whenever the configured
+# language/user changes - so these literals only take effect when a calibration
+# file is missing a key (they duplicate the .get() fallbacks used there).
+# Semantics of each constant are documented inside _apply_model_calibration.
+PHONEME_GOOD = 0.0
+BAD_SHRINK_PHONES = 12
+BAD_CEILING = 0.40
+INSERTION_CAP_PER_PHONE = 0.25
+INSERTION_CONF_MIN = 0.0
+INSERTION_CONF_AGG = "max"
+RECALL_MAX_DIST = 0.13
+WEIGHT_PHONEME = 0.7
+WEIGHT_WORD = 0.3
+WORD_GOOD_FRAC = 0.33
+WORD_BAD_FRAC = 0.66
+OVERPRODUCTION_TOLERANCE = 0.5
+OVERPRODUCTION_STRENGTH = 1.0
+BUCKET_CUTPOINTS: List[float] = []
+BUCKET_TO_PERCENT: Dict[str, Any] = {}
+PASS_BUCKET = 4
+
+
+def _apply_model_calibration(calib: dict) -> None:
+    """Bind a model-calibration dict to this module's scoring constants.
+
+    Called at import (with the English defaults, so the library stays usable on its
+    own and the offline unit tests have values) and again by ``_ensure_calibration``
+    once the host's espeak language is known. Keeping the constants as module globals
+    lets the tests patch them with ``mock.patch.object(speech, ...)`` as before.
+    """
+    global PHONEME_GOOD, BAD_SHRINK_PHONES, BAD_CEILING
+    global INSERTION_CAP_PER_PHONE, INSERTION_CONF_MIN, INSERTION_CONF_AGG
+    global RECALL_MAX_DIST, WEIGHT_PHONEME, WEIGHT_WORD
+    global WORD_GOOD_FRAC, WORD_BAD_FRAC
+    global OVERPRODUCTION_TOLERANCE, OVERPRODUCTION_STRENGTH
+    global BUCKET_CUTPOINTS, BUCKET_TO_PERCENT, PASS_BUCKET
+
+    # Phoneme-quality axis anchor (see _score_from_distance / _bad_baseline).
+    PHONEME_GOOD = calib.get("phoneme_good", 0.0)           # per-phone distance scored 100
+    BAD_SHRINK_PHONES = calib.get("bad_shrink_phones", 12)  # short-phrase widening strength
+    BAD_CEILING = calib.get("bad_ceiling", 0.40)            # conservative "wrong" anchor
+
+    # Insertion cap and confidence gate (recognizer-hallucination defenses).
+    INSERTION_CAP_PER_PHONE = calib.get("insertion_cap_per_phone", 0.25)
+    INSERTION_CONF_MIN = calib.get("insertion_conf_min", 0.0)    # tau; 0 == argmax baseline
+    INSERTION_CONF_AGG = calib.get("insertion_conf_agg", "max")  # "max" | "mean"
+
+    # Recall axis and final blend (mirrors the core's quality/word split).
+    RECALL_MAX_DIST = calib.get("recall_max_dist", 0.13)   # per-phone dist counted as recalled
+    WEIGHT_PHONEME = calib.get("weight_phoneme", 0.7)
+    WEIGHT_WORD = calib.get("weight_word", 0.3)
+    # Three-level per-word highlight cutoffs, as a fraction of the [good, bad] window
+    # (0 == flawless, 1 == completely wrong): <= good_frac is "good", >= bad_frac is
+    # "bad", in between is "ok".
+    WORD_GOOD_FRAC = calib.get("word_good_frac", 0.33)
+    WORD_BAD_FRAC = calib.get("word_bad_frac", 0.66)
+
+    # Over-production penalty: far more spoken phones than the reference
+    # asked for scales a [0, 1] penalty; in-band attempts get zero. Strength 0 disables.
+    OVERPRODUCTION_TOLERANCE = calib.get("overproduction_tolerance", 0.5)
+    OVERPRODUCTION_STRENGTH = calib.get("overproduction_strength", 1.0)
+
+    # 0-5 bucketization: coarsen the raw 0-100 score onto a human-calibrated
+    # grade. An empty/absent block disables bucketing (bucket stays -1, raw threshold).
+    buckets = calib.get("buckets", {})
+    # Ascending score thresholds; bucket = how many a score clears (0..len).
+    BUCKET_CUTPOINTS = [float(c) for c in buckets.get("cutpoints", [])]
+    # bucket (as str) -> [lo, hi] user-facing percent band (displayed at the midpoint).
+    BUCKET_TO_PERCENT = calib.get("bucket_to_percent", {})
+    # A take "passes" at or above this bucket (good speech is bucket 4-5).
+    PASS_BUCKET = calib.get("pass_bucket", 4)
+
+
+# Import-time English defaults so the module is usable standalone (and the offline
+# unit tests have concrete values). _ensure_calibration() reloads per language and
+# applies the user override once a host injects its config via configure().
+_apply_model_calibration(_load_model_calibration(_DEFAULT_LANG)[0])
+# Language/user the constants above currently reflect; None forces the first
+# _ensure_calibration() to (re)load even when the language is the default.
+_loaded_lang: Optional[str] = None
+_loaded_user: Optional[str] = None
+# Serializes the reload itself: a calibration (re)load rewrites many module
+# globals, and two concurrent first calls would interleave those writes. The
+# lock does NOT make analyze() reading the globals mid-reload safe - in the
+# app the GUI serializes analyze() calls; library users switching languages
+# concurrently with analysis still race (documented limitation).
+_calibration_lock = threading.Lock()
+
+
+def _ensure_calibration() -> None:
+    """Load the model + user calibration for the configured language/user, if changed.
+
+    Mirrors the acoustic engine's ``current_acoustic_floor``: the model buckets and
+    anchors follow ``espeak_language``, and a per-user re-anchored ``phoneme_good``
+    (written by calibrate.py) overrides the model default. Reloads only when the
+    language or user actually changes, so steady-state analysis pays nothing.
+    """
+    with _calibration_lock:
+        _ensure_calibration_locked()
+
+
+def _ensure_calibration_locked() -> None:
+    global _loaded_lang, _loaded_user, PHONEME_GOOD
+    cfg = get_config()
+    lang = _lang_key(cfg.espeak_language)
+    user = cfg.user_name
+    if lang == _loaded_lang and user == _loaded_user:
+        return
+    model, model_file = _load_model_calibration(lang)
+    _apply_model_calibration(model)
+    user_good = _user_phoneme_good(lang, user)
+    if user_good is not None:
+        PHONEME_GOOD = user_good
+    # Log exactly what was loaded as JSON, so the effective scoring config is
+    # recoverable from logs/main.log. The model and the user override go on
+    # separate lines. Logged only on a (re)load -- i.e. once at startup and again
+    # if the language/user changes -- so it never floods the per-take analysis lines.
+    # `file` is the file actually read, which on the English fallback is NOT the
+    # one named after `lang` -- see _load_model_calibration.
+    logging.info(
+        "[phoneme] model calibration loaded (lang=%s, file=%s): %s",
+        lang, model_file.name,
+        json.dumps(model, ensure_ascii=False),
+    )
+    logging.info(
+        "[phoneme] user calibration loaded (lang=%s, user=%r, file=%s): %s",
+        lang, user, current_calibration_file().name,
+        json.dumps({
+            "user_phoneme_good": user_good,
+            "effective_phoneme_good": PHONEME_GOOD,
+        }, ensure_ascii=False),
+    )
+    _loaded_lang, _loaded_user = lang, user
+
+
+# =====================================================================
+# Sample log + calibration write-back (mirrors the acoustic engine).
+# analyze() appends one record per take to logs/phoneme_samples.jsonl; the offline
+# phoneme/calibrate.py re-anchors PHONEME_GOOD from the reference self-tests there.
+# Kept separate from the acoustic acoustic_samples.jsonl so the two engines' logs
+# never mix.
+# =====================================================================
+def samples_file() -> Path:
+    """Path of the phoneme sample log (under the host's configured log dir)."""
+    return Path(get_config().log_dir) / "phoneme_samples.jsonl"
+
+
+# Cap on the sample log: once per run (before the first append) the log is cut down
+# to its newest MAX_SAMPLES_KEPT lines, so it cannot grow without bound. Comfortably
+# above calibrate.py's MAX_SAMPLES_USED (300), so trimming never starves calibration.
+MAX_SAMPLES_KEPT = 2000
+
+_samples_trimmed = False  # once-per-process guard for _trim_sample_log()
+
+
+def _trim_sample_log() -> None:
+    """Drop all but the newest MAX_SAMPLES_KEPT lines from the sample log.
+
+    Called once per process from _append_sample, so the steady-state append path
+    stays a plain O(1) write and the file only shrinks between runs.
+    """
+    path = samples_file()
+    if not path.exists():
+        return
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if len(lines) <= MAX_SAMPLES_KEPT:
+        return
+    path.write_text("\n".join(lines[-MAX_SAMPLES_KEPT:]) + "\n", encoding="utf-8")
+    logging.info("[phoneme] sample log trimmed: %d -> %d lines (%s)",
+                 len(lines), MAX_SAMPLES_KEPT, path.name)
+
+
+def _append_sample(record: Dict[str, Any]) -> None:
+    """Append one analysis record to the sample log (best effort).
+
+    A write failure must never break the analysis itself, so every error is logged
+    and swallowed (mirrors the acoustic engine's _append_calibration_sample).
+    """
+    global _samples_trimmed
+    try:
+        if not _samples_trimmed:
+            _samples_trimmed = True  # set first: a failing trim must not retry per take
+            _trim_sample_log()
+        path = samples_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        logging.exception("[phoneme] failed to append sample")
+
+
+def current_lang() -> str:
+    """Calibration language key ("en", "es") for the configured espeak language."""
+    return _lang_key(get_config().espeak_language)
+
+
+def current_phoneme_good() -> float:
+    """The GOOD anchor in effect for the configured language/user."""
+    _ensure_calibration()
+    return PHONEME_GOOD
+
+
+def save_calibration(phoneme_good: float, extra: Optional[Dict[str, Any]] = None) -> None:
+    """Write the current user's re-anchored ``phoneme_good`` into the user calibration.
+
+    Used by phoneme/calibrate.py. Stored under ``{lang: {"users": {user_name:
+    {...}}}}`` in calibration.json (machine-local, gitignored), keyed by the
+    configured espeak language and user name; other users' and languages' entries
+    are preserved. The committed per-language model calibration
+    (``<lang>_model_calibration.json``: buckets, gates, default anchor) is never
+    touched. The new value applies to this process at once and on the next start.
+    """
+    global PHONEME_GOOD, _loaded_lang, _loaded_user
+    cfg = get_config()
+    lang = _lang_key(cfg.espeak_language)
+    user = cfg.user_name
+    # Resolved once here rather than per use: this function reads the file and
+    # then writes it back, and those two must be the same file even if the
+    # configuration were replaced in between.
+    path = current_calibration_file()
+
+    data = _read_json(path)
+    lang_block = data.get(lang)
+    if not isinstance(lang_block, dict):
+        lang_block = {}
+    users = lang_block.get("users")
+    if not isinstance(users, dict):
+        users = {}
+
+    entry: Dict[str, Any] = {
+        "phoneme_good": round(float(phoneme_good), 6),
+        "user_name": user,
+        "recalibrated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    if extra:
+        entry.update(extra)
+    users[user] = entry
+    lang_block["users"] = users
+    data[lang] = lang_block
+
+    # The host's directory exists (config.py creates it at import), but a
+    # standalone caller may have pointed this somewhere new.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # Apply to the running process immediately (mirrors the acoustic engine).
+    PHONEME_GOOD = float(phoneme_good)
+    _loaded_lang, _loaded_user = lang, user
+    logging.info("[phoneme] wrote phoneme_good=%.6f (lang=%s user=%r) -> %s",
+                 phoneme_good, lang, user, path)
+
+
+# =====================================================================
+# Model lifecycle.
+# =====================================================================
+_processor = None
+_model = None
+_load_lock = threading.Lock()
+
+
+def _ensure_phonemizer_detected() -> None:
+    """Make transformers see phonemizer-fork as satisfying its "phonemizer" backend.
+
+    We install ``phonemizer-fork`` (not plain ``phonemizer``) because Kokoro/misaki
+    need its ``EspeakWrapper.set_data_path()``; both share the ``phonemizer`` import
+    namespace and cannot be installed together. transformers>=5 detects it fine
+    (its availability check is import-spec based), but transformers<5 -- which the
+    Intel-macOS stack falls back to, since torch>2.2 has no x86_64 wheel there --
+    checks the *distribution* name and finds ``phonemizer-fork``, not ``phonemizer``,
+    so ``Wav2Vec2PhonemeCTCTokenizer`` refuses to initialise. The fork is a working
+    drop-in, so when it is importable we flip transformers' cached availability flag.
+    No-op when phonemizer is genuinely missing (let transformers raise its own error)
+    or already detected (transformers>=5).
+    """
+    import importlib.util
+
+    if importlib.util.find_spec("phonemizer") is None:
+        return
+    try:
+        from transformers.utils import import_utils as _iu
+    except Exception:
+        return
+    try:
+        if _iu.is_phonemizer_available():
+            return
+    except Exception:
+        return
+    # transformers<5 reads this module-level flag from is_phonemizer_available().
+    if hasattr(_iu, "_phonemizer_available"):
+        _iu._phonemizer_available = True
+
+
+def load_models() -> None:
+    """Load the wav2vec2 phoneme weights into memory once. Safe to call repeatedly.
+
+    Heavy (~1.2 GB download on first run); call from a background daemon thread at
+    mode startup so the GUI stays responsive (mirrors acoustic.load_models).
+    """
+    global _processor, _model
+    with _load_lock:
+        if _model is not None and _processor is not None:
+            return
+        from transformers import AutoModelForCTC, AutoProcessor
+
+        from pronunciation.common.compat import allow_torch_load_for_trusted_models
+
+        _ensure_phonemizer_detected()
+        # Register the bundled espeak-ng BEFORE the processor loads: the
+        # wav2vec2-phoneme tokenizer builds a phonemizer EspeakBackend inside
+        # from_pretrained, which raises "espeak not installed" otherwise.
+        ensure_espeak()
+        allow_torch_load_for_trusted_models()
+        cfg = get_config()
+        _processor = AutoProcessor.from_pretrained(cfg.model_name)
+        _model = AutoModelForCTC.from_pretrained(cfg.model_name).to(cfg.device).eval()
+
+
+def warm_up() -> None:
+    """Run dummy passes to remove first-call latency (recognizer + panphon + espeak)."""
+    load_models()
+    _ensure_calibration()
+    cfg = get_config()
+    dummy = np.zeros(TARGET_SAMPLE_RATE // 2, dtype=np.float32)  # 0.5 s of silence
+    try:
+        _spoken_from_wav(dummy, cfg.device)
+    except Exception:
+        logging.exception("[phoneme] recognizer warm-up failed")
+    try:
+        _feature_table()                                   # build panphon table once
+        reference_phonemes("warm up", cfg.espeak_language)  # spawn espeak once
+    except Exception:
+        logging.exception("[phoneme] scoring warm-up failed")
+
+
+def _ensure_loaded() -> None:
+    """Guarantee the recognizer is available before inference."""
+    if _model is None or _processor is None:
+        load_models()
+
+
+# espeak registration lives in pronunciation.common.espeak (ensure_espeak is
+# imported above), shared with the acoustic engine so a fix to it reaches both.
+# Do not take a private copy here: that leaves the other engine unregistered.
+
+
+# Audio preparation lives in pronunciation.common.audio (_prepare_waveform is
+# imported above), shared with the acoustic engine and the host's prosody layer
+# so all of them measure the same prepared signal.
+
+
+# =====================================================================
+# Step 2 -- spoken phonemes from audio via the wav2vec2 phoneme recognizer.
+# Works on an in-memory 16 kHz waveform (no file path), so there is no path-keyed
+# cache to leak on temporary files; only the model is cached (see load_models).
+# =====================================================================
+def _recognize_argmax(wav16: np.ndarray, device: str) -> str:
+    """Greedy CTC decode -> space-separated espeak/IPA phonemes."""
+    import torch
+
+    _ensure_loaded()
+    inputs = _processor(wav16, sampling_rate=TARGET_SAMPLE_RATE, return_tensors="pt")
+    with torch.no_grad():
+        logits = _model(inputs.input_values.to(device)).logits
+    predicted_ids = logits.argmax(dim=-1)
+    return _processor.batch_decode(predicted_ids)[0]
+
+
+def _aggregate_conf(frame_confs: List[float]) -> float:
+    """Pool a CTC token's per-frame posteriors into one confidence ("max"/"mean")."""
+    if not frame_confs:
+        return 0.0
+    if INSERTION_CONF_AGG == "mean":
+        return sum(frame_confs) / len(frame_confs)
+    return max(frame_confs)
+
+
+def _recognize_with_conf(wav16: np.ndarray, device: str) -> List[Tuple[str, float]]:
+    """Greedy CTC decode that also returns each phone's posterior confidence.
+
+    Reproduces ``batch_decode``'s CTC collapse (group consecutive-equal frame ids,
+    drop the blank and word-delimiter) so the surviving tokens are exactly the
+    argmax phones, each tagged with the pooled posterior of its frame run. Used by
+    the confidence gate to drop low-confidence hallucinated insertions
+    before scoring; only taken when INSERTION_CONF_MIN > 0.
+    """
+    import torch
+
+    _ensure_loaded()
+    inputs = _processor(wav16, sampling_rate=TARGET_SAMPLE_RATE, return_tensors="pt")
+    with torch.no_grad():
+        logits = _model(inputs.input_values.to(device)).logits
+    probs = logits.softmax(dim=-1)[0]                 # (T, vocab)
+    frame_ids = probs.argmax(dim=-1).tolist()         # (T,) greedy CTC path
+    frame_conf = probs.max(dim=-1).values.tolist()    # (T,) posterior of the chosen id
+
+    tokenizer = _processor.tokenizer
+    blank_id = tokenizer.pad_token_id                 # CTC blank == pad for wav2vec2
+    delimiter = getattr(tokenizer, "word_delimiter_token", None)
+
+    tokens_conf: List[Tuple[str, float]] = []
+    n = len(frame_ids)
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and frame_ids[j + 1] == frame_ids[i]:
+            j += 1
+        token_id = frame_ids[i]
+        if token_id != blank_id:
+            token = tokenizer.convert_ids_to_tokens(token_id)
+            if token and token != delimiter:
+                tokens_conf.append((token, _aggregate_conf(frame_conf[i : j + 1])))
+        i = j + 1
+    return tokens_conf
+
+
+def _spoken_from_wav(wav16: np.ndarray, device: str) -> List[str]:
+    """Recognize the phonemes the speaker produced, normalized and folded.
+
+    Confidence gating drops low-confidence phones before normalization
+    when tau (INSERTION_CONF_MIN) is set; tau == 0 takes the plain argmax path, so
+    the two are byte-identical when nothing is dropped.
+    """
+    if INSERTION_CONF_MIN > 0:
+        kept = [tok for tok, conf in _recognize_with_conf(wav16, device)
+                if conf >= INSERTION_CONF_MIN]
+        raw = " ".join(kept)
+    else:
+        raw = _recognize_argmax(wav16, device)
+    return _normalize_phones(_tokenize_ipa(raw))
+
+
+# =====================================================================
+# Step 1 -- reference phonemes from text (espeak-ng via phonemizer).
+# =====================================================================
+def reference_phonemes(text: str, espeak_lang: str) -> List[str]:
+    """Phonemize ``text`` into a flat list of IPA phoneme symbols (per-phone separated)."""
+    return [p for word in reference_word_phonemes(text, espeak_lang) for p in word]
+
+
+def reference_word_phonemes(text: str, espeak_lang: str) -> List[List[str]]:
+    """Phonemize ``text`` into one phone group **per whitespace token**, in order.
+
+    Returns exactly one group per ``text.split()`` token (an empty list for a token
+    that yields no phones, e.g. pure punctuation), so the groups align 1:1 with the
+    display tokens. This is what lets the scorer map phone errors back to the right
+    word for the GUI highlight.
+
+    Earlier this phonemized the whole sentence and split on espeak's own word
+    boundaries, which desynced from ``text.split()`` whenever espeak split or dropped
+    a token (numbers -> several words, punctuation-only tokens), mis-colouring every
+    word after the divergence. Phonemizing each token separately (one batched espeak
+    call) keeps the boundaries the GUI uses. Flatten with
+    ``[p for w in groups for p in w]`` to recover ``reference_phonemes``'s sequence.
+    """
+    tokens = text.split()
+    if not tokens:
+        return []
+
+    from phonemizer import phonemize
+    from phonemizer.separator import Separator
+
+    ensure_espeak()
+    # A list input phonemizes each token independently in a single backend call;
+    # word="" because each item is already one token (no internal boundary needed).
+    ipa_list = phonemize(
+        tokens,
+        language=espeak_lang,
+        backend="espeak",
+        strip=True,
+        with_stress=False,
+        preserve_punctuation=False,
+        separator=Separator(phone=" ", word="", syllable=""),
+    )
+    # Some phonemizer versions return a bare str for a length-1 list; normalize.
+    if isinstance(ipa_list, str):
+        ipa_list = [ipa_list]
+    return [_normalize_phones(_tokenize_ipa(ipa)) for ipa in ipa_list]
+
+
+# =====================================================================
+# Phone tokenization, diacritic stripping and inventory fold.
+# =====================================================================
+def _tokenize_ipa(ipa: str) -> List[str]:
+    """Split an IPA string into phone symbols (whitespace-separated, else per char)."""
+    ipa = ipa.strip()
+    if " " in ipa or "\n" in ipa:
+        return [tok for tok in ipa.split() if tok]
+    return [ch for ch in ipa if not ch.isspace()]
+
+
+# Suprasegmental diacritics one side marks and the other does not (espeak vs the
+# w2v2 recognizer). Written as code points so no bare combining marks appear here.
+_DIACRITIC_CODEPOINTS = (
+    0x02D0, 0x02D1, 0x02B0, 0x02C0, 0x02C8, 0x02CC,
+    0x0329, 0x030D, 0x032F, 0x0361, 0x035C,
+)
+_STRIP_DIACRITICS = dict.fromkeys(_DIACRITIC_CODEPOINTS)
+
+# Inventory fold: the espeak reference (en-us) and the recognizer emit the same
+# sounds under different IPA conventions; this canonicalizes both sides so they
+# align. Spanish-safe (Spanish espeak already emits these cardinal symbols, so the
+# table is near-identity there).
+_PHONE_FOLD = {
+    "ɹ": "r", "ɾ": "r", "ɻ": "r",     # rhotic approximant / flap / retroflex -> r
+    "æ": "a", "ɐ": "a",               # near-open front / near-open central -> a
+    "ᵻ": "ɪ", "ɨ": "ɪ",              # reduced / central high vowel -> ɪ
+    "ɚ": "ə", "ɝ": "ə",              # r-colored schwa -> plain schwa
+    "oʊ": "o", "əʊ": "o",            # GA / RP "goat" diphthong -> o
+}
+
+
+def _normalize_phones(tokens: List[str]) -> List[str]:
+    """Drop suprasegmental diacritics and fold the inventory so both sides align."""
+    cleaned = (tok.translate(_STRIP_DIACRITICS) for tok in tokens)
+    folded = (_PHONE_FOLD.get(tok, tok) for tok in cleaned)
+    return [tok for tok in folded if tok]
+
+
+# =====================================================================
+# Articulatory feature distance (panphon). Imported lazily and cached so the
+# module imports without panphon and the feature table is built only once.
+# =====================================================================
+@lru_cache(maxsize=1)
+def _feature_table():
+    """Build the panphon feature table once (UTF-8 safe on cp1252 Windows)."""
+    import panphon
+
+    try:
+        return panphon.FeatureTable()
+    except UnicodeDecodeError:
+        # panphon opens its bundled UTF-8 data via pathlib.Path.open without an
+        # encoding, which fails under a cp1252 default. Retry once with a narrowly
+        # scoped UTF-8 default, restored immediately afterwards. Running the app in
+        # UTF-8 mode (PYTHONUTF8=1 at launch) makes this branch never execute.
+        import pathlib
+
+        original_open = pathlib.Path.open
+
+        def _utf8_open(self, mode="r", buffering=-1, encoding=None, errors=None, newline=None):
+            if "b" not in mode and encoding is None:
+                encoding = "utf-8"
+            return original_open(self, mode, buffering, encoding, errors, newline)
+
+        pathlib.Path.open = _utf8_open
+        try:
+            return panphon.FeatureTable()
+        finally:
+            pathlib.Path.open = original_open
+
+
+@lru_cache(maxsize=4096)
+def _phone_vector(phone: str):
+    """Numeric articulatory feature vector for one phone, or None if unknown."""
+    vectors = _feature_table().word_to_vector_list(phone, numeric=True)
+    return tuple(vectors[0]) if vectors else None
+
+
+@lru_cache(maxsize=8192)
+def _substitution_cost(a: str, b: str) -> float:
+    """Feature distance in [0, 1] between two phones (0 == identical; 1 == unknown)."""
+    if a == b:
+        return 0.0
+    va, vb = _phone_vector(a), _phone_vector(b)
+    if va is None or vb is None or len(va) != len(vb):
+        return 1.0
+    differing = sum(1 for x, y in zip(va, vb) if x != y)
+    return differing / len(va)
+
+
+# =====================================================================
+# Step 3 -- feature-weighted edit-distance alignment and scoring.
+# =====================================================================
+_OP_SUB, _OP_DEL, _OP_INS = "sub", "del", "ins"
+
+
+def _edit_alignment(reference: List[str],
+                    spoken: List[str]) -> Tuple[List[Tuple[str, str]], float]:
+    """Feature-weighted edit-distance alignment over phone tokens.
+
+    Returns the aligned ``(reference, spoken)`` pairs ("" marks an inserted or
+    deleted phone) and the total fractional distance. Rolled by hand because
+    ``Levenshtein`` works on characters, not lists of multi-character IPA tokens,
+    and we need per-phone feature substitution costs.
+    """
+    n, m = len(reference), len(spoken)
+    cost = [[0.0] * (m + 1) for _ in range(n + 1)]
+    back: List[List[Optional[str]]] = [[None] * (m + 1) for _ in range(n + 1)]
+    for i in range(1, n + 1):
+        cost[i][0] = float(i)
+        back[i][0] = _OP_DEL
+    for j in range(1, m + 1):
+        cost[0][j] = float(j)
+        back[0][j] = _OP_INS
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            substitute = cost[i - 1][j - 1] + _substitution_cost(reference[i - 1], spoken[j - 1])
+            delete = cost[i - 1][j] + 1.0
+            insert = cost[i][j - 1] + 1.0
+            best = min(substitute, delete, insert)
+            cost[i][j] = best
+            back[i][j] = _OP_SUB if best == substitute else (_OP_DEL if best == delete else _OP_INS)
+
+    pairs: List[Tuple[str, str]] = []
+    i, j = n, m
+    while i > 0 or j > 0:
+        op = back[i][j]
+        if op == _OP_SUB:
+            pairs.append((reference[i - 1], spoken[j - 1]))
+            i, j = i - 1, j - 1
+        elif op == _OP_DEL:
+            pairs.append((reference[i - 1], ""))
+            i -= 1
+        else:
+            pairs.append(("", spoken[j - 1]))
+            j -= 1
+    pairs.reverse()
+    return pairs, cost[n][m]
+
+
+def _capped_per_phone_distance(pairs: List[Tuple[str, str]],
+                               distance: float, n_reference: int) -> float:
+    """Per-phone distance with the insertion contribution capped per reference phone.
+
+    Insertions scale with the *spoken* length, so a hallucinating recognizer can
+    inflate the distance without bound and floor a correct read. We cap the
+    insertion part at ``INSERTION_CAP_PER_PHONE * n_reference`` and leave
+    substitutions/deletions (real errors) intact.
+    """
+    if INSERTION_CAP_PER_PHONE <= 0 or n_reference <= 0:
+        return distance / n_reference if n_reference else 0.0
+    insertion_cost = float(sum(1 for ref_sym, _ in pairs if not ref_sym))
+    cap = INSERTION_CAP_PER_PHONE * n_reference
+    capped = (distance - insertion_cost) + min(insertion_cost, cap)
+    return capped / n_reference
+
+
+def _bad_baseline(reference: List[str], spoken: List[str]) -> float:
+    """Per-utterance "completely wrong" anchor: mean feature distance over all pairs."""
+    if not reference or not spoken:
+        return BAD_BASELINE_DEFAULT
+    total = sum(_substitution_cost(r, s) for r in reference for s in spoken)
+    observed = total / (len(reference) * len(spoken))
+    return _widen_bad_for_length(observed, len(reference))
+
+
+def _widen_bad_for_length(observed_bad: float, n_reference: int) -> float:
+    """Raise a short phrase's ``bad`` anchor toward a conservative ceiling.
+
+    Short references have a noisy, often-too-low ``bad``, which floors correct-but-
+    accented speech. We blend toward ``BAD_CEILING`` with a length-dependent trust
+    weight; ``max(observed, ceiling)`` guarantees this only ever *widens* the window
+    (genuine garbage still floors). BAD_SHRINK_PHONES == 0 disables it.
+    """
+    if BAD_SHRINK_PHONES <= 0:
+        return observed_bad
+    trust = n_reference / (n_reference + BAD_SHRINK_PHONES)
+    return trust * observed_bad + (1.0 - trust) * max(observed_bad, BAD_CEILING)
+
+
+def _score_from_distance(per_phone_distance: float, bad: float, good: float) -> float:
+    """Map a per-phone distance onto 0-100 against the [good, bad] window."""
+    span = max(bad - good, BAD_MIN_SPAN)
+    accuracy = 1.0 - (per_phone_distance - good) / span
+    return round(max(0.0, min(1.0, accuracy)) * 100.0, 1)
+
+
+def _weak_phonemes(pairs: List[Tuple[str, str]],
+                   max_count: int = 3) -> List[Dict[str, Any]]:
+    """The reference phones pronounced worst, for the GUI's "work on these" line.
+
+    For every reference phone in the alignment (substitution or deletion) measure
+    an error severity in [0, 1]: the feature distance to what was heard, or 1.0
+    when the phone was dropped entirely. Phones under ``RECALL_MAX_DIST`` count as
+    correct (same threshold the "Heard" line uses) and are skipped. The rest are
+    aggregated by symbol -- severities summed, so a phone that is both frequent
+    and badly missed rises to the top -- and the worst ``max_count`` are returned,
+    most-to-least severe, each ``{"phoneme", "severity", "count"}``.
+
+    Insertions (``ref_sym == ""``) have no reference phone to blame and are
+    ignored. Returns an empty list for a clean read.
+    """
+    totals: Dict[str, Dict[str, Any]] = {}
+    for ref_sym, hyp_sym in pairs:
+        if not ref_sym:                       # insertion: nothing to attribute
+            continue
+        severity = 1.0 if not hyp_sym else _substitution_cost(ref_sym, hyp_sym)
+        if severity < RECALL_MAX_DIST:        # close enough -> counts as correct
+            continue
+        entry = totals.setdefault(ref_sym, {"severity": 0.0, "count": 0})
+        entry["severity"] += severity
+        entry["count"] += 1
+    ranked = sorted(totals.items(), key=lambda kv: kv[1]["severity"], reverse=True)
+    return [
+        {"phoneme": sym, "severity": round(v["severity"], 4), "count": v["count"]}
+        for sym, v in ranked[:max_count]
+    ]
+
+
+def _phoneme_recall(pairs: List[Tuple[str, str]]) -> float:
+    """Fraction of reference phones actually produced, read off the alignment."""
+    recalled = 0
+    total = 0
+    for ref_sym, hyp_sym in pairs:
+        if not ref_sym:                       # insertion: no reference phone here
+            continue
+        total += 1
+        if hyp_sym and _substitution_cost(ref_sym, hyp_sym) < RECALL_MAX_DIST:
+            recalled += 1
+    return recalled / total if total else 0.0
+
+
+@dataclass
+class ScoreResult:
+    """Two-axis score plus the alignment and the raw per-phone distances."""
+
+    score: float
+    pairs: List[Tuple[str, str]]
+    per_phone_distance: float
+    bad_baseline: float
+    phoneme_score: float
+    recall: float
+    good: float
+
+
+def align_and_score(reference: List[str], spoken: List[str],
+                    good: Optional[float] = None) -> ScoreResult:
+    """Align ``spoken`` against ``reference`` and score on two axes (quality + recall).
+
+    ``good`` overrides the GOOD anchor of the phoneme axis: ``None`` uses the global
+    ``PHONEME_GOOD``; a supplied value (ceiling mode) is the reference's own per-phone
+    distance, so a flawless read maps to 100 for that phrase.
+    """
+    if not reference:
+        raise ValueError("empty reference phoneme sequence")
+
+    pairs, distance = _edit_alignment(reference, spoken)
+    per_phone_distance = _capped_per_phone_distance(pairs, distance, len(reference))
+    bad = _bad_baseline(reference, spoken)
+    good_anchor = PHONEME_GOOD if good is None else good
+    phoneme_score = _score_from_distance(per_phone_distance, bad, good_anchor)
+    recall = _phoneme_recall(pairs)
+    base_score = WEIGHT_PHONEME * phoneme_score + WEIGHT_WORD * recall * 100.0
+    # Punish gross over-production: extra/other speech is otherwise free and floods
+    # the score and per-word colour with spurious matches (BUG-UI-2).
+    penalty = _overproduction_penalty(len(reference), len(spoken))
+    score = round(base_score * (1.0 - penalty), 1)
+    return ScoreResult(
+        score=score,
+        pairs=pairs,
+        per_phone_distance=per_phone_distance,
+        bad_baseline=bad,
+        phoneme_score=phoneme_score,
+        recall=recall,
+        good=good_anchor,
+    )
+
+
+# =====================================================================
+# Reference recognition cache (ceiling-mode GOOD anchor + retry reuse).
+# The same reference take is scored on every retry of a phrase; recognizing it once
+# mirrors acoustic's _reference_features. Keyed by content hash + sample rate; the
+# cache is tiny and self-clearing, so it never grows on a long session. The lock
+# mirrors acoustic's _reference_cache_lock: in the app, analyze() calls are already
+# serialized by the GUI's is_processing_audio guard, but the package is also
+# documented as an autonomous library, where concurrent calls are legal.
+# =====================================================================
+_ref_cache: Dict[Tuple[bytes, Tuple[int, ...], int], List[str]] = {}
+_ref_cache_lock = threading.Lock()
+
+
+def _recognize_reference(reference_audio: np.ndarray, reference_sr: int,
+                         device: str) -> List[str]:
+    """Recognized phonemes of the reference take, cached by content + sample rate."""
+    arr = np.asarray(reference_audio, dtype=np.float32)
+    key = (waveform_digest(arr), arr.shape, reference_sr)
+    with _ref_cache_lock:
+        cached = _ref_cache.get(key)
+    if cached is not None:
+        return cached
+    # Recognition runs outside the lock (it is the expensive part); a
+    # concurrent duplicate at worst recomputes the same value.
+    spoken = _spoken_from_wav(_prepare_waveform(reference_audio, reference_sr), device)
+    with _ref_cache_lock:
+        if len(_ref_cache) >= 8:
+            _ref_cache.clear()
+        _ref_cache[key] = spoken
+    return spoken
+
+
+# =====================================================================
+# Phone-error -> word mapping (for the GUI's word-level highlight).
+# =====================================================================
+def _word_recall(groups: List[List[str]],
+                 pairs: List[Tuple[str, str]]
+                 ) -> Tuple[List[int], List[List[str]], List[float]]:
+    """Per reference word: recalled-phone count, heard phones, and mean distance.
+
+    ``groups`` is the per-word phone grouping; ``pairs`` is the alignment over the
+    flattened reference (same order), so we can attribute each non-insertion pair to
+    its word by walking a phone->word index table.
+
+    ``word_dist[wi]`` is the mean articulatory distance over that word's reference
+    phones: a substituted phone contributes its feature cost, a *deleted* phone
+    (not spoken) contributes the maximum 1.0. This is the same axis the overall
+    score uses, so the per-word highlight agrees with the bucket -- a "dirty" or
+    swapped word is far from the reference and reads as such, unlike the lenient
+    50%-recall flag it replaces.
+    """
+    word_of: List[int] = []
+    for wi, group in enumerate(groups):
+        word_of.extend([wi] * len(group))
+    n_ref = len(word_of)
+
+    recalled = [0] * len(groups)
+    heard: List[List[str]] = [[] for _ in groups]
+    dist_sum = [0.0] * len(groups)            # summed phone distance per word
+    ref_idx = 0
+    for ref_sym, hyp_sym in pairs:
+        if not ref_sym:                       # insertion: no reference phone
+            continue
+        if ref_idx < n_ref:
+            wi = word_of[ref_idx]
+            if hyp_sym:
+                heard[wi].append(hyp_sym)
+                cost = _substitution_cost(ref_sym, hyp_sym)
+                if cost < RECALL_MAX_DIST:
+                    recalled[wi] += 1
+            else:
+                cost = 1.0                    # deletion: phone not produced at all
+            dist_sum[wi] += cost
+        ref_idx += 1
+
+    word_dist = [
+        dist_sum[wi] / len(groups[wi]) if groups[wi] else 0.0
+        for wi in range(len(groups))
+    ]
+    return recalled, heard, word_dist
+
+
+def _word_level(word_avg: float, good: float, bad: float) -> str:
+    """Classify a word's mean phone distance as "good" / "ok" / "bad".
+
+    Placed on the same [good, bad] window the phoneme-quality score uses, so the
+    three-level highlight tracks the bucket: ``frac`` is the word's position from a
+    flawless read (0) to "completely wrong" (1). Cutoffs come from the model
+    calibration (``word_good_frac`` / ``word_bad_frac``); the defaults split the
+    window roughly in thirds.
+    """
+    span = max(bad - good, BAD_MIN_SPAN)
+    frac = (word_avg - good) / span
+    if frac <= WORD_GOOD_FRAC:
+        return "good"
+    if frac >= WORD_BAD_FRAC:
+        return "bad"
+    return "ok"
+
+
+def _overproduction_penalty(n_reference: int, n_spoken: int) -> float:
+    """Penalty in [0, 1] for producing many more phones than the reference asked.
+
+    Recall and the best-cost alignment leave extra speech free, so a long, totally
+    different utterance cherry-picks a close match for nearly every reference phone
+    and reads all-green with an inflated score. This measures how far the
+    spoken length runs past a tolerance band above the reference length: 0 while
+    within tolerance (normal/accented speech is untouched), rising to 1 as the
+    over-production grows. OVERPRODUCTION_STRENGTH == 0 disables it.
+    """
+    if OVERPRODUCTION_STRENGTH <= 0 or n_reference <= 0:
+        return 0.0
+    excess = (n_spoken - n_reference * (1.0 + OVERPRODUCTION_TOLERANCE)) / n_reference
+    if excess <= 0.0:
+        return 0.0
+    return min(1.0, OVERPRODUCTION_STRENGTH * excess)
+
+
+def _penalised_word_distance(word_avg: float, penalty: float, bad: float) -> float:
+    """Interpolate a word's mean distance toward the ``bad`` anchor by ``penalty``.
+
+    Keeps the three-level colour consistent with the penalised score: at penalty 0
+    the distance is unchanged, at penalty 1 every word reads as ``bad`` (red), so a
+    bloated/other utterance no longer colours green. Words already past ``bad`` are
+    left as-is.
+    """
+    return word_avg + penalty * max(0.0, bad - word_avg)
+
+
+def _reference_word_tags(tokens: List[str], levels: List[str]) -> List[Dict[str, Any]]:
+    """One {"word", "level", "correct"} per target token (case/punctuation kept).
+
+    ``level`` drives the GUI's three-level colour (good/ok/bad); ``correct`` is kept
+    for any consumer still reading the boolean (a word is "correct" unless it is bad).
+    """
+    tags: List[Dict[str, Any]] = []
+    for i, token in enumerate(tokens):
+        level = levels[i] if i < len(levels) else "good"
+        tags.append({"word": token, "level": level, "correct": level != "bad"})
+    return tags
+
+
+# =====================================================================
+# 0-5 bucketization: raw 0-100 score -> human-calibrated grade + percent.
+# =====================================================================
+def _score_to_bucket(score: float) -> int:
+    """Coarse 0-5 grade: how many ascending cutpoints the score clears (0..5).
+
+    Returns -1 when no cutpoints are configured, signalling the caller to keep the
+    raw 0-100 score (and its threshold) instead of a bucket.
+    """
+    if not BUCKET_CUTPOINTS:
+        return -1
+    return int(sum(1 for c in BUCKET_CUTPOINTS if score >= c))
+
+
+def _bucket_to_percent(bucket: int, fallback: float) -> float:
+    """User-facing percent for a bucket: the midpoint of its [lo, hi] band.
+
+    The midpoint keeps every take in a bucket on one number (flat), so within-bucket
+    engine noise is hidden. Falls back to ``fallback`` (the raw score)
+    when the bucket has no configured band.
+    """
+    band = BUCKET_TO_PERCENT.get(str(bucket))
+    if not band or len(band) != 2:
+        return fallback
+    lo, hi = band
+    return round((float(lo) + float(hi)) / 2.0, 1)
+
+
+def _grade_for_score(bucket: int, score: float) -> tuple:
+    """0-5 grade with a +/- shade: ("4+", 4.33) for ``score`` inside ``bucket``.
+
+    The label is the bucket number plus a modifier for the score's third of the
+    bucket's raw-score range (lower third "-", middle plain, upper third "+"), so
+    the user sees within-bucket movement without the false precision of a percent.
+    The value is the same mark on a continuous 0-5 axis (bucket + (third-1)/3),
+    for session averaging and trend comparison. Returns ("", -1.0) when ``bucket``
+    is not a configured bucket (no calibration, or a patched cutpoint list).
+    """
+    if bucket < 0 or bucket > len(BUCKET_CUTPOINTS) or not BUCKET_CUTPOINTS:
+        return "", -1.0
+    edges = [0.0] + [float(c) for c in BUCKET_CUTPOINTS] + [100.0]
+    lo, hi = edges[bucket], edges[bucket + 1]
+    frac = (score - lo) / (hi - lo) if hi > lo else 0.5
+    third = min(2, max(0, int(frac * 3)))
+    label = f"{bucket}{('-', '', '+')[third]}"
+    return label, round(bucket + (third - 1) / 3.0, 2)
+
+
+# =====================================================================
+# Entry point.
+# =====================================================================
+def analyze(user_audio: np.ndarray,
+            expected_text: str,
+            reference_audio: Optional[np.ndarray] = None,
+            user_sr: int = TARGET_SAMPLE_RATE,
+            reference_sr: int = KOKORO_SAMPLE_RATE,
+            voice: Optional[str] = None,
+            is_reference: bool = False) -> PronunciationResult:
+    """Compare a user's spoken attempt against the expected phrase, phoneme-level.
+
+    Args:
+        user_audio: user's recorded waveform (1-D float32).
+        expected_text: the reference phrase the user was asked to repeat.
+        reference_audio: Kokoro-synthesised reference waveform. Used in ceiling mode
+            to anchor a flawless read to 100 per phrase; optional (falls back to the
+            global GOOD anchor when absent).
+        user_sr: sample rate of ``user_audio`` (recording path is 16 kHz).
+        reference_sr: sample rate of ``reference_audio`` (Kokoro is 24 kHz).
+        voice: Kokoro voice the reference was synthesized with (recorded for logs).
+        is_reference: marks the reference self-test. Accepted now so the
+            signature is stable; honest scoring is unchanged here.
+
+    Returns:
+        PronunciationResult with score, per-word/per-phone tags and transcription.
+        ``prosody`` is left empty; the host fills it from the raw waveforms.
+    """
+    cfg = get_config()
+    _ensure_loaded()
+    _ensure_calibration()
+
+    # Reference phonemes from text (per-word groups -> flat sequence).
+    groups = reference_word_phonemes(expected_text, cfg.espeak_language)
+    reference = [p for group in groups for p in group]
+    if not reference:
+        raise ValueError(f"espeak produced no phonemes for: {expected_text!r}")
+
+    spoken = _spoken_from_wav(_prepare_waveform(user_audio, user_sr), cfg.device)
+
+    # Ceiling-mode GOOD anchor: the reference take's own per-phone distance, so a
+    # flawless read maps to 100 for this phrase regardless of per-phrase quirks.
+    good = _ceiling_good(reference, reference_audio, reference_sr, cfg)
+    result = align_and_score(reference, spoken, good=good)
+
+    # Map phone errors back to whole words for the GUI highlight. The per-word mean
+    # distance is classified on the SAME [good, bad] window the score uses, so the
+    # three-level colour (good/ok/bad) tracks the bucket rather than a lenient recall.
+    tokens = expected_text.split()
+    _recalled, heard, word_dist = _word_recall(groups, result.pairs)
+    # Same over-production penalty the score uses: nudge each word's
+    # distance toward the bad anchor so a long, completely different utterance
+    # colours red instead of cherry-picking its way to all-green.
+    overprod = _overproduction_penalty(len(reference), len(spoken))
+    levels = [
+        _word_level(_penalised_word_distance(word_dist[wi], overprod, result.bad_baseline),
+                    result.good, result.bad_baseline)
+        for wi in range(len(groups))
+    ]
+    # A word is an error (red, "you need to pronounce X") only when "bad"; "ok"
+    # words are acceptable (light grey) and stay out of the error list.
+    words_with_errors = [
+        tokens[wi] for wi in range(min(len(groups), len(tokens))) if levels[wi] == "bad"
+    ]
+    reference_words = _reference_word_tags(tokens, levels)
+    word_errors = [
+        {
+            "word": tokens[wi] if wi < len(tokens) else "",
+            "expected": groups[wi],
+            "heard": heard[wi],
+            "level": levels[wi],
+            "distance": round(word_dist[wi], 4),
+        }
+        for wi in range(len(groups))
+        if levels[wi] == "bad"
+    ]
+    word_diff = [{"expected": w} for w in words_with_errors]
+
+    # "Heard" line: recognized phonemes in order, each flagged correct/incorrect.
+    recognized_units = [
+        {
+            "unit": hyp_sym,
+            "correct": bool(ref_sym) and _substitution_cost(ref_sym, hyp_sym) < RECALL_MAX_DIST,
+        }
+        for ref_sym, hyp_sym in result.pairs
+        if hyp_sym
+    ]
+
+    transcription = " ".join(spoken)
+
+    # Coarsen the raw 0-100 score to a 0-5 bucket. When buckets are
+    # configured, "passed" and the user percent come from the bucket; otherwise the
+    # engine degrades to the raw score and its threshold (no calibration -> no crash).
+    bucket = _score_to_bucket(result.score)
+    if bucket >= 0:
+        passed = bucket >= PASS_BUCKET
+        user_percent = _bucket_to_percent(bucket, result.score)
+        grade, grade_value = _grade_for_score(bucket, result.score)
+    else:
+        passed = result.score >= cfg.score_threshold
+        user_percent = result.score
+        grade, grade_value = "", -1.0
+    feedback = _build_feedback(result.score, passed, words_with_errors)
+
+    logging.info(
+        "[phoneme] score=%.1f -> bucket=%d grade=%s (%.0f%%) | (phoneme=%.1f recall=%.2f) | "
+        "dist/phone=%.4f (good=%.3f bad=%.3f) | ref=%d spoken=%d overprod=%.2f | is_ref=%s | voice=%s | "
+        "bad_words=%s | ref_ipa=%r | asr_ipa=%r",
+        result.score, bucket, grade or "-", user_percent, result.phoneme_score, result.recall,
+        result.per_phone_distance, result.good, result.bad_baseline,
+        len(reference), len(spoken), overprod, is_reference, voice,
+        words_with_errors, " ".join(reference), transcription,
+    )
+
+    # Calibration / analysis sample log (best effort; mirrors the acoustic engine's
+    # acoustic_samples.jsonl). phoneme/calibrate.py re-anchors PHONEME_GOOD from the
+    # good *real* attempts here (it drops the is_reference self-tests, whose ~0
+    # distance would wreck the anchor); the per-word block and the two phoneme
+    # strings make a low score easy to inspect after the fact.
+    _append_sample({
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "lang": _lang_key(cfg.espeak_language),
+        "text": expected_text,
+        "user_name": cfg.user_name,
+        "voice": voice,
+        "is_reference": bool(is_reference),
+        "score": result.score,
+        "bucket": bucket,
+        "grade": grade,
+        "user_percent": user_percent,
+        "passed": passed,
+        "phoneme_score": round(result.phoneme_score, 1),
+        "recall": round(result.recall, 4),
+        "per_phone_distance": round(result.per_phone_distance, 5),
+        "bad_baseline": round(result.bad_baseline, 5),
+        "good_anchor": round(result.good, 5),
+        "n_reference": len(reference),
+        "n_spoken": len(spoken),
+        "reference_phonemes": reference,
+        "spoken_phonemes": spoken,
+        # Exact phone-to-phone alignment behind the score, straight from
+        # align_and_score() (same "" gap convention as _weak_phonemes): each
+        # pair is [reference_phone, heard_phone], with "" marking a deletion
+        # (reference phone not produced) or an insertion (extra phone with no
+        # reference counterpart). Unlike the per-word expected/heard lists
+        # below, this is positionally exact even when lengths diverge, so it
+        # can drive a substitution/deletion/insertion confusion-matrix
+        # analysis directly instead of re-deriving alignment from the log.
+        "alignment": [[ref_sym, hyp_sym] for ref_sym, hyp_sym in result.pairs],
+        "words": [
+            {"word": tokens[wi] if wi < len(tokens) else "",
+             "level": levels[wi],
+             "distance": round(word_dist[wi], 4),
+             "expected": groups[wi],
+             "heard": heard[wi]}
+            for wi in range(len(groups))
+        ],
+    })
+
+    return PronunciationResult(
+        score=result.score,
+        word_errors=word_errors,
+        prosody={},
+        transcription=transcription,
+        passed=passed,
+        feedback=feedback,
+        words_with_errors=words_with_errors,
+        expected_phonemes=reference,
+        transcribed_phonemes=spoken,
+        word_diff=word_diff,
+        reference_words=reference_words,
+        recognized_units=recognized_units,
+        weak_phonemes=_weak_phonemes(result.pairs),
+        bucket=bucket,
+        user_percent=user_percent,
+        grade=grade,
+        grade_value=grade_value,
+        per_phone_distance=result.per_phone_distance,
+        bad_baseline=result.bad_baseline,
+        phoneme_score=result.phoneme_score,
+        recall=result.recall,
+        good_anchor=result.good,
+    )
+
+
+def _ceiling_good(reference: List[str], reference_audio: Optional[np.ndarray],
+                  reference_sr: int, cfg) -> Optional[float]:
+    """Per-phrase GOOD anchor from the reference take, or None for global mode.
+
+    Returns the reference's per-phone distance (ceiling mode) when a reference take
+    is available; otherwise None, leaving the scorer on the global PHONEME_GOOD. A
+    missing reference never fails the analysis.
+    """
+    if cfg.good_mode != "ceiling" or reference_audio is None:
+        return None
+    ref_array = np.asarray(reference_audio, dtype=np.float32)
+    if ref_array.size == 0:
+        return None
+    ceiling_spoken = _recognize_reference(ref_array, reference_sr, cfg.device)
+    if not ceiling_spoken:
+        return None
+    return align_and_score(reference, ceiling_spoken).per_phone_distance
+
+
+def _build_feedback(score: float, passed: bool, words_with_errors: List[str]) -> str:
+    """Short human-readable summary mirroring the acoustic engine's style."""
+    lines = [f"Score: {score:.0f}/100 " + ("(passed)" if passed else "(try again)")]
+    if words_with_errors:
+        lines.append("❌ You need to better pronounce these words: "
+                     + ", ".join(words_with_errors))
+    elif passed:
+        lines.append("✅ Great pronunciation!")
+    return "\n".join(lines)

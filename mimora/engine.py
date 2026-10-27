@@ -1,0 +1,136 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Valeriy Kovalev
+
+"""Pronunciation engine dispatcher.
+
+The host (app.py) drives pronunciation through this one module instead of a
+specific engine, so it never knows which backend is active. The backend is chosen
+by ``config.ENGINE`` (set in mimora/config.py):
+
+    "acoustic" -> pronunciation.acoustic  (Wav2Vec2 embeddings + cosine-DTW)
+    "phoneme"  -> pronunciation.phoneme   (espeak reference + phoneme ASR + edit distance; default)
+    "none"     -> pronunciation.none      (scoring disabled: no model, every take accepted)
+
+All backends expose the same small interface (``configure`` / ``load_models`` /
+``warm_up`` / ``analyze``) and return the shared ``pronunciation.common.PronunciationResult``,
+so switching is a single config flip. Only the selected backend is imported, so the
+inactive engines' (heavy) weights are never loaded.
+
+To switch engines, set ``"engine"`` in config/settings.json and restart; the process
+binds one backend at startup (the first ``_backend()`` call). Hot-swapping engines
+without a restart is intentionally not supported here.
+"""
+
+from __future__ import annotations
+
+import importlib
+from pathlib import Path
+
+from mimora import config
+
+# config.ENGINE value -> the package implementing it.
+_BACKENDS = {
+    "acoustic": "pronunciation.acoustic",
+    "phoneme": "pronunciation.phoneme",
+    "none": "pronunciation.none",
+}
+
+# The imported backend module, bound lazily on first use so the inactive engine is
+# never imported (and never loads its weights).
+_module = None
+
+
+def name() -> str:
+    """The active engine name, falling back to the default 'phoneme' for an unknown value."""
+    return config.ENGINE if config.ENGINE in _BACKENDS else "phoneme"
+
+
+def _backend():
+    """Return the active backend module, importing it once on first use."""
+    global _module
+    if _module is None:
+        _module = importlib.import_module(_BACKENDS[name()])
+    return _module
+
+
+def _calibration_file(engine_name: str) -> Path:
+    """Where *engine_name* keeps its machine-local user calibration.
+
+    Beside settings.json rather than beside the engine's own code, which is
+    where the libraries default to. Two files sit next to each other in
+    ``pronunciation/<engine>/`` and are different in kind: the committed
+    ``<lang>_model_calibration.json`` ships with the code, while
+    ``calibration.json`` is state this machine produced. Installed as a
+    package, the first belongs in site-packages and the second must not be
+    there - it would be written into a directory owned by the installer and
+    carried off by the next upgrade.
+
+    The engine name is part of the file name instead of a directory level: two
+    files, one per engine, are not worth a directory, and the flat name is what
+    somebody scanning config/ can read.
+    """
+    return Path(config.CONFIG_DIR) / f"calibration_{engine_name}.json"
+
+
+def configure(engine_name: str | None = None) -> None:
+    """Build an engine's AnalyzerConfig from app settings and inject it.
+
+    Each engine has its own AnalyzerConfig (different fields and model defaults), so
+    the per-engine construction lives here -- the one place that knows both the app
+    settings and which backend is active. Call once at startup (no args -> the active
+    engine) before load_models().
+
+    A calibration CLI passes an explicit ``engine_name`` to configure that specific
+    engine regardless of ``config.ENGINE`` (e.g. acoustic/calibrate.py always
+    calibrates "acoustic"), so the per-engine field mapping is not duplicated there.
+    """
+    if engine_name and engine_name in _BACKENDS:
+        eng = importlib.import_module(_BACKENDS[engine_name])
+        eng_name = engine_name
+    else:
+        eng = _backend()
+        eng_name = name()
+    if eng_name == "none":
+        cfg = eng.AnalyzerConfig()  # scoring disabled: nothing to configure
+    elif eng_name == "phoneme":
+        cfg = eng.AnalyzerConfig(
+            model_name=config.WAV2VEC2_PHONEME_MODEL_NAME,
+            device=config.WAV2VEC2_DEVICE,
+            espeak_language=config.ESPEAK_LANGUAGE,
+            score_threshold=config.PRONUNCIATION_SCORE_THRESHOLD,
+            good_mode=config.PHONEME_GOOD_MODE,
+            log_dir=Path(config.LOG_DIR),
+            user_name=config.USER_NAME,
+            calibration_file=_calibration_file("phoneme"),
+        )
+    else:
+        cfg = eng.AnalyzerConfig(
+            model_name=config.WAV2VEC2_MODEL_NAME,
+            device=config.WAV2VEC2_DEVICE,
+            espeak_language=config.ESPEAK_LANGUAGE,
+            score_threshold=config.PRONUNCIATION_SCORE_THRESHOLD,
+            acoustic_good=config.PRONUNCIATION_ACOUSTIC_GOOD,
+            log_dir=Path(config.LOG_DIR),
+            user_name=config.USER_NAME,
+            calibration_file=_calibration_file("acoustic"),
+        )
+    eng.configure(cfg)
+
+
+def load_models() -> None:
+    """Load the active engine's models once (call in a background thread)."""
+    _backend().load_models()
+
+
+def warm_up() -> None:
+    """Run the active engine's warm-up pass to remove first-call latency."""
+    _backend().warm_up()
+
+
+def analyze(*args, **kwargs):
+    """Run the active engine's analysis, returning a ``PronunciationResult``.
+
+    Arguments are passed straight through, so the host calls one ``engine.analyze(...)``
+    exactly as it called the engine's ``analyze(...)`` before.
+    """
+    return _backend().analyze(*args, **kwargs)

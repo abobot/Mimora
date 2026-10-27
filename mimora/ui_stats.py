@@ -1,0 +1,409 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Valeriy Kovalev
+
+"""Stats dashboard: summary cards and simple canvas charts.
+
+A Toplevel opened from a future "Stats" button. Aggregates everything
+in :class:`StatsStore` and renders:
+
+* summary cards: total practice time, session count, take count,
+  unique phrases, current streak;
+* a score trend chart - the daily average score for the last N days;
+* a score distribution bar chart - how many takes landed in each
+  bucket (0-49 / 50-69 / 70-84 / 85-100);
+* a recent-sessions list.
+
+Charts are drawn on ``tk.Canvas`` because Mimora is a Tkinter app -
+no matplotlib, no third-party plotting. The chart helpers are small
+and self-contained.
+
+The view is passive: it calls ``load_data()`` on the controller for
+one big snapshot dict, then renders. That keeps the store access in
+one place.
+"""
+
+from __future__ import annotations
+
+import tkinter as tk
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from tkinter import messagebox
+from typing import Any, Callable, Dict, List, Optional
+
+
+from mimora import config, window_icon
+from mimora.ui_theme import (
+    FONT_FAMILY,
+    FONT_SIZE_BODY,
+    FONT_SIZE_CAPTION,
+    FONT_SIZE_SUBTITLE,
+    THEME,
+)
+import ttkbootstrap as ttk
+
+
+@dataclass(frozen=True)
+class StatsCallbacks:
+    """Typed view→controller contract for the stats dashboard."""
+    load_data: Callable[[], Dict[str, Any]]
+    export_json: Callable[[], Optional[str]]
+    export_csv: Callable[[], Optional[str]]
+
+
+def _fmt_seconds(seconds: int) -> str:
+    """1440 → '2h 24m'; 60 → '1m'; 0 → '0m'."""
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m"
+    hours = minutes // 60
+    rem = minutes % 60
+    if hours < 24:
+        return f"{hours}h {rem}m"
+    days = hours // 24
+    rem_h = hours % 24
+    return f"{days}d {rem_h}h"
+
+
+def _avg_score_for_session(session: Dict[str, Any]) -> float:
+    totals = session.get("totals") or {}
+    if "avg_best_score" in totals:
+        return float(totals["avg_best_score"] or 0.0)
+    # Fall back to averaging individual take scores.
+    scores = [float(t.get("score") or 0) for t in session.get("takes") or []]
+    return sum(scores) / len(scores) if scores else 0.0
+
+
+def _session_date_key(session: Dict[str, Any]) -> str:
+    """The calendar date (YYYY-MM-DD) a session belongs to."""
+    ts = session.get("started_at") or ""
+    if not ts:
+        return ""
+    try:
+        return datetime.fromisoformat(ts).strftime("%Y-%m-%d")
+    except ValueError:
+        return ts[:10]
+
+
+class _CanvasChart:
+    """Tiny helper: draw bars or lines on a Canvas without re-writing
+    the layout each time.
+
+    The chart is drawn once per data refresh; no interaction. Kept
+    simple on purpose.
+    """
+
+    def __init__(self, master, width=360, height=140, bg=None):
+        self.bg = bg or THEME["bg_panel"]
+        self.canvas = tk.Canvas(master, width=width, height=height,
+                                bg=self.bg, highlightthickness=1,
+                                highlightbackground=THEME["border"])
+        self._width = width
+        self._height = height
+
+    def draw_line(self, values: List[float],
+                  max_value: float = 100.0,
+                  color: Optional[str] = None,
+                  label: str = "") -> None:
+        """Draw a line chart with ``values`` on the y-axis 0..max_value."""
+        c = self.canvas
+        c.delete("all")
+        color = color or THEME["good"]
+        pad_l, pad_r, pad_t, pad_b = 32, 8, 12, 24
+        plot_w = self._width - pad_l - pad_r
+        plot_h = self._height - pad_t - pad_b
+        # Grid lines.
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            c.create_line(pad_l, y, pad_l + plot_w, y, fill=THEME["border"])
+        # y-axis labels.
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            val = max_value * (1 - i / 4)
+            c.create_text(pad_l - 4, y, text=f"{val:.0f}", anchor="e",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if not values:
+            c.create_text(self._width / 2, self._height / 2,
+                          text="No data yet", fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        # Data points.
+        points = []
+        n = len(values)
+        for i, v in enumerate(values):
+            x = pad_l + (plot_w * i / max(n - 1, 1))
+            y = pad_t + plot_h * (1 - min(v, max_value) / max_value)
+            points.append((x, y))
+        if len(points) >= 2:
+            flat = [coord for pt in points for coord in pt]
+            c.create_line(*flat, fill=color, width=2)
+        # Points.
+        for x, y in points:
+            c.create_oval(x - 3, y - 3, x + 3, y + 3,
+                          fill=color, outline="")
+        # Title.
+        if label:
+            c.create_text(pad_l, 6, text=label, anchor="nw",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def draw_bars(self, values: List[float], labels: List[str],
+                  max_value: Optional[float] = None,
+                  color: Optional[str] = None,
+                  title: str = "") -> None:
+        """Draw a bar chart with values + labels on the x-axis."""
+        c = self.canvas
+        c.delete("all")
+        color = color or THEME["good"]
+        pad_l, pad_r, pad_t, pad_b = 32, 8, 12, 28
+        plot_w = self._width - pad_l - pad_r
+        plot_h = self._height - pad_t - pad_b
+        if max_value is None:
+            max_value = max(max(values or [0.0]), 1.0)
+        # Grid.
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            c.create_line(pad_l, y, pad_l + plot_w, y, fill=THEME["border"])
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            val = max_value * (1 - i / 4)
+            c.create_text(pad_l - 4, y, text=f"{val:.0f}", anchor="e",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if not values:
+            c.create_text(self._width / 2, self._height / 2,
+                          text="No data", fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        n = len(values)
+        bar_w = plot_w / n * 0.7
+        for i, v in enumerate(values):
+            x = pad_l + plot_w * (i + 0.5) / n
+            y = pad_t + plot_h * (1 - min(v, max_value) / max_value)
+            c.create_rectangle(x - bar_w / 2, y,
+                               x + bar_w / 2, pad_t + plot_h,
+                               fill=color, outline="")
+            # Value above bar.
+            c.create_text(x, y - 4, text=f"{v:.0f}", anchor="s",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+            # Label below bar.
+            c.create_text(x, pad_t + plot_h + 4,
+                          text=labels[i] if i < len(labels) else "",
+                          anchor="n", fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if title:
+            c.create_text(pad_l, 6, text=title, anchor="nw",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+
+class StatsView:
+    """Toplevel showing the practice stats dashboard."""
+
+    def __init__(self, root, callbacks: StatsCallbacks):
+        self.root = root
+        self._cb = callbacks
+        self._window = tk.Toplevel(root)
+        self._window.title("Practice stats")
+        self._window.geometry("900x640")
+        window_icon.set_app_user_model_id()
+        window_icon.apply_window_icon(self._window)
+        self._build_ui()
+        self.refresh()
+
+    def exists(self) -> bool:
+        try:
+            return self._window.winfo_exists()
+        except tk.TclError:
+            return False
+
+    def _build_ui(self) -> None:
+        top = tk.Frame(self._window, bg=THEME["bg_main"])
+        top.pack(fill=tk.X, padx=16, pady=12)
+        tk.Label(top, text="Practice stats",
+                 font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                 bg=THEME["bg_main"], fg=THEME["text_emph"]
+                 ).pack(side=tk.LEFT)
+        btns = tk.Frame(top, bg=THEME["bg_main"])
+        btns.pack(side=tk.RIGHT)
+        ttk.Button(btns, text="Export JSON",
+                   command=self._on_export_json).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btns, text="Export CSV",
+                   command=self._on_export_csv).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btns, text="Close",
+                   command=self._window.destroy).pack(side=tk.LEFT, padx=2)
+
+        # Summary cards.
+        self._cards = tk.Frame(self._window, bg=THEME["bg_main"])
+        self._cards.pack(fill=tk.X, padx=16, pady=4)
+
+        # Charts area.
+        self._charts = tk.Frame(self._window, bg=THEME["bg_main"])
+        self._charts.pack(fill=tk.BOTH, expand=True, padx=16, pady=8)
+
+        # Recent sessions list.
+        self._recent = tk.Frame(self._window, bg=THEME["bg_main"])
+        self._recent.pack(fill=tk.X, padx=16, pady=(0, 12))
+
+    def refresh(self) -> None:
+        data = self._cb.load_data()
+        sessions = data.get("sessions") or []
+        raw_takes = data.get("all_takes") or []
+        # Takes come as (session, take) tuples; extract just the take dicts.
+        takes = [t for _, t in raw_takes] if raw_takes and isinstance(raw_takes[0], tuple) else raw_takes
+        self._render_cards(sessions, takes)
+        self._render_charts(sessions, takes)
+        self._render_recent(sessions)
+
+    # ------------------------------------------------------------------
+    # Sections
+    # ------------------------------------------------------------------
+
+    def _render_cards(self, sessions: List[Dict], takes: List[Dict]) -> None:
+        for child in self._cards.winfo_children():
+            child.destroy()
+        total_time = sum(int(s.get("duration_sec") or 0) for s in sessions)
+        total_takes = len(takes)
+        unique_phrases = len({(t.get("phrase") or "").strip()
+                              for t in takes if (t.get("phrase") or "").strip()})
+        scores = [float(t.get("score") or 0) for t in takes if t.get("score")]
+        avg = sum(scores) / len(scores) if scores else 0.0
+        best = max(scores) if scores else 0.0
+        streak = _compute_streak(sessions,
+                                 target_minutes=config.DAILY_TARGET_MINUTES * 60)
+        cards = [
+            ("Practice time", _fmt_seconds(total_time)),
+            ("Sessions", str(len(sessions))),
+            ("Takes", f"{total_takes:,}"),
+            ("Unique phrases", f"{unique_phrases}"),
+            ("Avg score", f"{avg:.1f}" if avg else "—"),
+            ("Best score", f"{best:.1f}" if best else "—"),
+            ("Streak", f"{streak}d"),
+        ]
+        for i, (title, value) in enumerate(cards):
+            card = tk.Frame(self._cards, bg=THEME["bg_panel"], bd=1,
+                            highlightbackground=THEME["border"],
+                            highlightthickness=1)
+            card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4, pady=4)
+            tk.Label(card, text=title, font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                     bg=THEME["bg_panel"], fg=THEME["text_dim"]
+                     ).pack(pady=(8, 0))
+            tk.Label(card, text=value, font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                     bg=THEME["bg_panel"], fg=THEME["text_emph"]
+                     ).pack(pady=(0, 8))
+
+    def _render_charts(self, sessions: List[Dict], takes: List[Dict]) -> None:
+        for child in self._charts.winfo_children():
+            child.destroy()
+        # Daily average scores for the last 30 days.
+        daily = defaultdict(list)
+        for t in takes:
+            ts = t.get("timestamp") or ""
+            try:
+                day = datetime.fromisoformat(ts).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+            daily[day].append(float(t.get("score") or 0))
+        # Sort by date.
+        days = sorted(daily.keys())[-30:]
+        scores_per_day = [sum(daily[d]) / len(daily[d]) for d in days]
+        trend = _CanvasChart(self._charts, width=430, height=180)
+        trend.canvas.pack(side=tk.LEFT, padx=8, pady=8)
+        trend.draw_line(scores_per_day, max_value=100.0,
+                        color=THEME["good"],
+                        label="Daily avg score (last 30 days)")
+
+        # Score distribution buckets.
+        buckets = [0, 0, 0, 0]
+        for t in takes:
+            s = float(t.get("score") or 0)
+            idx = min(int(s // 25), 3)
+            buckets[idx] += 1
+        labels = ["0-24", "25-49", "50-74", "75-100"]
+        dist = _CanvasChart(self._charts, width=430, height=180)
+        dist.canvas.pack(side=tk.RIGHT, padx=8, pady=8)
+        dist.draw_bars(buckets, labels, title="Score distribution")
+
+    def _render_recent(self, sessions: List[Dict]) -> None:
+        for child in self._recent.winfo_children():
+            child.destroy()
+        if not sessions:
+            tk.Label(self._recent, text="No sessions yet.",
+                     font=(FONT_FAMILY, FONT_SIZE_BODY, "italic"),
+                     fg=THEME["text_dim"], bg=THEME["bg_main"]
+                     ).pack(anchor="w")
+            return
+        tk.Label(self._recent, text="Recent sessions",
+                 font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"),
+                 bg=THEME["bg_main"], fg=THEME["text_emph"]
+                 ).pack(anchor="w", pady=(4, 2))
+        for session in reversed(sessions[-10:]):
+            totals = session.get("totals") or {}
+            started = (session.get("started_at") or "")[:16].replace("T", " ")
+            row = tk.Frame(self._recent, bg=THEME["bg_panel"], bd=0)
+            row.pack(fill=tk.X, pady=1)
+            text = (f"{started}  ·  {totals.get('takes', 0)} takes  ·  "
+                    f"avg {float(totals.get('avg_best_score') or 0):.0f}  ·  "
+                    f"{_fmt_seconds(int(session.get('duration_sec') or 0))}")
+            tk.Label(row, text=text, anchor="w",
+                     font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                     fg=THEME["text_emph"], bg=THEME["bg_panel"]
+                     ).pack(fill=tk.X, padx=6, pady=2)
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
+
+    def _on_export_json(self) -> None:
+        path = self._cb.export_json()
+        if path:
+            messagebox.showinfo("Export complete",
+                                f"JSON saved to:\n{path}",
+                                parent=self._window)
+
+    def _on_export_csv(self) -> None:
+        path = self._cb.export_csv()
+        if path:
+            messagebox.showinfo("Export complete",
+                                f"CSV saved to:\n{path}",
+                                parent=self._window)
+
+
+def _compute_streak(sessions: List[Dict],
+                    target_minutes: int) -> int:
+    """Count consecutive days (ending today or yesterday) that hit
+    the daily target.
+
+    Uses session ``started_at`` for the day key and ``duration_sec``
+    for the daily total. A missing day breaks the streak.
+    """
+    if not sessions or target_minutes <= 0:
+        return 0
+    day_seconds: Dict[str, int] = defaultdict(int)
+    for s in sessions:
+        try:
+            day = datetime.fromisoformat(s.get("started_at") or "").strftime(
+                "%Y-%m-%d")
+        except ValueError:
+            continue
+        day_seconds[day] += int(s.get("duration_sec") or 0)
+    target_sec = target_minutes * 60
+    streak = 0
+    today = datetime.now().strftime("%Y-%m-%d")
+    cursor = datetime.now().date()
+    # Allow yesterday to count (today may not have practice yet).
+    if today not in day_seconds and (cursor - timedelta(days=1)).strftime(
+            "%Y-%m-%d") in day_seconds:
+        cursor -= timedelta(days=1)
+    while True:
+        day_key = cursor.strftime("%Y-%m-%d")
+        if day_seconds.get(day_key, 0) >= target_sec:
+            streak += 1
+            cursor -= timedelta(days=1)
+        else:
+            break
+    return streak

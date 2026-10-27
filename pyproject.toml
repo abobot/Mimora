@@ -1,0 +1,298 @@
+[build-system]
+# 77 is the release that added PEP 639 support (license = "MIT" plus
+# license-files below). pip installs a current setuptools into the isolated
+# build environment anyway, so the floor only matters for a build with
+# isolation disabled against a pinned older version.
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mimora"
+# Version is the single source of truth in mimora/__init__.py (read dynamically below).
+dynamic = ["version"]
+description = "Local, offline pronunciation trainer: Kokoro TTS prompts, Wav2Vec2 scoring, local LLM phrase generation."
+readme = "README.md"
+# Tested on 3.11 and 3.12, and bounded rather than left open. The bound is not a
+# statement about the application: a full 3.14 run passed end to end,
+# pronunciation analysis and llama-server included. It is a statement about
+# the INSTALL. Two dependencies publish no cp314 wheels and are therefore
+# compiled from source - editdistance (via panphon) and curated-tokenizers (via
+# kokoro -> misaki[en] -> spacy-curated-transformers 0.3.1) - and both are C
+# extensions, so the install needs a C++ compiler the audience for a published
+# package does not have. Both lines end upstream: raising
+# spacy-curated-transformers to 2.x wants thinc 9, while misaki pins spacy 3.8 to
+# thinc 8.
+#
+# With the bound, `pip install mimora` on 3.14 refuses in one line instead of
+# dying in somebody else's Cython. Raising it would REMOVE that refusal and gain
+# nothing in exchange, because `uv tool install` ignores requires-python outright
+# (documented behaviour) - which is why README passes --python 3.12 explicitly
+# rather than relying on this value.
+#
+# Raising the ceiling is a deliberate act, together with WHEEL_TESTED_MAX in
+# install.py and the requirements section of README.md, once a newer minor is
+# verified to have wheels for every dependency.
+requires-python = ">=3.11,<3.13"
+# PEP 639 SPDX expression, not the older license = { file = ... } table: that
+# form embeds the whole licence TEXT into the License: metadata field, and
+# setuptools deprecated it in 77 - which is the floor in build-system above.
+# The file itself travels as License-File, listed explicitly rather than left
+# to the default LICENSE* glob.
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Valeriy Kovalev" }]
+keywords = [
+    "pronunciation",
+    "language-learning",
+    "speech",
+    "text-to-speech",
+    "speech-recognition",
+    "offline",
+    "llm",
+    "tkinter",
+]
+# No "License ::" classifier: PyPI takes the licence from the field above, and
+# the two disagreeing is a known way to publish a package labelled twice.
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: MacOS X",
+    "Environment :: Win32 (MS Windows)",
+    "Environment :: X11 Applications",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: English",
+    "Natural Language :: Spanish",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+# The single list of runtime dependencies. It used to live in requirements.txt,
+# which chained pronunciation/acoustic/ and pronunciation/phoneme/ with -r; that
+# file is gone and install.py reads this list instead (tomllib, stdlib since
+# 3.11 = requires-python above), so there is one list and not a list plus a
+# copy. The two pronunciation/*/requirements.txt files stay: those subpackages
+# are reusable GUI-agnostic libraries and must remain installable on their own -
+# which is also why they still repeat torch/transformers/numpy with the same
+# markers. Change one, change all of them.
+#
+# No index is named here, because a PyPI package cannot name one. That matters
+# on exactly one platform: PyPI's torch is a CUDA build on Linux and CUDA does
+# not exist on macOS, so only Windows with an NVIDIA card gets a CPU-only wheel
+# it did not want. The answer is `--torch-backend auto` at install time (README)
+# plus a startup warning when that was missed
+# (detect_hardware.warn_if_gpu_unused, called once from app.run).
+#
+# Intel macOS (x86_64) runs on relaxed pins throughout: PyTorch published no
+# wheel newer than 2.2.2 for it, that build wants NumPy 1.x, and transformers
+# 5.x requires torch>=2.7. So torch, transformers and numpy each carry a pair
+# of markers. This accepts CVE-2026-4372 on Intel Mac (a local desktop app
+# loading only trusted models) in exchange for a working stack; every other
+# platform keeps the hardened pins.
+#
+# torchaudio is NOT a dependency, and re-adding it breaks Linux. Nothing in
+# this project imports it - the last caller is long gone - but transformers
+# imports it at module level in audio_utils.py whenever
+# is_torchaudio_available() says yes, and that predicate asks the environment's
+# METADATA rather than whether the import works. On Linux the recommended
+# install resolves torch and torchaudio to different CUDA series
+# (2.13.0+cu132 against 2.11.0+cu130), so that import raises RuntimeError and
+# the default pronunciation engine never loads - surfacing as an unrelated
+# "Could not import module 'AutoProcessor'". A version pin cannot fix it: the
+# +cuXXX suffix is a local version and PEP 508 specifiers do not see it.
+# Found on Ubuntu; Windows never showed it because the pair agreed there.
+dependencies = [
+    # --- core runtime -----------------------------------------------------
+    # NumPy upper bound: numba (via librosa) supports NumPy <= 2.4, and without
+    # the cap librosa.resample fails at runtime with "Numba needs NumPy 2.4 or
+    # less". Drop it once numba supports 2.5.
+    "numpy>=1.24.0,<2.5; platform_system != 'Darwin' or platform_machine != 'x86_64'",
+    "numpy>=1.24.0,<2; platform_system == 'Darwin' and platform_machine == 'x86_64'",
+    # torch>=2.7 because transformers 5.x (below) needs it and
+    # does not say so itself: torch is only an extra of transformers. With
+    # >=2.0 an older torch already in the environment (or one from a CUDA
+    # index that stops at 2.6, such as cu124) stayed and broke the engine.
+    "torch>=2.7; platform_system != 'Darwin' or platform_machine != 'x86_64'",
+    "torch==2.2.2; platform_system == 'Darwin' and platform_machine == 'x86_64'",
+    # torchaudio is deliberately NOT here - see the note above.
+    # transformers>=5.3 closes CVE-2026-4372 (config-injection RCE; no 4.x fix
+    # exists). 5.x needs torch>=2.7 for torch.float8_e8m0fnu.
+    "transformers>=5.3; platform_system != 'Darwin' or platform_machine != 'x86_64'",
+    "transformers>=4.44,<5; platform_system == 'Darwin' and platform_machine == 'x86_64'",
+    # numba (via librosa) upper bound on Intel macOS only: starting with
+    # llvmlite 0.46.0 (paired with numba 0.63.0, December 2025) PyPI stopped
+    # publishing wheels for macOS x86_64 - GitHub Actions retired the free
+    # Intel runners numba's CI used, and the platform was downgraded to
+    # "best effort, no binaries" (numba/numba#10187). Without a wheel, pip/uv
+    # fall back to building llvmlite from source, which needs a matching LLVM
+    # installed with LLVMConfig.cmake on the target machine and fails outright
+    # otherwise. numba pins its paired llvmlite minor tightly, so capping numba
+    # alone keeps llvmlite in the 0.45.x range, which still ships a wheel.
+    # Found on Intel Mac.
+    "numba<0.63,>=0.60; platform_system == 'Darwin' and platform_machine == 'x86_64'",
+
+    # --- audio in and out -------------------------------------------------
+    "soundfile>=0.12.0",
+    "sounddevice>=0.4.6",
+    "librosa>=0.10.0",
+    "scipy>=1.10.0",
+    "scikit-learn>=1.2.0",
+
+    # --- speech synthesis -------------------------------------------------
+    "kokoro>=0.3.0",
+    # spaCy arrives transitively anyway (kokoro -> misaki[en] -> spacy), and is
+    # named here for one reason: mimora/spacy_model_fetch.py pins the
+    # en_core_web_sm pipeline to an exact version, and explosion pairs a model
+    # version with a spaCy MINOR (3.8.x <-> 3.8.0 in their compatibility table).
+    # Leaving the minor to the resolver would mean a machine that one day gets
+    # spaCy 3.9 and a pinned 3.8.0 model, which spaCy loads with a warning
+    # rather than an error - a quiet degradation of every score, which is the
+    # worst shape a version mismatch can take here. Bump both together.
+    "spacy>=3.8,<3.9",
+    # preshed arrives transitively (spacy -> preshed). 3.0.14 breaks every
+    # spaCy pipeline load with "OverflowError: Python int too large to convert
+    # to C ssize_t" in Tokenizer._flush_specials, so Kokoro cannot start and
+    # the application stops at "Initialization Failed" (explosion/spaCy#14058).
+    # An upper bound and not "!=3.0.14": the cause is not known, and the next
+    # release can break the same way. Raise it only after the issue is closed
+    # and a load of en_core_web_sm passes with the new version. install.sh and
+    # install.ps1 pass the same bound to uv for releases built without it.
+    "preshed<3.0.14",
+    # Supertonic 3 (mimora/tts.py SupertonicBackend, Spanish). Pulls
+    # onnxruntime and huggingface-hub. The weights (~400 MB, OpenRAIL-M) are
+    # NOT bundled: install.py pre-downloads them, or the first run fetches them.
+    "supertonic>=0.1",
+
+    # --- pronunciation scoring -------------------------------------------
+    # phonemizer-FORK, never plain "phonemizer": both own the same import name
+    # and must not be installed together, and only the fork has the
+    # EspeakWrapper.set_data_path() that Kokoro/misaki call.
+    "phonemizer-fork>=3.3.0",
+    # The espeak-ng shared library and its data, as a wheel. It used to arrive
+    # transitively (kokoro -> misaki) and is named here for two reasons.
+    #
+    # First, it is what makes espeak-ng stop being a manual install step:
+    # pronunciation/common/espeak.py registers it with phonemizer, and a system
+    # espeak-ng is only the fallback.
+    #
+    # Second, and the reason for the upper bound: the espeak-ng build inside
+    # this wheel IS the reference transcription. phoneme_good, the five
+    # cutpoints and the whole bucket scale in
+    # pronunciation/phoneme/en_model_calibration.json were fitted against it, so
+    # a version that transcribes differently moves every score - silently, since
+    # nothing compares the two. Same argument as the spaCy pin above, except
+    # that a spaCy mismatch at least warns. Bump deliberately, and re-run the
+    # transcription diff against a reference espeak-ng before you do. 0.2.4 is
+    # what the calibration was taken with; 0.2.x has shown no transcription
+    # difference against a system espeak-ng 1.51.0 on ordinary prose.
+    # espeakng-loader 0.2.4 carries espeak-ng 1.52.0 (espeak_Info(), Windows,
+    # 2026-10-21). Read it again after any bump: the wheel version does not
+    # tell which espeak-ng is inside.
+    "espeakng-loader>=0.2.4,<0.3",
+    # Articulatory feature distance for the phoneme substitution cost - the one
+    # dependency the acoustic engine does not share.
+    "panphon>=0.20.0",
+    "python-Levenshtein>=0.21.0",
+    "fastdtw>=0.3.4",
+    # transformers needs protobuf to parse the sentencepiece model when it
+    # builds a fast tokenizer; both NLLB and the wav2vec2 phoneme tokenizer take
+    # that path. Usually transitive, pinned so a minimal resolve cannot fail
+    # with "requires the protobuf library".
+    "sentencepiece>=0.1.99",
+    "protobuf>=3.20.0",
+
+    # --- LLM and phrase generation ---------------------------------------
+    # The LLM itself has no entry on purpose: it runs in the official
+    # llama-server binary, installed by mimora/llama_server_fetch.py rather than
+    # by pip. Do not add llama-cpp-python back - it publishes no CPU wheel on
+    # recent releases, so the binary-only install would fail outright.
+    "openai>=1.0.0",
+    # Zipf word frequencies for the proficiency level's vocabulary floor. Pure
+    # Python, data ships inside the package, imported lazily.
+    "wordfreq>=3.0",
+
+    # --- model downloads --------------------------------------------------
+    # Arrives transitively but pinned because first_run_download.py passes
+    # huggingface_hub's own tqdm_class hook to snapshot_download and
+    # hf_hub_download to count bytes for the progress bar. 1.24 is the first
+    # version where hf_hub_download takes it as well (snapshot_download has
+    # since 0.x) and the version the aggregation was verified against; below it
+    # the first-run bar reports no bytes for the GGUF. Intel macOS is left
+    # unconstrained on purpose - transformers 4.x caps the hub below 1.0 there,
+    # so a pin would make that platform unsatisfiable. That is why the keyword
+    # must never be passed blind: model_fetch.progress_kwargs reads the
+    # signature first, and dropping that check breaks the Intel macOS first run.
+    "huggingface_hub>=1.24; platform_system != 'Darwin' or platform_machine != 'x86_64'",
+    # Nothing here imports click and no dependency of ours declares it: it used
+    # to arrive only because huggingface_hub 1.x requires it. That stayed
+    # invisible until Intel macOS, where the pin above does not apply, hub 0.x
+    # has no such requirement, and the first run died with "No module named
+    # 'click'" from inside the kokoro -> misaki -> spacy chain. Listed
+    # unconditionally rather than behind a marker: depending on another
+    # package's dependency would repeat this silence everywhere the day the hub
+    # drops it.
+    "click>=8.4.2",
+    # Root certificates for the two downloaders that use urllib
+    # (mimora/net.py). It arrives transitively through httpx, and is named
+    # for the same reason as click above: without it those downloads fail on
+    # a new Windows installation, and nothing else would say why.
+    "certifi>=2024.7.4",
+
+    # --- user interface ---------------------------------------------------
+    # Themed ttk widgets, imported as a drop-in "ttk". Capped below 2.0:
+    # ui_theme.py disables the classic-widget autostyle hook through the 1.x
+    # internal Bootstyle.update_tk_widget_style, which the 2.x rewrite renames.
+    "ttkbootstrap>=1.10,<2",
+    # The face and progress ring are drawn supersampled and downscaled for the
+    # antialiasing Tk Canvas lacks. >=9.1 for Image.Resampling.
+    "pillow>=9.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/vikonix/Mimora"
+Repository = "https://github.com/vikonix/Mimora"
+Issues = "https://github.com/vikonix/Mimora/issues"
+
+# cli:main, not app:run. The application module imports torch, transformers and
+# Kokoro at module level, so an entry point naming it would load all of that
+# before it could answer --version; cli.py is stdlib-only and imports the
+# application after parsing the arguments. mimora/__main__.py routes
+# `python -m mimora` into the same function.
+[project.scripts]
+mimora = "mimora.cli:main"
+
+# The same entry point without a console window, for the shortcut that the
+# Windows installer creates. The `mimora` command above stays the one to use
+# for diagnostics: a windowless process shows no traceback and no --version
+# output. On Linux and macOS the two scripts are identical.
+[project.gui-scripts]
+mimora-gui = "mimora.cli:main"
+
+# Discovered rather than listed by hand. The previous explicit list had silently
+# lost mimora.languages, without which config.LANGUAGE_PROFILES cannot be built
+# and the app does not start at all - and a hand-written list loses the next
+# subpackage the same way. namespaces = false keeps the search to directories
+# with an __init__.py, so a stray directory cannot become a package.
+[tool.setuptools.packages.find]
+include = ["mimora*", "pronunciation*"]
+namespaces = false
+
+# A wheel carries only .py files unless the data is named here, and only for
+# files that sit INSIDE a package - which is why texts/ and the theme schemas
+# moved under mimora/ rather than staying at the top of the source tree, where
+# both the build and the install would have skipped them without a word.
+#
+# The calibration is the same kind of file one package over: committed, shipped
+# with the code, read-only (paths.resource_root), unlike the per-machine
+# calibration.json that used to sit beside it and now lives under the user's
+# config/ directory.
+[tool.setuptools.package-data]
+mimora = ["texts/*.txt", "themes/*_schema.json", "icons/*"]
+"pronunciation.phoneme" = ["*_model_calibration.json"]
+
+[tool.setuptools.dynamic]
+version = { attr = "mimora.__version__" }
