@@ -54,6 +54,7 @@ EXPECTED_RESTART_KEYS = {
     "external_model_path",
     "external_n_ctx",
     "warm_up",
+    "ui_language",
 }
 
 
@@ -290,6 +291,14 @@ class DefaultsTests(unittest.TestCase):
                 continue
             self.assertIn(resolved[field.key], field.choices(),
                           f"default for {field.key!r} not among its choices")
+
+    def test_ui_language_choices_are_supported(self):
+        # The ui_language field's choices must be exactly the codes i18n can
+        # render, so a stored value can never silently fall back to English.
+        from mimora import i18n
+        field = next(f for f in all_fields() if f.key == "ui_language")
+        self.assertEqual(tuple(field.choices()), i18n.SUPPORTED_LANGUAGES)
+        self.assertIn(field.get_value(), field.choices())
 
     def test_number_defaults_are_in_range(self):
         resolved = config.default_user_settings()

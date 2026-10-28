@@ -15,7 +15,7 @@ two plain callables passed in at construction (``on_word_clicked``,
 import tkinter as tk
 from typing import Callable, Optional
 
-from mimora import config
+from mimora import config, i18n
 from mimora.face_widget import FaceWidget
 from mimora.phoneme_examples import example_for
 from mimora.progress_widget import ProgressRing
@@ -147,14 +147,14 @@ class HeroCard:
         self.score_col = tk.Frame(score_row, bg=THEME["bg_card"])
         score_col = self.score_col
         score_col.pack(side=tk.LEFT)
-        tk.Label(score_col, text="SCORE", font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"),
+        tk.Label(score_col, text=i18n.tr("SCORE"), font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"),
                  fg=THEME["text_dim"], bg=THEME["bg_card"]).pack()
         self.score_num_label = tk.Label(
             score_col, text="--", font=(FONT_FAMILY, FONT_SIZE_SCORE, "bold"),
             fg=THEME["text_dim"], bg=THEME["bg_card"])
         self.score_num_label.pack()
         self.score_verdict_label = tk.Label(
-            score_col, text="record to get a score",
+            score_col, text=i18n.tr("record to get a score"),
             font=(FONT_FAMILY, FONT_SIZE_CAPTION),
             fg=THEME["text_dim"], bg=THEME["bg_card"])
         self.score_verdict_label.pack()
@@ -185,7 +185,7 @@ class HeroCard:
         # set_hint), so the empty/unscored states stay quiet.
         self.hint_label = tk.Label(
             workon_col,
-            text="Click a word or a sound to hear it.",
+            text=i18n.tr("Click a word or a sound to hear it."),
             font=(FONT_FAMILY, FONT_SIZE_CAPTION), fg=THEME["text_muted"],
             bg=THEME["bg_card"], justify=tk.LEFT, wraplength=320)
 
@@ -412,7 +412,7 @@ class HeroCard:
         """
         for child in self.badges_frame.winfo_children():
             child.destroy()
-        self.workon_caption.configure(text="WORK ON" if phonemes else "")
+        self.workon_caption.configure(text=i18n.tr("WORK ON") if phonemes else "")
         for phoneme in phonemes:
             example = example_for(phoneme)
             badge = FlatButton(self.badges_frame, text=f"/{phoneme}/",
@@ -429,7 +429,7 @@ class HeroCard:
                 # every badge keeps its own word (not the loop's last one).
                 badge.configure(
                     command=lambda w=example: self._on_sound_example(w))
-                Tooltip(badge, f"as in '{example}'")
+                Tooltip(badge, i18n.tr("as in '{example}'", example=example))
             else:
                 badge.configure(cursor="arrow")   # nothing to play or name
 
@@ -447,7 +447,7 @@ class HeroCard:
     def reset_score_row(self):
         """Empty state: no take scored yet (or a new recording just started)."""
         self.score_num_label.configure(text="--", fg=THEME["text_dim"])
-        self.score_verdict_label.configure(text="record to get a score",
+        self.score_verdict_label.configure(text=i18n.tr("record to get a score"),
                                            fg=THEME["text_dim"])
         self.set_badges([])
         self.set_hint(False)
@@ -482,7 +482,7 @@ class HeroCard:
         if not text or text == "-":
             return
         menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label="Copy", command=lambda: self._copy_text(text))
+        menu.add_command(label=i18n.tr("Copy"), command=lambda: self._copy_text(text))
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:

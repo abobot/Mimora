@@ -31,7 +31,7 @@ from unittest import mock
 from mimora import (config, first_run, gguf_fetch, llama_server_fetch, loader,
                     model_fetch, models_info, spacy_model_fetch)
 
-ENGINES = ("phoneme", "acoustic", "none")
+ENGINES = ("phoneme", "acoustic", "hybrid", "none")
 TTS_BACKENDS = ("kokoro", "supertonic")
 
 
@@ -56,6 +56,13 @@ class RequiredLevelTests(unittest.TestCase):
                          first_run.required_models("phoneme", "kokoro"))
         self.assertNotIn(models_info.WAV2VEC2_PHONEME,
                          first_run.required_models("acoustic", "kokoro"))
+
+    def test_the_hybrid_engine_requires_both_recognizers(self):
+        # Hybrid blends the phoneme and acoustic axes, so it needs both
+        # recognizers on the machine - one alone would fail the run.
+        models = first_run.required_models("hybrid", "kokoro")
+        self.assertIn(models_info.WAV2VEC2_PHONEME, models)
+        self.assertIn(models_info.WAV2VEC2_ACOUSTIC, models)
 
     def test_only_the_active_tts_backend_model_is_required(self):
         self.assertNotIn(models_info.SUPERTONIC,
@@ -112,7 +119,9 @@ class RequiredLevelTests(unittest.TestCase):
         # what the app asks for.
         cases = {("phoneme", "kokoro"): 1640,     # default configuration
                  ("acoustic", "kokoro"): 1638,    # the other engine
-                 ("phoneme", "supertonic"): 1668}  # Spanish, no spaCy pipeline
+                 ("phoneme", "supertonic"): 1668,  # Spanish, no spaCy pipeline
+                 ("hybrid", "kokoro"): 2902,       # both recognizers
+                 ("hybrid", "supertonic"): 2930}   # both recognizers, no spaCy
         for (engine, tts_backend), expected in cases.items():
             with self.subTest(engine=engine, tts_backend=tts_backend):
                 models = first_run.required_models(engine, tts_backend)
@@ -126,6 +135,17 @@ class RequiredLevelTests(unittest.TestCase):
             with self.subTest(engine=engine):
                 self.assertEqual(config._ENGINE_MODEL_REPO[engine],
                                  model.repo_id)
+
+    def test_the_extra_recognizers_agree_with_config(self):
+        # config._hybrid_extra_repos makes the same decision for the offline
+        # gate, but only for the engine that is active at import: the gate is
+        # decided once, from the live ENGINE. The static table here says what
+        # each engine needs; the live constant must say the same for the one
+        # that is running.
+        self.assertEqual(
+            config._hybrid_extra_repos,
+            tuple(m.repo_id for m in first_run._ENGINE_EXTRA_RECOGNIZERS
+                  .get(config.ENGINE, ())))
 
 
 class TranslatorLevelTests(unittest.TestCase):

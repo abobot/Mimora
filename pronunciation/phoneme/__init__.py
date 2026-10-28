@@ -22,6 +22,7 @@ from .speech import (
     analyze,
     load_models,
     warm_up,
+    bucketize_score,
     PronunciationResult,
 )
 
@@ -29,6 +30,7 @@ __all__ = [
     "analyze",
     "load_models",
     "warm_up",
+    "bucketize_score",
     "PronunciationResult",
     "AnalyzerConfig",
     "configure",

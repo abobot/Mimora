@@ -8498,6 +8498,1050 @@
           }
         }
       ]
+    },
+    {
+      "id": "s-2026-10-28T121003-751c",
+      "started_at": "2026-10-28T12:10:03+08:00",
+      "ended_at": "2026-10-28T12:20:20+08:00",
+      "duration_sec": 617,
+      "idle_splits": 0,
+      "tags": [
+        "daily"
+      ],
+      "totals": {
+        "takes": 4,
+        "unique_phrases": 3,
+        "avg_best_score": 45.94,
+        "max_score": 60.1,
+        "avg_wpm": 343.83
+      },
+      "takes": [
+        {
+          "id": "t-121003-1e30",
+          "timestamp": "2026-10-28T12:10:13+08:00",
+          "phrase": "Generally I like the smell in the town.",
+          "score": 60.1,
+          "grade": "3-",
+          "grade_value": 2.67,
+          "attempts": 1,
+          "audio_duration_sec": 4.49,
+          "transcript": "tʃ ɪ n a r ə l i aɪ n aɪ k ts ʌ s s m ɑ i n z ə t ɑ̃",
+          "words_per_minute": 320.71269487750556,
+          "error_words": [
+            {
+              "word": "smell",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "town.",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "n",
+              "score": 0.0,
+              "count": 1
+            },
+            {
+              "ipa": "l",
+              "score": 0.5832999999999999,
+              "count": 1
+            },
+            {
+              "ipa": "i",
+              "score": 0.6667000000000001,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T121003-751c",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-121130-e3a1",
+          "timestamp": "2026-10-28T12:11:34+08:00",
+          "phrase": "The thought is a thought.",
+          "score": 34.66,
+          "grade": "2",
+          "grade_value": 2.0,
+          "attempts": 1,
+          "audio_duration_sec": 2.42,
+          "transcript": "t ɪ s s ɑ n t i z ə s ɑ t",
+          "words_per_minute": 322.3140495867769,
+          "error_words": [
+            {
+              "word": "is",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "ɪ",
+              "score": 0.5832999999999999,
+              "count": 1
+            },
+            {
+              "ipa": "z",
+              "score": 0.625,
+              "count": 1
+            },
+            {
+              "ipa": "ɔ",
+              "score": 0.6667000000000001,
+              "count": 2
+            }
+          ],
+          "session_id": "s-2026-10-28T121003-751c",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-121142-b9a1",
+          "timestamp": "2026-10-28T12:11:46+08:00",
+          "phrase": "The thought is a thought.",
+          "score": 20.88,
+          "grade": "2-",
+          "grade_value": 1.67,
+          "attempts": 2,
+          "audio_duration_sec": 2.51,
+          "transcript": "a s t d ə p t i z ɛ s z ɔ l t",
+          "words_per_minute": 358.5657370517929,
+          "error_words": [
+            {
+              "word": "the",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "ə",
+              "score": 0.5832999999999999,
+              "count": 1
+            },
+            {
+              "ipa": "ɪ",
+              "score": 0.5832999999999999,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T121003-751c",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-121942-f963",
+          "timestamp": "2026-10-28T12:19:51+08:00",
+          "phrase": "Generally, birds sing very loudly outside homes.",
+          "score": 43.06,
+          "grade": "2+",
+          "grade_value": 2.33,
+          "attempts": 1,
+          "audio_duration_sec": 5.94,
+          "transcript": "tʃ ɪ n a ɡ ə n l i v ə s t s a ɲ u r a r i n ɔ k ə l i ɑ l s t a d ə h o m",
+          "words_per_minute": 373.73737373737373,
+          "error_words": [
+            {
+              "word": "homes.",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "r",
+              "score": 0.625,
+              "count": 1
+            },
+            {
+              "ipa": "m",
+              "score": 0.625,
+              "count": 1
+            },
+            {
+              "ipa": "v",
+              "score": 0.6667000000000001,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T121003-751c",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        }
+      ]
+    },
+    {
+      "id": "s-2026-10-28T123814-3684",
+      "started_at": "2026-10-28T12:38:14+08:00",
+      "ended_at": "2026-10-28T12:38:56+08:00",
+      "duration_sec": 42,
+      "idle_splits": 0,
+      "tags": [
+        "daily"
+      ],
+      "totals": {
+        "takes": 2,
+        "unique_phrases": 1,
+        "avg_best_score": 73.6,
+        "max_score": 73.6,
+        "avg_wpm": 326.14
+      },
+      "takes": [
+        {
+          "id": "t-123814-e423",
+          "timestamp": "2026-10-28T12:38:21+08:00",
+          "phrase": "It's quite been a while since we met.",
+          "score": 73.6,
+          "grade": "3+",
+          "grade_value": 3.33,
+          "attempts": 1,
+          "audio_duration_sec": 5.01,
+          "transcript": "ɪ t s k r aɪ t ə d b i ɪ ŋ ʌ w aɪ z s ɪ n s w i m i t",
+          "words_per_minute": 311.37724550898207,
+          "error_words": [],
+          "phoneme_scores": [
+            {
+              "ipa": "n",
+              "score": 0.625,
+              "count": 1
+            },
+            {
+              "ipa": "e",
+              "score": 0.6667000000000001,
+              "count": 1
+            },
+            {
+              "ipa": "w",
+              "score": 0.7082999999999999,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T123814-3684",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-123840-0128",
+          "timestamp": "2026-10-28T12:38:45+08:00",
+          "phrase": "It's quite been a while since we met.",
+          "score": 30.5,
+          "grade": "2",
+          "grade_value": 2.0,
+          "attempts": 2,
+          "audio_duration_sec": 3.52,
+          "transcript": "ɪ z k r d ə p i w ɛ h a s ɪ n s d m i t",
+          "words_per_minute": 340.90909090909093,
+          "error_words": [
+            {
+              "word": "it's",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "quite",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "been",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "while",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "we",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "w",
+              "score": 0.0,
+              "count": 3
+            },
+            {
+              "ipa": "t",
+              "score": 0.0,
+              "count": 2
+            },
+            {
+              "ipa": "n",
+              "score": 0.0,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T123814-3684",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        }
+      ]
+    },
+    {
+      "id": "s-2026-10-28T153019-31ba",
+      "started_at": "2026-10-28T15:30:19+08:00",
+      "ended_at": "2026-10-28T15:34:33+08:00",
+      "duration_sec": 254,
+      "idle_splits": 0,
+      "tags": [
+        "daily"
+      ],
+      "totals": {
+        "takes": 5,
+        "unique_phrases": 2,
+        "avg_best_score": 68.1,
+        "max_score": 76.9,
+        "avg_wpm": 301.13
+      },
+      "takes": [
+        {
+          "id": "t-153019-23c1",
+          "timestamp": "2026-10-28T15:30:25+08:00",
+          "phrase": "She could really use a helping hand.",
+          "score": 59.3,
+          "grade": "3-",
+          "grade_value": 2.67,
+          "attempts": 1,
+          "audio_duration_sec": 3.45,
+          "transcript": "h i ʃ ʊ d ə r eɪ n ə j u ts ə aʊ x k e r p ɪ x ɛ n t",
+          "words_per_minute": 434.78260869565213,
+          "error_words": [
+            {
+              "word": "helping",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "ɪ",
+              "score": 0.45830000000000004,
+              "count": 2
+            },
+            {
+              "ipa": "ɛ",
+              "score": 0.625,
+              "count": 1
+            },
+            {
+              "ipa": "p",
+              "score": 0.625,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T153019-31ba",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-153059-c126",
+          "timestamp": "2026-10-28T15:31:03+08:00",
+          "phrase": "This is your practice text",
+          "score": 76.9,
+          "grade": "3+",
+          "grade_value": 3.33,
+          "attempts": 1,
+          "audio_duration_sec": 2.99,
+          "transcript": "ts ɪ s i z j u ɑ p a r ə t i z t ɛ k s t",
+          "words_per_minute": 401.33779264214047,
+          "error_words": [],
+          "phoneme_scores": [
+            {
+              "ipa": "p",
+              "score": 0.5417000000000001,
+              "count": 1
+            },
+            {
+              "ipa": "r",
+              "score": 0.625,
+              "count": 1
+            },
+            {
+              "ipa": "k",
+              "score": 0.6667000000000001,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T153019-31ba",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-153129-f6d1",
+          "timestamp": "2026-10-28T15:31:37+08:00",
+          "phrase": "This is your practice text",
+          "score": 56.9,
+          "grade": "3-",
+          "grade_value": 2.67,
+          "attempts": 2,
+          "audio_duration_sec": 6.4,
+          "transcript": "ð ɪ s i z j u ɑ p ə r a k t i s t t ɛ k s p t",
+          "words_per_minute": 215.625,
+          "error_words": [],
+          "phoneme_scores": [],
+          "session_id": "s-2026-10-28T153019-31ba",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-153147-30aa",
+          "timestamp": "2026-10-28T15:31:51+08:00",
+          "phrase": "This is your practice text",
+          "score": 7.9,
+          "grade": "0+",
+          "grade_value": 0.33,
+          "attempts": 3,
+          "audio_duration_sec": 2.75,
+          "transcript": "t ɪ s ɪ t",
+          "words_per_minute": 109.0909090909091,
+          "error_words": [
+            {
+              "word": "this",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "is",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "your",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "practice",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "text",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "ɪ",
+              "score": 0.0,
+              "count": 2
+            },
+            {
+              "ipa": "s",
+              "score": 0.0,
+              "count": 2
+            },
+            {
+              "ipa": "k",
+              "score": 0.0,
+              "count": 2
+            }
+          ],
+          "session_id": "s-2026-10-28T153019-31ba",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-153156-1145",
+          "timestamp": "2026-10-28T15:32:00+08:00",
+          "phrase": "This is your practice text",
+          "score": 51.3,
+          "grade": "2+",
+          "grade_value": 2.33,
+          "attempts": 4,
+          "audio_duration_sec": 3.48,
+          "transcript": "z i s i d z j u ə p ə ɡ ə t i s t ɛ s t",
+          "words_per_minute": 344.8275862068965,
+          "error_words": [],
+          "phoneme_scores": [
+            {
+              "ipa": "k",
+              "score": 0.0,
+              "count": 1
+            },
+            {
+              "ipa": "p",
+              "score": 0.625,
+              "count": 1
+            },
+            {
+              "ipa": "r",
+              "score": 0.625,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T153019-31ba",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        }
+      ]
+    },
+    {
+      "id": "s-2026-10-28T173018-a1f7",
+      "started_at": "2026-10-28T17:30:18+08:00",
+      "ended_at": null,
+      "duration_sec": 0,
+      "idle_splits": 0,
+      "tags": [
+        "daily"
+      ],
+      "totals": {
+        "takes": 12,
+        "unique_phrases": 5,
+        "avg_best_score": 62.14,
+        "max_score": 82.7,
+        "avg_wpm": 381.25
+      },
+      "takes": [
+        {
+          "id": "t-173018-699b",
+          "timestamp": "2026-10-28T17:30:24+08:00",
+          "phrase": "These days I'm not really in practice.",
+          "score": 78.7,
+          "grade": "3+",
+          "grade_value": 3.33,
+          "attempts": 1,
+          "audio_duration_sec": 4.08,
+          "transcript": "ð ɪ z d eɪ z a m n ɑ t r ɪ d i ɪ n p ə r a ɡ ɪ t i v z",
+          "words_per_minute": 397.0588235294117,
+          "error_words": [],
+          "phoneme_scores": [],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-173033-93a4",
+          "timestamp": "2026-10-28T17:30:38+08:00",
+          "phrase": "These days I'm not really in practice.",
+          "score": 71.2,
+          "grade": "3",
+          "grade_value": 3.0,
+          "attempts": 2,
+          "audio_duration_sec": 3.72,
+          "transcript": "ð ɪ s d eɪ z a m n ɑ t t ə r eɪ d ɪ n i p r ə a k t i z",
+          "words_per_minute": 435.4838709677419,
+          "error_words": [],
+          "phoneme_scores": [
+            {
+              "ipa": "r",
+              "score": 0.75,
+              "count": 1
+            },
+            {
+              "ipa": "l",
+              "score": 0.8333,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-173208-63ad",
+          "timestamp": "2026-10-28T17:32:14+08:00",
+          "phrase": "These days I'm not really in practice.",
+          "score": 42.9,
+          "grade": "2+",
+          "grade_value": 2.33,
+          "attempts": 3,
+          "audio_duration_sec": 4.23,
+          "transcript": "ð ɪ s d eɪ z ɛ m r eɪ d ɪ n ɑ n t h i n p ə k ə t ɪ s t",
+          "words_per_minute": 382.9787234042553,
+          "error_words": [],
+          "phoneme_scores": [
+            {
+              "ipa": "r",
+              "score": 0.375,
+              "count": 2
+            },
+            {
+              "ipa": "a",
+              "score": 0.625,
+              "count": 1
+            },
+            {
+              "ipa": "k",
+              "score": 0.6667000000000001,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-173220-e992",
+          "timestamp": "2026-10-28T17:32:26+08:00",
+          "phrase": "These days I'm not really in practice.",
+          "score": 16.2,
+          "grade": "2-",
+          "grade_value": 1.67,
+          "attempts": 4,
+          "audio_duration_sec": 4.0,
+          "transcript": "ts ɪ s t eɪ s t a m r ɛ d i",
+          "words_per_minute": 195.0,
+          "error_words": [
+            {
+              "word": "i'm",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "not",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "really",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "in",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "practice.",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "n",
+              "score": 0.0,
+              "count": 2
+            },
+            {
+              "ipa": "aɪ",
+              "score": 0.0,
+              "count": 1
+            },
+            {
+              "ipa": "m",
+              "score": 0.0,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-173232-2489",
+          "timestamp": "2026-10-28T17:32:37+08:00",
+          "phrase": "These days I'm not really in practice.",
+          "score": 74.4,
+          "grade": "3+",
+          "grade_value": 3.33,
+          "attempts": 5,
+          "audio_duration_sec": 4.2,
+          "transcript": "ð ɪ z d eɪ z t a n n ɑ t r eɪ d i ŋ p ə r a ɡ ɪ t i z",
+          "words_per_minute": 371.4285714285714,
+          "error_words": [
+            {
+              "word": "in",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "p",
+              "score": 0.625,
+              "count": 1
+            },
+            {
+              "ipa": "ɪ",
+              "score": 0.7082999999999999,
+              "count": 1
+            },
+            {
+              "ipa": "n",
+              "score": 0.75,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-173251-3caa",
+          "timestamp": "2026-10-28T17:32:57+08:00",
+          "phrase": "Generally speaking, life moves quickly while you wait.",
+          "score": 80.3,
+          "grade": "4-",
+          "grade_value": 3.67,
+          "attempts": 1,
+          "audio_duration_sec": 4.55,
+          "transcript": "dʒ ɛ n ə r ə s t p i k i n l ɛ v m u v z k r ɪ k l i r ɛ j w i t",
+          "words_per_minute": 421.97802197802196,
+          "error_words": [
+            {
+              "word": "while",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "you",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "l",
+              "score": 0.0,
+              "count": 1
+            },
+            {
+              "ipa": "u",
+              "score": 0.0,
+              "count": 1
+            },
+            {
+              "ipa": "w",
+              "score": 0.16669999999999996,
+              "count": 2
+            }
+          ],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-173358-6cd8",
+          "timestamp": "2026-10-28T17:34:05+08:00",
+          "phrase": "Generally speaking, life moves quickly while you wait.",
+          "score": 76.2,
+          "grade": "3+",
+          "grade_value": 3.33,
+          "attempts": 2,
+          "audio_duration_sec": 5.1,
+          "transcript": "k ɪ n d ə s p i k ɪ ŋ n ɛ v m u v z k r ɪ k l i w ɛ j u w i t",
+          "words_per_minute": 364.7058823529412,
+          "error_words": [
+            {
+              "word": "generally",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "while",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "ə",
+              "score": 0.0,
+              "count": 1
+            },
+            {
+              "ipa": "i",
+              "score": 0.0,
+              "count": 1
+            },
+            {
+              "ipa": "l",
+              "score": 0.0,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-173443-6ccb",
+          "timestamp": "2026-10-28T17:34:45+08:00",
+          "phrase": "This is your practice text",
+          "score": 0.0,
+          "grade": "0-",
+          "grade_value": -0.33,
+          "attempts": 1,
+          "audio_duration_sec": 1.21,
+          "transcript": "",
+          "words_per_minute": 0.0,
+          "error_words": [
+            {
+              "word": "this",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "is",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "your",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "practice",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "text",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "ɪ",
+              "score": 0.0,
+              "count": 3
+            },
+            {
+              "ipa": "s",
+              "score": 0.0,
+              "count": 3
+            },
+            {
+              "ipa": "t",
+              "score": 0.0,
+              "count": 3
+            }
+          ],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-173514-2c4c",
+          "timestamp": "2026-10-28T17:35:19+08:00",
+          "phrase": "You can change it whenever you like",
+          "score": 82.7,
+          "grade": "4-",
+          "grade_value": 3.67,
+          "attempts": 1,
+          "audio_duration_sec": 3.39,
+          "transcript": "j u k ɛ n t tʃ eɪ n dʒ eɪ t w ɛ n n a w ɛ j u l aɪ k",
+          "words_per_minute": 424.7787610619469,
+          "error_words": [],
+          "phoneme_scores": [
+            {
+              "ipa": "v",
+              "score": 0.7082999999999999,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-173535-b93d",
+          "timestamp": "2026-10-28T17:35:44+08:00",
+          "phrase": "I was wondering if you could give me a hand with this",
+          "score": 56.5,
+          "grade": "3-",
+          "grade_value": 2.67,
+          "attempts": 1,
+          "audio_duration_sec": 7.85,
+          "transcript": "aɪ w ʌ z ə w ɔ n t ə r i n n e b ə j u k u d ə k eɪ m m i ʌ x h ɛ n t ɔ w ɪ t z eɪ s",
+          "words_per_minute": 313.37579617834393,
+          "error_words": [
+            {
+              "word": "was",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "ɪ",
+              "score": 0.45830000000000004,
+              "count": 2
+            },
+            {
+              "ipa": "ʌ",
+              "score": 0.625,
+              "count": 1
+            },
+            {
+              "ipa": "z",
+              "score": 0.625,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-173552-b04d",
+          "timestamp": "2026-10-28T17:35:59+08:00",
+          "phrase": "I was wondering if you could give me a hand with this",
+          "score": 67.7,
+          "grade": "3",
+          "grade_value": 3.0,
+          "attempts": 2,
+          "audio_duration_sec": 5.28,
+          "transcript": "aɪ w ʌ z w ʌ n d ə r r ɪ n i j u k ʊ d ə k ɪ l m i ʌ x ɛ n d ə w ɪ d ð i z",
+          "words_per_minute": 420.45454545454544,
+          "error_words": [
+            {
+              "word": "i",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "if",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "hand",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "ɪ",
+              "score": 0.0,
+              "count": 4
+            },
+            {
+              "ipa": "a",
+              "score": 0.5832999999999999,
+              "count": 1
+            },
+            {
+              "ipa": "f",
+              "score": 0.625,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "id": "t-173611-91db",
+          "timestamp": "2026-10-28T17:36:17+08:00",
+          "phrase": "I was wondering if you could give me a hand with this",
+          "score": 69.0,
+          "grade": "3",
+          "grade_value": 3.0,
+          "attempts": 3,
+          "audio_duration_sec": 4.63,
+          "transcript": "a w ʌ z w ʌ n t ə r ə ŋ v i w i k ʊ d ə k ɪ m i ŋ x ɛ n d ɪ w ɪ z z eɪ z",
+          "words_per_minute": 466.5226781857452,
+          "error_words": [
+            {
+              "word": "i",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "if",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "give",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "a",
+              "score": 0.0,
+              "error_type": "missing"
+            },
+            {
+              "word": "hand",
+              "score": 0.0,
+              "error_type": "missing"
+            }
+          ],
+          "phoneme_scores": [
+            {
+              "ipa": "ɪ",
+              "score": 0.0,
+              "count": 4
+            },
+            {
+              "ipa": "a",
+              "score": 0.5832999999999999,
+              "count": 1
+            },
+            {
+              "ipa": "f",
+              "score": 0.625,
+              "count": 1
+            }
+          ],
+          "session_id": "s-2026-10-28T173018-a1f7",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        }
+      ]
     }
   ],
   "drill_sessions": [
@@ -8903,6 +9947,71 @@
           "passed": false,
           "audio_session_id": "s-2026-10-28T024257-d286",
           "audio_take_id": "t-024400-e4d0",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        }
+      ]
+    },
+    {
+      "id": "d-2026-10-28T153213-e2e1",
+      "target": {
+        "type": "phoneme",
+        "value": "ð"
+      },
+      "started_at": "2026-10-28T15:32:13+08:00",
+      "ended_at": "2026-10-28T15:32:13+08:00",
+      "attempts": 4,
+      "passed": 0,
+      "first_score": 76.9,
+      "last_score": 51.3,
+      "avg_score": 48.25,
+      "outcome": "unfinished",
+      "takes": [
+        {
+          "phrase": "This is your practice text",
+          "score": 76.9,
+          "attempt": 1,
+          "passed": false,
+          "audio_session_id": "s-2026-10-28T153019-31ba",
+          "audio_take_id": "t-153059-c126",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "phrase": "This is your practice text",
+          "score": 56.9,
+          "attempt": 2,
+          "passed": false,
+          "audio_session_id": "s-2026-10-28T153019-31ba",
+          "audio_take_id": "t-153129-f6d1",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "phrase": "This is your practice text",
+          "score": 7.9,
+          "attempt": 3,
+          "passed": false,
+          "audio_session_id": "s-2026-10-28T153019-31ba",
+          "audio_take_id": "t-153147-30aa",
+          "audio_files": {
+            "raw": "raw.wav",
+            "normalized": "normalized.wav"
+          }
+        },
+        {
+          "phrase": "This is your practice text",
+          "score": 51.3,
+          "attempt": 4,
+          "passed": false,
+          "audio_session_id": "s-2026-10-28T153019-31ba",
+          "audio_take_id": "t-153156-1145",
           "audio_files": {
             "raw": "raw.wav",
             "normalized": "normalized.wav"
@@ -9764,6 +10873,323 @@
             "lazy",
             "dog"
           ],
+          "extra_words": []
+        }
+      ]
+    },
+    {
+      "id": "dt-2026-10-28T051904-6ddf",
+      "started_at": "2026-10-28T05:19:04+08:00",
+      "ended_at": "2026-10-28T05:19:04+08:00",
+      "attempts": 10,
+      "passed": 0,
+      "first_score": 0.0,
+      "last_score": 0.0,
+      "avg_score": 0.0,
+      "outcome": "unfinished",
+      "wrong_words": [
+        "the",
+        "quick",
+        "brown",
+        "fox",
+        "jumps",
+        "over",
+        "lazy",
+        "dog",
+        "she",
+        "sells",
+        "seashells",
+        "by",
+        "seashore",
+        "rain",
+        "in",
+        "spain",
+        "falls",
+        "mainly",
+        "on",
+        "plain",
+        "peter",
+        "piper",
+        "picked",
+        "a",
+        "peck",
+        "of",
+        "pickled",
+        "peppers",
+        "how",
+        "much",
+        "wood",
+        "would",
+        "woodchuck",
+        "chuck",
+        "smooth",
+        "sea",
+        "never",
+        "made",
+        "skilled",
+        "sailor"
+      ],
+      "extra_words": [],
+      "takes": [
+        {
+          "user_text": "        ",
+          "reference_text": "The quick brown fox jumps over the lazy dog.",
+          "score": 0.0,
+          "attempt": 1,
+          "passed": false,
+          "wrong_words": [
+            "the",
+            "quick",
+            "brown",
+            "fox",
+            "jumps",
+            "over",
+            "the",
+            "lazy",
+            "dog"
+          ],
+          "extra_words": []
+        },
+        {
+          "user_text": "     ",
+          "reference_text": "She sells seashells by the seashore.",
+          "score": 0.0,
+          "attempt": 2,
+          "passed": false,
+          "wrong_words": [
+            "she",
+            "sells",
+            "seashells",
+            "by",
+            "the",
+            "seashore"
+          ],
+          "extra_words": []
+        },
+        {
+          "user_text": "        ",
+          "reference_text": "The quick brown fox jumps over the lazy dog.",
+          "score": 0.0,
+          "attempt": 3,
+          "passed": false,
+          "wrong_words": [
+            "the",
+            "quick",
+            "brown",
+            "fox",
+            "jumps",
+            "over",
+            "the",
+            "lazy",
+            "dog"
+          ],
+          "extra_words": []
+        },
+        {
+          "user_text": "     ",
+          "reference_text": "She sells seashells by the seashore.",
+          "score": 0.0,
+          "attempt": 4,
+          "passed": false,
+          "wrong_words": [
+            "she",
+            "sells",
+            "seashells",
+            "by",
+            "the",
+            "seashore"
+          ],
+          "extra_words": []
+        },
+        {
+          "user_text": "        ",
+          "reference_text": "The quick brown fox jumps over the lazy dog.",
+          "score": 0.0,
+          "attempt": 5,
+          "passed": false,
+          "wrong_words": [
+            "the",
+            "quick",
+            "brown",
+            "fox",
+            "jumps",
+            "over",
+            "the",
+            "lazy",
+            "dog"
+          ],
+          "extra_words": []
+        },
+        {
+          "user_text": "     ",
+          "reference_text": "She sells seashells by the seashore.",
+          "score": 0.0,
+          "attempt": 6,
+          "passed": false,
+          "wrong_words": [
+            "she",
+            "sells",
+            "seashells",
+            "by",
+            "the",
+            "seashore"
+          ],
+          "extra_words": []
+        },
+        {
+          "user_text": "        ",
+          "reference_text": "The rain in Spain falls mainly on the plain.",
+          "score": 0.0,
+          "attempt": 7,
+          "passed": false,
+          "wrong_words": [
+            "the",
+            "rain",
+            "in",
+            "spain",
+            "falls",
+            "mainly",
+            "on",
+            "the",
+            "plain"
+          ],
+          "extra_words": []
+        },
+        {
+          "user_text": "       ",
+          "reference_text": "Peter Piper picked a peck of pickled peppers.",
+          "score": 0.0,
+          "attempt": 8,
+          "passed": false,
+          "wrong_words": [
+            "peter",
+            "piper",
+            "picked",
+            "a",
+            "peck",
+            "of",
+            "pickled",
+            "peppers"
+          ],
+          "extra_words": []
+        },
+        {
+          "user_text": "      ",
+          "reference_text": "How much wood would a woodchuck chuck.",
+          "score": 0.0,
+          "attempt": 9,
+          "passed": false,
+          "wrong_words": [
+            "how",
+            "much",
+            "wood",
+            "would",
+            "a",
+            "woodchuck",
+            "chuck"
+          ],
+          "extra_words": []
+        },
+        {
+          "user_text": "       ",
+          "reference_text": "A smooth sea never made a skilled sailor.",
+          "score": 0.0,
+          "attempt": 10,
+          "passed": false,
+          "wrong_words": [
+            "a",
+            "smooth",
+            "sea",
+            "never",
+            "made",
+            "a",
+            "skilled",
+            "sailor"
+          ],
+          "extra_words": []
+        }
+      ]
+    },
+    {
+      "id": "dt-2026-10-28T173920-ed63",
+      "started_at": "2026-10-28T17:39:20+08:00",
+      "ended_at": "2026-10-28T17:39:20+08:00",
+      "attempts": 3,
+      "passed": 3,
+      "first_score": 100.0,
+      "last_score": 100.0,
+      "avg_score": 100.0,
+      "outcome": "mastered",
+      "wrong_words": [],
+      "extra_words": [],
+      "takes": [
+        {
+          "user_text": "this is your practice text",
+          "reference_text": "This is your practice text",
+          "score": 100.0,
+          "attempt": 1,
+          "passed": true,
+          "wrong_words": [],
+          "extra_words": []
+        },
+        {
+          "user_text": "you can change it whenever you like",
+          "reference_text": "You can change it whenever you like",
+          "score": 100.0,
+          "attempt": 2,
+          "passed": true,
+          "wrong_words": [],
+          "extra_words": []
+        },
+        {
+          "user_text": "hello how have you been doing lately",
+          "reference_text": "Hello, how have you been doing lately",
+          "score": 100.0,
+          "attempt": 3,
+          "passed": true,
+          "wrong_words": [],
+          "extra_words": []
+        }
+      ]
+    },
+    {
+      "id": "dt-2026-10-28T174028-cc79",
+      "started_at": "2026-10-28T17:40:28+08:00",
+      "ended_at": "2026-10-28T17:40:28+08:00",
+      "attempts": 3,
+      "passed": 3,
+      "first_score": 100.0,
+      "last_score": 100.0,
+      "avg_score": 100.0,
+      "outcome": "mastered",
+      "wrong_words": [],
+      "extra_words": [],
+      "takes": [
+        {
+          "user_text": "this is your practice text",
+          "reference_text": "This is your practice text",
+          "score": 100.0,
+          "attempt": 1,
+          "passed": true,
+          "wrong_words": [],
+          "extra_words": []
+        },
+        {
+          "user_text": "you can change it whenever you like",
+          "reference_text": "You can change it whenever you like",
+          "score": 100.0,
+          "attempt": 2,
+          "passed": true,
+          "wrong_words": [],
+          "extra_words": []
+        },
+        {
+          "user_text": "hello how have you been doing lately",
+          "reference_text": "Hello, how have you been doing lately",
+          "score": 100.0,
+          "attempt": 3,
+          "passed": true,
+          "wrong_words": [],
           "extra_words": []
         }
       ]

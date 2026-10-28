@@ -639,6 +639,32 @@ def acoustic_bad_for(baseline: float, acoustic_good: Optional[float] = None) -> 
     return max(ACOUSTIC_BAD_FRACTION * baseline, good + ACOUSTIC_MIN_SPAN)
 
 
+def acoustic_dtw_score(acoustic_per_step: float,
+                       acoustic_bad: Optional[float] = None,
+                       acoustic_good: Optional[float] = None) -> float:
+    """Normalize a per-step DTW distance onto 0-100 (good floor -> bad ceiling).
+
+    The floor comes from the calibrated ``current_acoustic_floor`` unless an
+    override is given; the ceiling is the per-utterance ``acoustic_bad`` (falling
+    back to the fixed default). The hybrid engine reuses this as the acoustic
+    axis of its blend, so it is a public function rather than a local.
+    """
+    good = current_acoustic_floor() if acoustic_good is None else acoustic_good
+    bad = ACOUSTIC_BAD_DEFAULT if acoustic_bad is None else acoustic_bad
+    bad = max(bad, good + ACOUSTIC_MIN_SPAN)
+    return 100.0 * min(1.0, max(0.0, 1.0 - (acoustic_per_step - good) / (bad - good)))
+
+
+def acoustic_phoneme_score(phoneme_error_rate: float) -> float:
+    """Normalize a phoneme error rate onto 0-100 (0 errors -> 100)."""
+    return 100.0 * min(1.0, max(0.0, 1.0 - phoneme_error_rate))
+
+
+def acoustic_word_score(word_error_rate: float) -> float:
+    """Normalize a word (character-level) error rate onto 0-100."""
+    return 100.0 * min(1.0, max(0.0, 1.0 - word_error_rate))
+
+
 def compute_pronunciation_score(acoustic_per_step: float,
                                 phoneme_error_rate: float,
                                 word_error_rate: float,
@@ -655,13 +681,9 @@ def compute_pronunciation_score(acoustic_per_step: float,
         acoustic_good: floor override; defaults to the calibrated floor in effect
             (see ``current_acoustic_floor``).
     """
-    good = current_acoustic_floor() if acoustic_good is None else acoustic_good
-    bad = ACOUSTIC_BAD_DEFAULT if acoustic_bad is None else acoustic_bad
-    bad = max(bad, good + ACOUSTIC_MIN_SPAN)
-
-    dtw_score = 100.0 * min(1.0, max(0.0, 1.0 - (acoustic_per_step - good) / (bad - good)))
-    phoneme_score = 100.0 * min(1.0, max(0.0, 1.0 - phoneme_error_rate))
-    word_score = 100.0 * min(1.0, max(0.0, 1.0 - word_error_rate))
+    dtw_score = acoustic_dtw_score(acoustic_per_step, acoustic_bad, acoustic_good)
+    phoneme_score = acoustic_phoneme_score(phoneme_error_rate)
+    word_score = acoustic_word_score(word_error_rate)
 
     # Weighting: acoustic DTW 40%, phonemes 30%, words 30%.
     final_score = 0.4 * dtw_score + 0.3 * phoneme_score + 0.3 * word_score

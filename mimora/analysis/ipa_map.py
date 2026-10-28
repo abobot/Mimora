@@ -1,34 +1,36 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Valeriy Kovalev
 
-"""Best-effort English word -> IPA conversion.
+"""English word -> IPA conversion, backed by the pronunciation engine's G2P.
 
 The persistence layer stores ``phoneme_scores[]`` from the engine's
 ``weak_phonemes`` output (IPA symbols only, no per-word association).
 When the UI wants to show "which word caused this phoneme error", we
-need the reverse mapping. Rather than depending on a full phonemizer,
-this module ships a small hand-curated table of common English words
-and their standard G2P-ESpeak-style IPA transcriptions.
+need the reverse mapping. This module routes through the engine's own
+espeak-ng pipeline (``pronunciation.phoneme.speech.reference_word_phonemes``),
+so the symbols are exactly the folded inventory the scorer uses - never
+a second, drifting transcription.
 
-The table is deliberately small (~200 entries) so it stays
-maintainable by hand; unknown words fall back to a heuristic that
-reads the word's orthography character-by-character and produces a
-rough IPA. That heuristic is not accurate for every word, but it is
-good enough to show the user a reasonable IPA sequence and to detect
-common vowel/consonant patterns (th-, sh-, ch-, etc.).
-
-If the project ever decides to add ``misaki`` or ``espeak-ng`` as a
-dependency, ``word_to_ipa()`` is the single seam to swap.
+``word_to_ipa()`` is the single seam the project anticipated: it used to
+ship a small hand-curated table plus a character heuristic, and the
+engine already phonemizes with the bundled espeak-ng. The hand table and
+heuristic are retained only as a soft-degrade fallback (espeak not
+available, exotic word, or an error inside the engine), so the UI still
+gets a best-effort string rather than nothing. The fallback is deliberately
+not accurate for every word ("through"/"though" come out wrong) - it is a
+rough guide for the rare case the real G2P cannot run.
 """
 
 from __future__ import annotations
 
-import re
+import logging
+
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Known words. Format: lowercase -> IPA (with spaces between phonemes).
-# Only common words used in Mimora's practice phrases are listed; anything
-# not here falls through to the heuristic.
+# Only used as the soft-degrade fallback when the engine G2P cannot run.
+# Kept deliberately small (~200 entries) so it stays maintainable by hand.
 # ---------------------------------------------------------------------------
 _KNOWN_WORDS = {
     "the": "ðə", "a": "ə", "an": "ən", "is": "ɪz", "of": "ʌv", "to": "tuː",
@@ -92,12 +94,12 @@ _KNOWN_WORDS = {
 
 
 # ---------------------------------------------------------------------------
-# Heuristic fallback for unknown words.
+# Heuristic fallback for unknown words (soft-degrade path only).
 # ---------------------------------------------------------------------------
 # Each entry maps a substring (checked in order) to the IPA it usually
 # represents. Longer matches take priority, so "ch" beats "c" and "sh"
 # beats "s". This is not a real G2P - it is a rough guide for the case
-# where a word is not in _KNOWN_WORDS.
+# where espeak cannot run.
 _HEURISTIC_PATTERNS = [
     ("tion", "ʃən"), ("sion", "ʒən"), ("ture", "tʃɚ"), ("sure", "ʒɚ"),
     ("ough", "oʊ"), ("augh", "ɔː"),
@@ -117,22 +119,78 @@ _HEURISTIC_PATTERNS = [
 ]
 
 
-def word_to_ipa(word: str) -> str:
+# The engine's G2P is the primary path; imported lazily so this module loads
+# without espeak/phonemizer (only the fallback needs it, and only on demand).
+_g2p = None
+
+
+def _engine_g2p():
+    """Return the engine's ``reference_word_phonemes``, importing it once.
+
+    The pronunciation package is deliberately a sibling, never a dependency
+    of the fallback: importing it pulls in the espeak/panphon stack, which
+    this module should not require just to answer a UI query. Imported lazily
+    and cached so repeated calls after a failure retry on the next call
+    (a transient espeak problem should not permanently disable G2P).
+    """
+    global _g2p
+    if _g2p is None:
+        from pronunciation.phoneme.speech import reference_word_phonemes
+        _g2p = reference_word_phonemes
+    return _g2p
+
+
+def _espeak_language() -> str:
+    """The active espeak language code, or ``"en-us"`` on any failure.
+
+    The engine reads the same value from ``mimora.config.ESPEAK_LANGUAGE``;
+    routing through ``mimora.config`` keeps the two in sync without duplicating
+    the profile lookup. Falls back to the engine's own default if the host
+    config is unavailable (library use outside the app).
+    """
+    try:
+        from mimora import config as _host_config
+        return getattr(_host_config, "ESPEAK_LANGUAGE", None) or "en-us"
+    except Exception:
+        return "en-us"
+
+
+def word_to_ipa(word: str, espeak_lang: str | None = None) -> str:
     """Return the best-guess IPA for one word, or empty string for ``""``.
 
-    Uses the known-words table first; falls back to a character
-    heuristic. The result is a single IPA string without spaces (the
-    extractor's shape). Not perfect - "through" and "though" would both
-    come out as ``θroʊ`` and ``θɒ`` respectively, and neither is
-    correct - but it is a reasonable enough approximation for the
-    "which word caused this phoneme" UI question.
+    Primary path is the pronunciation engine's espeak-ng G2P, so the returned
+    symbols are the same folded inventory the scorer uses. Falls back to a
+    hand-curated table plus character heuristic only when the engine G2P
+    cannot run (espeak unavailable, exotic input, or an error inside it).
+
+    The result is a single IPA string without spaces (the extractor's shape).
+    ``espeak_lang`` overrides the active language code (defaults to the
+    configured one); the optional argument is added for callers that need a
+    different variety without touching the host config.
     """
     clean = (word or "").strip().lower()
     if not clean:
         return ""
+    lang = espeak_lang or _espeak_language()
+    # The engine's G2P takes a whole text string (it splits into tokens
+    # internally and phonemizes them in one batched espeak call).
+    try:
+        groups = _engine_g2p()(clean, lang)
+    except Exception as exc:  # noqa: BLE001 - deliberate soft degrade
+        _logger.warning("ipa_map: espeak G2P failed for %r (%s); using heuristic",
+                        clean, exc)
+        return _heuristic_word_to_ipa(clean)
+    if not groups or not groups[0]:
+        return _heuristic_word_to_ipa(clean)
+    # The engine already strips diacritics and folds the inventory; join the
+    # phones directly (no second normalization - that would double-fold).
+    return "".join(groups[0])
+
+
+def _heuristic_word_to_ipa(clean: str) -> str:
+    """Heuristic fallback: greedy longest-pattern match over the orthography."""
     if clean in _KNOWN_WORDS:
         return _KNOWN_WORDS[clean]
-    # Heuristic: greedily match the longest pattern at each position.
     out = []
     i = 0
     while i < len(clean):
@@ -151,20 +209,34 @@ def word_to_ipa(word: str) -> str:
     return "".join(out)
 
 
-def ipa_from_words(phrase: str) -> str:
-    """Return the best-guess IPA for a whole phrase (word-by-word)."""
+def ipa_from_words(phrase: str, espeak_lang: str | None = None) -> str:
+    """Return the best-guess IPA for a whole phrase (word-by-word).
+
+    Batch-optimized: the engine's G2P accepts a list of tokens in a single
+    espeak call, so the whole phrase is phonemized at once rather than once
+    per word. Falls back to the per-word heuristic on any engine error.
+    """
     words = (phrase or "").strip().split()
     if not words:
         return ""
-    return " ".join(word_to_ipa(w) for w in words)
+    lang = espeak_lang or _espeak_language()
+    # Batch: the engine takes the whole phrase string and phonemizes every
+    # token in one espeak call, so this is a single call, not one per word.
+    try:
+        groups = _engine_g2p()(phrase, lang)
+    except Exception as exc:  # noqa: BLE001 - deliberate soft degrade
+        _logger.warning("ipa_map: espeak G2P failed for %r (%s); using heuristic",
+                        phrase, exc)
+        return " ".join(_heuristic_word_to_ipa(w) for w in words)
+    return " ".join("".join(g) for g in groups)
 
 
 def extract_ipas_from_transcript(transcript: str) -> set:
     """Return the set of distinct IPA symbols appearing in a transcript.
 
-    Used by the UI to highlight which phonemes the user actually
-    produced. The heuristic may over-generate phonemes for unknown
-    words, but for the words that ARE in _KNOWN_WORDS it is accurate.
+    Used by the UI to highlight which phonemes the user actually produced.
+    The engine G2P is accurate for the words it recognizes; the heuristic
+    fallback may over-generate phonemes for unknown words.
     """
     result = set()
     for word in (transcript or "").split():

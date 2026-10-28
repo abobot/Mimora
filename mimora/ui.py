@@ -62,7 +62,7 @@ import ttkbootstrap as ttk
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
-from mimora import config
+from mimora import config, i18n
 from mimora.ui_hero import HeroCard
 from mimora.ui_history import HistoryPanel
 from mimora.ui_practice import PracticePanel
@@ -289,10 +289,10 @@ class TrainerView:
         # brand + language shown prominently, with the descriptor as a smaller
         # subtitle. The language reads from config.TARGET_LANGUAGE so the title
         # stays the single source of truth for it.
-        tk.Label(header_frame, text=f"MIMORA · {config.TARGET_LANGUAGE}",
+        tk.Label(header_frame, text=i18n.tr("MIMORA · {language}", language=config.TARGET_LANGUAGE),
                  font=(FONT_FAMILY, FONT_SIZE_TITLE, "bold"), fg=THEME["accent"], bg=THEME["bg_main"]).pack(side=tk.LEFT)
 
-        tk.Label(header_frame, text="- Pronunciation Trainer",
+        tk.Label(header_frame, text=i18n.tr("- Pronunciation Trainer"),
                  font=(FONT_FAMILY, FONT_SIZE_BODY, "bold"), fg=THEME["accent"], bg=THEME["bg_main"]).pack(
                      side=tk.LEFT, padx=(0, 0), pady=(6, 0))
 
@@ -326,7 +326,7 @@ class TrainerView:
         self.status_bar = tk.Frame(self.root, bg=THEME["bg_panel"], height=30)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-        self.status_label = tk.Label(self.status_bar, text="Starting...",
+        self.status_label = tk.Label(self.status_bar, text=i18n.tr("Starting..."),
                                      font=(FONT_FAMILY, FONT_SIZE_SMALL), fg=THEME["ready"], bg=THEME["bg_panel"])
         self.status_label.pack(side=tk.LEFT, padx=15, pady=4)
 
@@ -341,8 +341,8 @@ class TrainerView:
         # Reference-replays).
         self.tip_label = tk.Label(
             self.root,
-            text='Tip: press SPACE or click the mic to record. '
-                 '"Reference ▶" replays the example.',
+            text=i18n.tr('Tip: press SPACE or click the mic to record. '
+                         '"Reference ▶" replays the example.'),
             font=(FONT_FAMILY, FONT_SIZE_CAPTION), fg=THEME["text_muted"],
             bg=THEME["bg_main"], anchor=tk.W)
         self.tip_label.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=(0, 4))
@@ -379,21 +379,21 @@ class TrainerView:
         # -- Reference column: the replay button paired with the "Slow ▶"
         #    replay. Both are gated together by _set_actions(reference=...); the
         #    exact slow speed lives in Settings. --
-        ref_col = self._control_column(controls_row, "Listen to the example")
+        ref_col = self._control_column(controls_row, i18n.tr("Listen to the example"))
         ref_pair = tk.Frame(ref_col, bg=THEME["bg_main"])
         ref_pair.pack()
         self.ref_btn = self._make_button(
-            ref_pair, "Reference ▶", self._cb.play_reference,
+            ref_pair, i18n.tr("Reference ▶"), self._cb.play_reference,
             width=action_btn_width, padx=action_btn_padx)
         self.ref_btn.pack(side=tk.LEFT, padx=(0, 4))
         self.ref_btn.config(state=tk.DISABLED)
-        self.slow_btn = self._make_button(ref_pair, "Slow ▶", self._cb.play_reference_slow,
+        self.slow_btn = self._make_button(ref_pair, i18n.tr("Slow ▶"), self._cb.play_reference_slow,
                                           padx=action_btn_padx)
         self.slow_btn.pack(side=tk.LEFT)
         self.slow_btn.config(state=tk.DISABLED)
 
         # -- Mic column: the press-to-toggle record button (canvas-drawn). --
-        mic_col = self._control_column(controls_row, "Press SPACE or click")
+        mic_col = self._control_column(controls_row, i18n.tr("Press SPACE or click"))
         self.btn_canvas = tk.Canvas(mic_col, width=100, height=100, bg=THEME["bg_main"],
                                     highlightthickness=0, cursor="hand2")
         self.btn_canvas.pack()
@@ -403,17 +403,17 @@ class TrainerView:
 
         # -- My recording column: always visible; enabled only once a take
         #    exists (_set_actions(user=...)). --
-        user_col = self._control_column(controls_row, "Record first to listen")
+        user_col = self._control_column(controls_row, i18n.tr("Record first to listen"))
         self.user_btn = self._make_button(
-            user_col, "My recording ▶", self._cb.play_user_recording,
+            user_col, i18n.tr("My recording ▶"), self._cb.play_user_recording,
             width=action_btn_width, padx=action_btn_padx)
         self.user_btn.pack()
         self.user_btn.config(state=tk.DISABLED)
 
         # -- Next phrase column: generate the next phrase. --
-        gen_col = self._control_column(controls_row, "Skip to the next phrase")
+        gen_col = self._control_column(controls_row, i18n.tr("Skip to the next phrase"))
         self.generate_btn = self._make_button(
-            gen_col, "Next phrase ▶", self._cb.on_generate_phrase,
+            gen_col, i18n.tr("Next phrase ▶"), self._cb.on_generate_phrase,
             width=action_btn_width, padx=action_btn_padx)
         self.generate_btn.pack()
         self.generate_btn.config(state=tk.DISABLED)
@@ -637,14 +637,14 @@ class TrainerView:
     def enter_app_ready(self):
         """Models loaded, no phrase yet: only New phrase is available."""
         self.draw_mic_button("idle")
-        self.update_status("Ready", THEME["ready"])
+        self.update_status(i18n.tr("Ready"), THEME["ready"])
         self._set_actions(generate=True)
 
     def enter_generating(self):
         """LLM is producing a phrase: every action is locked out."""
         self._set_actions(generate=False, reference=False, user=False, test=False)
         self.draw_mic_button("processing")
-        self.update_status("Generating phrase (LLM)...", THEME["info"])
+        self.update_status(i18n.tr("Generating phrase (LLM)..."), THEME["info"])
 
     def enter_reference_playing(self, phrase: str, translation: str = ""):
         """A fresh phrase is shown and its reference is being played.
@@ -666,20 +666,20 @@ class TrainerView:
         self._hero.clear_attempts()
         self._hero.set_phrase(phrase)
         self._hero.set_translation(translation)
-        self.update_status("Listen to the reference...", THEME["reference"])
+        self.update_status(i18n.tr("Listen to the reference..."), THEME["reference"])
         self.draw_mic_button("speaking")
 
     def enter_phrase_ready(self):
         """Reference done: the user can record, replay or self-test."""
         self.draw_mic_button("idle")
-        self.update_status("Your turn", THEME["ready"])
+        self.update_status(i18n.tr("Your turn"), THEME["ready"])
         self._set_actions(generate=True, reference=True, test=True)
 
     def generation_failed(self, message: str):
         """Phrase generation failed: surface the error and offer a retry."""
         self.append_error_msg(message)
         self.draw_mic_button("idle")
-        self.update_status("Ready", THEME["ready"])
+        self.update_status(i18n.tr("Ready"), THEME["ready"])
         self._set_actions(generate=True)
 
     def enter_recording(self):
@@ -695,12 +695,12 @@ class TrainerView:
         # symbol. set_record_level(0.0) draws the same red ring + dark track with
         # a minimal level disc, so the look is identical from the first frame.
         self.set_record_level(0.0)
-        self.update_status("Recording...", THEME["bad"])
+        self.update_status(i18n.tr("Recording..."), THEME["bad"])
 
-    def enter_analyzing(self, status: str = "Analyzing pronunciation..."):
+    def enter_analyzing(self, status: str = None):
         """Analysis is running (also used for the reference self-test)."""
         self.draw_mic_button("processing")
-        self.update_status(status, THEME["warn"])
+        self.update_status(status or i18n.tr("Analyzing pronunciation..."), THEME["warn"])
 
     def enter_playing(self, status: str):
         """Reference or recorded take is being played back during a flow."""
@@ -710,7 +710,7 @@ class TrainerView:
     def enter_retry(self, *, has_phrase: bool, has_recording: bool):
         """Return to a recordable idle state, enabling only what is available."""
         self.draw_mic_button("idle")
-        self.update_status("Ready", THEME["ready"])
+        self.update_status(i18n.tr("Ready"), THEME["ready"])
         self._set_actions(generate=True)
         if has_phrase:
             self._set_actions(reference=True, test=True)
@@ -724,27 +724,27 @@ class TrainerView:
     # ------------------------------------------------------------------
     def enter_loading(self):
         """Models are loading."""
-        self.update_status("Loading models...", THEME["warn"])
+        self.update_status(i18n.tr("Loading models..."), THEME["warn"])
 
     def enter_server_starting(self):
         """The local LLM server is being launched."""
-        self.update_status("Starting LLM server...", THEME["warn"])
+        self.update_status(i18n.tr("Starting LLM server..."), THEME["warn"])
 
     def enter_warming_up(self):
         """Models are loaded and being warmed up."""
-        self.update_status("Warming up models...", THEME["warn"])
+        self.update_status(i18n.tr("Warming up models..."), THEME["warn"])
 
     def server_failed(self):
         """The local LLM server failed to start."""
-        self.update_status("LLM Server Error", THEME["bad"])
+        self.update_status(i18n.tr("LLM Server Error"), THEME["bad"])
 
     def init_failed(self):
         """Initialization aborted on an unexpected error."""
-        self.update_status("Initialization Failed", THEME["bad"])
+        self.update_status(i18n.tr("Initialization Failed"), THEME["bad"])
 
     def recording_failed(self):
         """The microphone input stream failed."""
-        self.update_status("Recording Error", THEME["bad"])
+        self.update_status(i18n.tr("Recording Error"), THEME["bad"])
 
     def playing_status(self, status: str):
         """Set the status line for an ad-hoc playback (no button changes).
@@ -847,14 +847,14 @@ class TrainerView:
     # the status line, the face and the Score bar always agree (see show_feedback).
     def _quality_label(self, score: float) -> tuple[str, str]:
         if score < 40:
-            return "Weak", THEME["bad"]
+            return i18n.tr("Weak"), THEME["bad"]
         if score < 55:
-            return "Poor", THEME["bad"]
+            return i18n.tr("Poor"), THEME["bad"]
         if score < 70:
-            return "Needs work", THEME["warn"]
+            return i18n.tr("Needs work"), THEME["warn"]
         if score < 85:
-            return "Good", THEME["good"]
-        return "Excellent", THEME["good"]
+            return i18n.tr("Good"), THEME["good"]
+        return i18n.tr("Excellent"), THEME["good"]
 
     def _bucket_quality(self, bucket: int) -> tuple[str, str]:
         """Qualitative label + colour for a calibrated 0-5 bucket (phoneme engine).
@@ -864,14 +864,14 @@ class TrainerView:
         result.passed. Bucket 3 is the amber near-miss; buckets 0-2 are red.
         """
         if bucket >= 5:
-            return "Excellent", THEME["good"]
+            return i18n.tr("Excellent"), THEME["good"]
         if bucket >= 4:
-            return "Good", THEME["good"]
+            return i18n.tr("Good"), THEME["good"]
         if bucket >= 3:
-            return "Needs work", THEME["warn"]
+            return i18n.tr("Needs work"), THEME["warn"]
         if bucket >= 2:
-            return "Poor", THEME["bad"]
-        return "Weak", THEME["bad"]
+            return i18n.tr("Poor"), THEME["bad"]
+        return i18n.tr("Weak"), THEME["bad"]
 
     def _quality_expression(self, color: str) -> str:
         """Map a resolved quality colour to a face expression so the two agree."""
@@ -986,7 +986,7 @@ class TrainerView:
         self._hero.face.set_expression("neutral")
         # Hero card: neutral "scoring off" read-out - no number, no badges, no
         # word underlines and no how-to hint (nothing was judged to act on).
-        self._hero.set_score_row("--", "scoring off", THEME["text_dim"])
+        self._hero.set_score_row("--", i18n.tr("scoring off"), THEME["text_dim"])
         self._hero.set_badges([])
         self._hero.set_hint(False)
         # A neutral history row (no score, no trend). The reference self-test is a
@@ -1009,4 +1009,4 @@ class TrainerView:
         self._set_actions(generate=True, reference=True, user=has_recording, test=True)
         self.draw_mic_button("idle")
 
-        self.update_status("Recorded (scoring off)", THEME["text_dim"])
+        self.update_status(i18n.tr("Recorded (scoring off)"), THEME["text_dim"])

@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from tkinter import messagebox
 from typing import Any, Callable, Dict, List
 
-from mimora import config, window_icon
+from mimora import config, i18n, window_icon
 from mimora.drill.engine import DrillEngine
 from mimora.ui_stats import _CanvasChart
 from mimora.ui_theme import (
@@ -33,6 +33,8 @@ from mimora.ui_theme import (
     FONT_SIZE_SUBTITLE,
     THEME,
 )
+import logging
+import tkinter as tk
 import ttkbootstrap as ttk
 
 
@@ -61,7 +63,7 @@ class DrillView:
         self._cb = callbacks
         self.engine = engine
         self._window = tk.Toplevel(root)
-        self._window.title(f"Drill · {engine.target.get('value', '')}")
+        self._window.title(i18n.tr("Drill · {value}", value=engine.target.get('value', '')))
         self._window.geometry("640x540")
         window_icon.set_app_user_model_id()
         window_icon.apply_window_icon(self._window)
@@ -91,20 +93,27 @@ class DrillView:
         header.pack(fill=tk.X, padx=16, pady=10)
         target_type = self.engine.target.get("type", "")
         target_value = self.engine.target.get("value", "")
-        title = f"{'Word' if target_type == 'word' else 'Phoneme' if target_type == 'phoneme' else 'Custom'} drill · {target_value}"
+        if target_type == "word":
+            title = i18n.tr("Word drill · {value}", value=target_value)
+        elif target_type == "phoneme":
+            title = i18n.tr("Phoneme drill · {value}", value=target_value)
+        else:
+            title = i18n.tr("Custom drill · {value}", value=target_value)
         tk.Label(header, text=title,
                  font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
                  bg=THEME["bg_main"], fg=THEME["text_emph"]
                  ).pack(side=tk.LEFT)
-        ttk.Button(header, text="Finish & report",
+        ttk.Button(header, text=i18n.tr("Finish & report"),
                    command=self._on_finish).pack(side=tk.RIGHT, padx=(0, 8))
-        ttk.Button(header, text="Cancel",
+        ttk.Button(header, text=i18n.tr("Cancel"),
                    command=self._on_cancel).pack(side=tk.RIGHT)
 
         # Progress bar + status.
         progress = tk.Frame(self._window, bg=THEME["bg_main"])
         progress.pack(fill=tk.X, padx=16, pady=(0, 8))
-        self._progress_var = tk.StringVar(value="0 / 10  ·  0 passed")
+        self._progress_var = tk.StringVar(
+            value=i18n.tr("{current} / {total}  ·  {passed} passed",
+                          current=0, total=10, passed=0))
         tk.Label(progress, textvariable=self._progress_var,
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                  bg=THEME["bg_main"], fg=THEME["text_dim"]
@@ -156,22 +165,22 @@ class DrillView:
         # Buttons.
         controls = tk.Frame(self._window, bg=THEME["bg_main"])
         controls.pack(fill=tk.X, padx=16, pady=(0, 16))
-        self._record_btn = ttk.Button(controls, text="▶  Record (Space)",
+        self._record_btn = ttk.Button(controls, text=i18n.tr("▶  Record (Space)"),
                                       command=self._on_record)
         self._record_btn.pack(side=tk.LEFT, padx=4)
-        ttk.Button(controls, text="🔊 示范读",
+        ttk.Button(controls, text=i18n.tr("🔊  Example"),
                    command=self._on_play_reference).pack(side=tk.LEFT, padx=4)
-        self._play_rec_btn = ttk.Button(controls, text="🎙 我的录音",
+        self._play_rec_btn = ttk.Button(controls, text=i18n.tr("🎙  My recording"),
                                         command=self._on_play_recording,
                                         state="disabled")
         self._play_rec_btn.pack(side=tk.LEFT, padx=4)
-        ttk.Button(controls, text="⏮  Previous",
+        ttk.Button(controls, text=i18n.tr("⏮  Previous"),
                    command=self._on_previous).pack(side=tk.LEFT, padx=4)
-        ttk.Button(controls, text="⏭  Next",
+        ttk.Button(controls, text=i18n.tr("⏭  Next"),
                    command=self._on_skip).pack(side=tk.LEFT, padx=4)
         # Auto-next toggle.
         self._auto_next_var = tk.BooleanVar(value=self._cb.is_auto_next())
-        ttk.Checkbutton(controls, text="自动下一句",
+        ttk.Checkbutton(controls, text=i18n.tr("Auto-next phrase"),
                         variable=self._auto_next_var,
                         command=self._on_auto_next_toggled).pack(side=tk.LEFT, padx=8)
         # Space key.
@@ -186,9 +195,17 @@ class DrillView:
         phrase = self._cb.next_phrase()
         self._phrase_label.configure(text=phrase)
         if not phrase:
-            self._phrase_hint.configure(text="(no phrase available)")
+            self._phrase_hint.configure(text=i18n.tr("(no phrase available)"))
         else:
-            self._phrase_hint.configure(text="Record your attempt when ready.")
+            fallback = self.engine.fallback_message(tr=i18n.tr)
+            if fallback:
+                # The engine could not find any sentence containing the target
+                # in the practice text, so it fell back to sample phrases. Say
+                # so explicitly instead of silently showing unrelated sentences
+                # (the "first line matches, rest random" confusion).
+                self._phrase_hint.configure(text=fallback)
+            else:
+                self._phrase_hint.configure(text=i18n.tr("Record your attempt when ready."))
 
     def _on_record(self) -> None:
         self._cb.on_record_clicked()
@@ -214,7 +231,7 @@ class DrillView:
         """Go back to the previous phrase."""
         phrase = self._cb.previous_phrase()
         self._phrase_label.configure(text=phrase)
-        self._phrase_hint.configure(text="Previous phrase — press Record to retry.")
+        self._phrase_hint.configure(text=i18n.tr("Previous phrase — press Record to retry."))
         self._feedback_label.configure(text="")
 
     def _on_cancel(self) -> None:
@@ -242,10 +259,13 @@ class DrillView:
         """
         p = self.engine.progress()
         self._progress_var.set(
-            f"{p['current']} / {p['total']}  ·  {p['passed']} passed")
+            i18n.tr("{current} / {total}  ·  {passed} passed",
+                    current=p['current'], total=p['total'], passed=p['passed']))
         if p["streak"] >= 1:
             self._streak_var.set(
-                f"🔥 streak {p['streak']}/{self.engine.mastered_streak_required}")
+                i18n.tr("🔥 streak {streak}/{required}",
+                        streak=p['streak'],
+                        required=self.engine.mastered_streak_required))
         if last_score >= 0:
             color = THEME["good"] if last_score >= self.engine.pass_threshold \
                 else THEME["bad"]
@@ -253,7 +273,8 @@ class DrillView:
         self._mini_chart.draw_line(
             p["scores"], max_value=100.0,
             color=THEME["good"] if p.get("mastered") else THEME["text_emph"],
-            label=f"target ≥ {self.engine.pass_threshold:.0f}")
+            label=i18n.tr("target ≥ {threshold:.0f}",
+                          threshold=self.engine.pass_threshold))
         self._update_feedback(details)
         if p["current"] >= 1:
             self._play_rec_btn.configure(state="normal")
@@ -278,7 +299,7 @@ class DrillView:
             if level == "bad" or w.get("correct") is False:
                 missed.append(w.get("word", ""))
         if missed:
-            parts.append("❌ Words to fix: " + ", ".join(missed[:5]))
+            parts.append(i18n.tr("❌ Words to fix: ") + ", ".join(missed[:5]))
 
         # Weak phonemes with example words.
         weak = getattr(result, "weak_phonemes", None) or []
@@ -288,22 +309,26 @@ class DrillView:
             from mimora.phoneme_examples import example_for
             example = example_for(ipa)
             if example:
-                phonemes.append(f"/{ipa}/ (as in '{example}')")
+                phonemes.append(i18n.tr("/{ipa}/ (as in '{example}')",
+                                        ipa=ipa, example=example))
             else:
                 phonemes.append(f"/{ipa}/")
         if phonemes:
-            parts.append("🔊 Practice: " + ", ".join(phonemes))
+            parts.append(i18n.tr("🔊 Practice: ") + ", ".join(phonemes))
 
         self._feedback_label.configure(text="  |  ".join(parts))
 
     def _show_report(self, outcome) -> None:
-        text = (f"Drill finished\n\n"
-                f"Target: {outcome.target_type} = {outcome.target_value}\n"
-                f"Attempts: {outcome.total_attempts}\n"
-                f"Passed: {outcome.total_passed}\n"
-                f"First score: {outcome.first_score:.0f}\n"
-                f"Last score:  {outcome.last_score:.0f}\n"
-                f"Average:     {outcome.avg_score:.1f}\n\n"
-                f"Outcome: {'✅ Mastered' if outcome.mastered else '🔁 Try again next time'}")
-        messagebox.showinfo("Drill report", text, parent=self._window)
+        text = (i18n.tr("Drill finished") + "\n\n"
+                + i18n.tr("Target: {ttype} = {tvalue}",
+                           ttype=outcome.target_type,
+                           tvalue=outcome.target_value) + "\n"
+                + i18n.tr("Attempts: {n}", n=outcome.total_attempts) + "\n"
+                + i18n.tr("Passed: {n}", n=outcome.total_passed) + "\n"
+                + i18n.tr("First score: {score:.0f}", score=outcome.first_score) + "\n"
+                + i18n.tr("Last score:  {score:.0f}", score=outcome.last_score) + "\n"
+                + i18n.tr("Average:     {score:.1f}", score=outcome.avg_score) + "\n\n"
+                + (i18n.tr("Outcome: ✅ Mastered") if outcome.mastered
+                   else i18n.tr("Outcome: 🔁 Try again next time")))
+        messagebox.showinfo(i18n.tr("Drill report"), text, parent=self._window)
         self._window.destroy()

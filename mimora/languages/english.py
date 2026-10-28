@@ -11,7 +11,7 @@ PROFILE = {
     "display_name": "English",
     "flores_code": "eng_Latn",
     "default_variant": "american",
-    "engines": ("phoneme", "acoustic", "none"),
+    "engines": ("phoneme", "acoustic", "hybrid", "none"),
     "practice_text_file": "texts/practice_text.txt",
     # Phrase-generation prompts (mimora/llm.py). The instructions stay in
     # English - they steer the model - while the TARGET language of the

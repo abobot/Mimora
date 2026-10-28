@@ -29,7 +29,7 @@ from tkinter import filedialog, messagebox
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from mimora import config, window_icon
+from mimora import config, i18n, window_icon
 # Reuse the main view's resolved palette, platform font and wheel-event
 # helpers so the settings window matches the app theme exactly and scrolls
 # on every platform (ui.py builds/hosts all of these).
@@ -153,256 +153,264 @@ def build_sections() -> tuple:
     changes the running process has not picked up yet.
     """
     return (
-        Section("General", (
-            Field("user_name", "Your name", "text",
+        Section(i18n.tr("General"), (
+            Field("ui_language", i18n.tr("UI language"), "choice",
+                  lambda: config.user_setting("ui_language",
+                                              config.UI_LANGUAGE),
+                  choices=config.ui_language_choices, restart=True,
+                  runtime_value=lambda: config.UI_LANGUAGE,
+                  help=i18n.tr("The language of the interface. Changing it needs a restart.")),
+            Field("user_name", i18n.tr("Your name"), "text",
                   lambda: config.user_setting("user_name", config.USER_NAME),
-                  help="Used in the greeting and the per-user calibration."),
-            Field("practice_language", "Language", "choice",
+                  help=i18n.tr("Used in the greeting and the per-user calibration.")),
+            Field("practice_language", i18n.tr("Language"), "choice",
                   lambda: config.user_setting("practice_language",
                                               config.PRACTICE_LANGUAGE),
                   choices=config.language_choices, restart=True,
                   runtime_value=lambda: config.PRACTICE_LANGUAGE,
-                  help="The language you practice. Changing it needs a restart."),
-            Field("phrase_gen_level", "Difficulty", "scale",
+                  help=i18n.tr("The language you practice. Changing it needs a restart.")),
+            Field("phrase_gen_level", i18n.tr("Difficulty"), "scale",
                   lambda: config.user_setting("phrase_gen_level",
                                               config.PHRASE_GEN_LEVEL),
                   minimum=0, maximum=5, step=1, integer=True,
-                  help="Difficulty of generated phrases: 0 = complete "
-                       "beginner (simplest words, present tense only), "
-                       "5 = advanced (rich vocabulary, complex sentences). "
-                       "Applies from the next phrase."),
+                  help=i18n.tr("Difficulty of generated phrases: 0 = complete "
+                               "beginner (simplest words, present tense only), "
+                               "5 = advanced (rich vocabulary, complex sentences). "
+                               "Applies from the next phrase.")),
             # Regional variant of the language. Hidden by _build_body when the
             # language has a single variant (nothing to choose).
-            Field("accent", "Accent", "choice",
+            Field("accent", i18n.tr("Accent"), "choice",
                   lambda: config.user_setting("accent", config.ACCENT),
                   choices=lambda: config.accent_choices(_pending_language()),
                   restart=True,
                   runtime_value=lambda: config.ACCENT,
-                  help="Regional variant of the language."),
-            Field("voice", "Voice", "choice",
+                  help=i18n.tr("Regional variant of the language.")),
+            Field("voice", i18n.tr("Voice"), "choice",
                   lambda: config.user_setting("voice", config.TTS_VOICE),
                   choices=lambda: config.accent_voices(_pending_accent(),
                                                        _pending_language())),
-            Field("translation_language", "Translation", "choice",
+            Field("translation_language", i18n.tr("Translation"), "choice",
                   lambda: config.user_setting("translation_language",
                                               config.TRANSLATION_LANGUAGE),
                   choices=lambda: config.translation_targets(
                       _pending_language()),
-                  help="Empty = translation off."),
-            Field("phrase_length", "Phrase length", "choice",
+                  help=i18n.tr("Empty = translation off.")),
+            Field("phrase_length", i18n.tr("Phrase length"), "choice",
                   lambda: config.user_setting("phrase_length",
                                               config.PHRASE_LENGTH),
                   choices=lambda: config.PHRASE_LENGTH_CHOICES,
-                  help="full = whole sentence, fragment = 2-4 words. "
-                       "Disabled while the LLM backend is off (source-text "
-                       "sentences are never shortened)."),
-            Field("reference_speed", "Reference speed", "scale",
+                  help=i18n.tr("full = whole sentence, fragment = 2-4 words. "
+                               "Disabled while the LLM backend is off (source-text "
+                               "sentences are never shortened).")),
+            Field("reference_speed", i18n.tr("Reference speed"), "scale",
                   lambda: config.user_setting("reference_speed",
                                               config.REFERENCE_SPEED),
                   minimum=config.REFERENCE_SPEED_MIN,
                   maximum=config.REFERENCE_SPEED_MAX,
                   step=config.REFERENCE_SPEED_STEP,
-                  help="Normal reference playback speed. The Slow ▶ "
-                       "button next to Reference plays 0.1 below this "
-                       "(e.g. 0.9 -> 0.8)."),
-            Field("random_voice", "Random voice per phrase", "bool",
+                  help=i18n.tr("Normal reference playback speed. The Slow ▶ "
+                               "button next to Reference plays 0.1 below this "
+                               "(e.g. 0.9 -> 0.8).")),
+            Field("random_voice", i18n.tr("Random voice per phrase"), "bool",
                   lambda: config.user_setting("random_voice",
                                               config.RANDOM_VOICE),
                   enabled=lambda: len(config.TTS_VOICES) >= 2,
-                  help="Each new phrase speaks with a different voice of "
-                       "the current language. The Voice choice above is kept "
-                       "and used again when this is off. Needs at least two "
-                       "voices."),
-            Field("playback_own_recording", "Play back your recording", "bool",
+                  help=i18n.tr("Each new phrase speaks with a different voice of "
+                               "the current language. The Voice choice above is kept "
+                               "and used again when this is off. Needs at least two "
+                               "voices.")),
+            Field("playback_own_recording", i18n.tr("Play back your recording"), "bool",
                   lambda: config.user_setting("playback_own_recording",
                                               config.PLAYBACK_OWN_RECORDING),
-                  help="Hear your take played back before the score. "
-                       "Off skips straight to analysis."),
-            Field("practice_text_file", "Practice text file", "path",
+                  help=i18n.tr("Hear your take played back before the score. "
+                               "Off skips straight to analysis.")),
+            Field("practice_text_file", i18n.tr("Practice text file"), "path",
                   lambda: config.user_setting("practice_text_file",
                                               config.PRACTICE_TEXT_FILE),
                   file_types=(("Text files", "*.txt"), ("All files", "*.*")),
-                  help="Loaded into the practice panel right away."),
+                  help=i18n.tr("Loaded into the practice panel right away.")),
         )),
-        Section("Pronunciation", (
-            Field("engine", "Scoring engine", "choice",
+        Section(i18n.tr("Pronunciation"), (
+            Field("engine", i18n.tr("Scoring engine"), "choice",
                   lambda: config.user_setting("engine", config.ENGINE),
                   choices=lambda: config.available_engines(
                       _pending_language()),
                   restart=True,
                   runtime_value=lambda: config.ENGINE,
-                  help="phoneme = default; none = scoring off (fast start). "
-                       "Only engines available for the language are shown."),
-            Field("phoneme_good_mode", "Phoneme anchor mode", "choice",
+                  help=i18n.tr("phoneme = default; acoustic = audio comparison; "
+                               "hybrid = both (needs reference audio, English only); "
+                               "none = scoring off (fast start). "
+                               "Only engines available for the language are shown.")),
+            Field("phoneme_good_mode", i18n.tr("Phoneme anchor mode"), "choice",
                   lambda: config.user_setting("phoneme_good_mode",
                                               config.PHONEME_GOOD_MODE),
                   choices=lambda: config.PHONEME_GOOD_MODE_CHOICES,
                   restart=True,
                   runtime_value=lambda: config.PHONEME_GOOD_MODE,
-                  help="global = one calibrated anchor (default, faster); "
-                       "ceiling = a flawless read maps to 100 per phrase."),
+                  help=i18n.tr("global = one calibrated anchor (default, faster); "
+                               "ceiling = a flawless read maps to 100 per phrase.")),
         )),
-        Section("Appearance", (
-            Field("color_theme", "Color theme", "choice",
+        Section(i18n.tr("Appearance"), (
+            Field("color_theme", i18n.tr("Color theme"), "choice",
                   lambda: config.user_setting("color_theme",
                                               config.COLOR_THEME),
                   choices=config.available_themes, restart=True,
                   runtime_value=lambda: config.COLOR_THEME),
-            Field("show_face", "Show articulation face", "bool",
+            Field("show_face", i18n.tr("Show articulation face"), "bool",
                   lambda: config.user_setting("show_face", config.SHOW_FACE)),
-            Field("auto_play_phrase", "Auto-play phrase before recording", "bool",
+            Field("auto_play_phrase", i18n.tr("Auto-play phrase before recording"), "bool",
                   lambda: config.user_setting("auto_play_phrase",
                                               config.AUTO_PLAY_PHRASE),
-                  help="When on, the software reads each phrase aloud before you record. "
-                       "When off, you record directly — press Reference ▶ to hear it manually."),
-            Field("auto_next_phrase", "Auto-generate next phrase", "bool",
+                  help=i18n.tr("When on, the software reads each phrase aloud before you record. "
+                               "When off, you record directly — press Reference ▶ to hear it manually.")),
+            Field("auto_next_phrase", i18n.tr("Auto-generate next phrase"), "bool",
                   lambda: config.user_setting("auto_next_phrase",
                                               config.AUTO_NEXT_PHRASE),
-                  help="When on, a new phrase is generated automatically after each scored take. "
-                       "When off, you must click 'Next phrase ▶' to continue."),
-            Field("auto_next_delay", "Auto-next delay (seconds)", "number",
+                  help=i18n.tr("When on, a new phrase is generated automatically after each scored take. "
+                               "When off, you must click 'Next phrase ▶' to continue.")),
+            Field("auto_next_delay", i18n.tr("Auto-next delay (seconds)"), "number",
                   lambda: config.user_setting("auto_next_delay",
                                               config.AUTO_NEXT_DELAY),
                   minimum=1, maximum=30,
-                  help="Delay before auto-generating the next phrase. "
-                       "Longer delay gives time to read error feedback."),
-            Field("show_prosody", "Show intonation & stress", "bool",
+                  help=i18n.tr("Delay before auto-generating the next phrase. "
+                               "Longer delay gives time to read error feedback.")),
+            Field("show_prosody", i18n.tr("Show intonation & stress"), "bool",
                   lambda: config.user_setting("show_prosody",
                                               config.SHOW_PROSODY),
-                  help="Pitch and energy charts under the recording controls."),
-            Field("practice_text_collapsed", "Collapse practice text", "bool",
+                  help=i18n.tr("Pitch and energy charts under the recording controls.")),
+            Field("practice_text_collapsed", i18n.tr("Collapse practice text"), "bool",
                   lambda: config.user_setting("practice_text_collapsed",
                                               config.PRACTICE_TEXT_COLLAPSED),
-                  help="Hide the editable text box under its caption."),
+                  help=i18n.tr("Hide the editable text box under its caption.")),
         )),
-        Section("LLM & phrase generation", (
-            Field("llm_backend", "LLM backend", "choice",
+        Section(i18n.tr("LLM & phrase generation"), (
+            Field("llm_backend", i18n.tr("LLM backend"), "choice",
                   lambda: config.user_setting("llm_backend",
                                               config.LLM_BACKEND),
                   choices=lambda: config.LLM_BACKEND_CHOICES, restart=True,
                   runtime_value=lambda: config.LLM_BACKEND,
-                  help="llama-server starts the official llama.cpp binary for "
-                       "you and uses the GGUF model below; the binary is named "
-                       "by 'llama_server_path' in settings.json (empty = look "
-                       "in bin/llama and on PATH). install.py installs it, so "
-                       "does the app on its first start, and 'python -m "
-                       "mimora.llama_server_fetch' does it at any time. "
-                       "lm-studio requires LM Studio running separately. "
-                       "off = no LLM: phrases are the practice text's own "
-                       "sentences, taken as-is."),
-            Field("lm_studio_host", "LM Studio address", "text",
+                  help=i18n.tr("llama-server starts the official llama.cpp binary for "
+                               "you and uses the GGUF model below; the binary is named "
+                               "by 'llama_server_path' in settings.json (empty = look "
+                               "in bin/llama and on PATH). install.py installs it, so "
+                               "does the app on its first start, and 'python -m "
+                               "mimora.llama_server_fetch' does it at any time. "
+                               "lm-studio requires LM Studio running separately. "
+                               "off = no LLM: phrases are the practice text's own "
+                               "sentences, taken as-is.")),
+            Field("lm_studio_host", i18n.tr("LM Studio address"), "text",
                   lambda: config.user_setting("lm_studio_host",
                                               config.LM_STUDIO_HOST),
                   restart=True,
                   runtime_value=lambda: config.LM_STUDIO_HOST,
-                  help="Server address as host or host:port (port defaults "
-                       "to 1234), e.g. 192.168.1.50:1234 when LM Studio "
-                       "runs on another machine in the local network."),
-            Field("external_model_path", "GGUF model file", "path",
+                  help=i18n.tr("Server address as host or host:port (port defaults "
+                               "to 1234), e.g. 192.168.1.50:1234 when LM Studio "
+                               "runs on another machine in the local network.")),
+            Field("external_model_path", i18n.tr("GGUF model file"), "path",
                   lambda: config.user_setting("external_model_path",
                                               config.EXTERNAL_MODEL_PATH),
                   restart=True,
                   runtime_value=lambda: config.EXTERNAL_MODEL_PATH,
                   file_types=(("GGUF models", "*.gguf"), ("All files", "*.*"))),
-            Field("external_n_ctx", "Context size (n_ctx)", "number",
+            Field("external_n_ctx", i18n.tr("Context size (n_ctx)"), "number",
                   lambda: config.user_setting("external_n_ctx",
                                               config.EXTERNAL_N_CTX),
                   minimum=256, integer=True, restart=True,
                   runtime_value=lambda: config.EXTERNAL_N_CTX,
-                  help="LLM context window in tokens."),
-            Field("phrase_gen_window_sentences", "Text window, sentences", "number",
+                  help=i18n.tr("LLM context window in tokens.")),
+            Field("phrase_gen_window_sentences", i18n.tr("Text window, sentences"), "number",
                   lambda: config.user_setting(
                       "phrase_gen_window_sentences",
                       config.PHRASE_GEN_WINDOW_SENTENCES),
                   minimum=1, integer=True,
-                  help="Source sentences sent to the LLM per request."),
-            Field("phrase_gen_window_repeats", "Advance window every N phrases", "number",
+                  help=i18n.tr("Source sentences sent to the LLM per request.")),
+            Field("phrase_gen_window_repeats", i18n.tr("Advance window every N phrases"), "number",
                   lambda: config.user_setting(
                       "phrase_gen_window_repeats",
                       config.PHRASE_GEN_WINDOW_REPEATS),
                   minimum=1, integer=True),
         )),
-        Section("History & Stats", (
-            Field("stats_enabled", "Enable history", "bool",
+        Section(i18n.tr("History & Stats"), (
+            Field("stats_enabled", i18n.tr("Enable history"), "bool",
                   lambda: config.user_setting("stats_enabled",
                                               config.STATS_ENABLED),
-                  help="When off, takes are not persisted. Practice still "
-                       "works; only the running session's tally is kept."),
-            Field("history_mode", "Save per-take data", "choice",
+                  help=i18n.tr("When off, takes are not persisted. Practice still "
+                               "works; only the running session's tally is kept.")),
+            Field("history_mode", i18n.tr("Save per-take data"), "choice",
                   lambda: config.user_setting("history_mode",
                                               config.HISTORY_MODE),
                   choices=lambda: ("none", "metadata_only", "with_audio"),
-                  help="What to persist per take: metadata only keeps phrase, "
-                       "score and error details; with audio also saves the "
-                       "raw + normalized wav per take (~1-3 MB/take), which is what the attempt list's ▶ button and the history browser replay. Default is with audio, so every attempt keeps its recording."),
-            Field("idle_timeout", "Idle split, minutes", "number",
+                  help=i18n.tr("What to persist per take: metadata only keeps phrase, "
+                               "score and error details; with audio also saves the "
+                               "raw + normalized wav per take (~1-3 MB/take), which is what the attempt list's ▶ button and the history browser replay. Default is with audio, so every attempt keeps its recording.")),
+            Field("idle_timeout", i18n.tr("Idle split, minutes"), "number",
                   lambda: config.user_setting("idle_timeout",
                                               config.IDLE_TIMEOUT),
                   minimum=1, integer=True,
-                  help="Minutes without a take before a new session starts. "
-                       "30 minutes is the default; a coffee break won't "
-                       "split, an overnight gap will."),
-            Field("daily_target_minutes", "Daily target, minutes", "number",
+                  help=i18n.tr("Minutes without a take before a new session starts. "
+                               "30 minutes is the default; a coffee break won't "
+                               "split, an overnight gap will.")),
+            Field("daily_target_minutes", i18n.tr("Daily target, minutes"), "number",
                   lambda: config.user_setting("daily_target_minutes",
                                               config.DAILY_TARGET_MINUTES),
                   minimum=0, integer=True,
-                  help="Shown on the stats dashboard; the streak badge is "
-                       "based on this."),
-            Field("native_language", "Native language", "choice",
+                  help=i18n.tr("Shown on the stats dashboard; the streak badge is "
+                               "based on this.")),
+            Field("native_language", i18n.tr("Native language"), "choice",
                   lambda: config.user_setting("native_language",
                                               config.NATIVE_LANGUAGE),
                   choices=lambda: ("zh", "en"),
-                  help="Used to pick the IPA mother-tongue interference table "
-                       "on the Weakness panel."),
-            Field("drill_pass_threshold", "Drill pass threshold", "number",
+                  help=i18n.tr("Used to pick the IPA mother-tongue interference table "
+                               "on the Weakness panel.")),
+            Field("drill_pass_threshold", i18n.tr("Drill pass threshold"), "number",
                   lambda: config.user_setting("drill_pass_threshold",
                                               config.DRILL_PASS_THRESHOLD),
                   minimum=0, maximum=100,
-                  help="A drill target is marked 'mastered' when the last "
-                       "3 takes all score at or above this."),
-            Field("drill_max_attempts", "Drill takes per session", "number",
+                  help=i18n.tr("A drill target is marked 'mastered' when the last "
+                               "3 takes all score at or above this.")),
+            Field("drill_max_attempts", i18n.tr("Drill takes per session"), "number",
                   lambda: config.user_setting("drill_max_attempts",
                                               config.DRILL_MAX_ATTEMPTS),
                   minimum=1, maximum=100,
-                  help="How many takes one drill session runs before it "
-                       "reports done."),
-            Field("dictation_pass_threshold", "Dictation pass threshold", "number",
+                  help=i18n.tr("How many takes one drill session runs before it "
+                               "reports done.")),
+            Field("dictation_pass_threshold", i18n.tr("Dictation pass threshold"), "number",
                   lambda: config.user_setting("dictation_pass_threshold",
                                               config.DICTATION_PASS_THRESHOLD),
                   minimum=0, maximum=100,
-                  help="A dictation session is marked 'mastered' when the "
-                       "last 3 attempts all score at or above this."),
-            Field("dictation_max_attempts", "Dictation sentences per session", "number",
+                  help=i18n.tr("A dictation session is marked 'mastered' when the "
+                               "last 3 attempts all score at or above this.")),
+            Field("dictation_max_attempts", i18n.tr("Dictation sentences per session"), "number",
                   lambda: config.user_setting("dictation_max_attempts",
                                               config.DICTATION_MAX_ATTEMPTS),
                   minimum=1, maximum=100,
-                  help="How many sentences one dictation session runs before "
-                       "it reports done."),
+                  help=i18n.tr("How many sentences one dictation session runs before "
+                               "it reports done.")),
         )),
-        Section("Technical", (
-            Field("save_recordings", "Save recordings (debug)", "bool",
+        Section(i18n.tr("Technical"), (
+            Field("save_recordings", i18n.tr("Save recordings (debug)"), "bool",
                   lambda: config.user_setting("save_recordings",
                                               config.SAVE_RECORDINGS),
-                  help="Writes each take's WAVs and phrase to logs/records/."),
-            Field("warm_up", "Warm up models at startup", "bool",
+                  help=i18n.tr("Writes each take's WAVs and phrase to logs/records/.")),
+            Field("warm_up", i18n.tr("Warm up models at startup"), "bool",
                   lambda: config.user_setting("warm_up", config.WARM_UP),
                   restart=True,
                   runtime_value=lambda: config.WARM_UP,
-                  help="Faster first take, slower startup."),
-            Field("max_record_seconds", "Max recording, seconds", "number",
+                  help=i18n.tr("Faster first take, slower startup.")),
+            Field("max_record_seconds", i18n.tr("Max recording, seconds"), "number",
                   lambda: config.user_setting("max_record_seconds",
                                               config.MAX_RECORD_SECONDS),
                   minimum=1),
-            Field("silence_timeout", "Silence timeout, seconds", "number",
+            Field("silence_timeout", i18n.tr("Silence timeout, seconds"), "number",
                   lambda: config.user_setting("silence_timeout",
                                               config.SILENCE_TIMEOUT),
                   minimum=0.5,
-                  help="Silence after speech before the take auto-stops."),
-            Field("silence_threshold", "Silence threshold (RMS)", "number",
+                  help=i18n.tr("Silence after speech before the take auto-stops.")),
+            Field("silence_threshold", i18n.tr("Silence threshold (RMS)"), "number",
                   lambda: config.user_setting("silence_threshold",
                                               config.SILENCE_THRESHOLD),
                   minimum=0.001,
-                  help="Chunk RMS above this counts as speech."),
+                  help=i18n.tr("Chunk RMS above this counts as speech.")),
         )),
     )
 
@@ -448,7 +456,7 @@ class SettingsWindow:
         self._fields = {f.key: f for f in all_fields()}
 
         self.top = tk.Toplevel(parent)
-        self.top.title("Mimora - Settings")
+        self.top.title(i18n.tr("Mimora - Settings"))
         # The icon that this window gets from the main window is the small
         # one, and Windows stretches it on a scaled display.
         window_icon.sharpen_window_icon(self.top)
@@ -776,7 +784,7 @@ class SettingsWindow:
             entry.xview_moveto(1.0)
             # Kept in _path_buttons so a backend switch can grey the button
             # together with its entry (see _set_field_enabled).
-            browse = FlatButton(frame, text="Browse…",
+            browse = FlatButton(frame, text=i18n.tr("Browse…"),
                       command=lambda f=field: self._browse_path(f),
                       font=(FONT_FAMILY, FONT_SIZE_CAPTION), bg=THEME["bg_accent"],
                       fg=THEME["text_accent"],
@@ -795,7 +803,7 @@ class SettingsWindow:
     def _add_preview_button(self, frame):
         """Add the Listen preview button next to the voice combobox."""
         self._preview_btn = FlatButton(
-            frame, text="▶ Listen", command=self._preview_voice,
+            frame, text=i18n.tr("▶ Listen"), command=self._preview_voice,
             font=(FONT_FAMILY, FONT_SIZE_CAPTION), bg=THEME["bg_accent"],
             fg=THEME["text_accent"],
             activebackground=THEME["bg_accent_active"],
@@ -840,7 +848,7 @@ class SettingsWindow:
         button_row.pack(side=tk.TOP, fill=tk.X)
 
         # "Default" resets everything to the built-in defaults (confirmed).
-        FlatButton(button_row, text="Default", command=self._reset_defaults,
+        FlatButton(button_row, text=i18n.tr("Default"), command=self._reset_defaults,
                   font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_accent"],
                   fg=THEME["text_accent"],
                   activebackground=THEME["bg_accent_active"],
@@ -848,7 +856,7 @@ class SettingsWindow:
                   bd=0, padx=14, pady=4, cursor="hand2").pack(
             side=tk.LEFT, padx=(12, 0), pady=6)
 
-        FlatButton(button_row, text="Close", command=self._on_close,
+        FlatButton(button_row, text=i18n.tr("Close"), command=self._on_close,
                   font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"), bg=THEME["bg_button"],
                   fg=THEME["text_button"],
                   activebackground=THEME["bg_button_active"],
@@ -857,7 +865,7 @@ class SettingsWindow:
             side=tk.RIGHT, padx=12, pady=6)
 
         # "Cancel" undoes everything changed in this window session and closes.
-        FlatButton(button_row, text="Cancel", command=self._cancel,
+        FlatButton(button_row, text=i18n.tr("Cancel"), command=self._cancel,
                   font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_accent"],
                   fg=THEME["text_accent"],
                   activebackground=THEME["bg_accent_active"],
@@ -870,7 +878,7 @@ class SettingsWindow:
         # blending into it. A warn/orange fill was avoided: it fails contrast in
         # the dark theme (light orange fill under white text).
         self._restart_btn = FlatButton(
-            button_row, text="Restart now", command=self._restart_now,
+            button_row, text=i18n.tr("Restart now"), command=self._restart_now,
             font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"), bg=THEME["bg_button"],
             fg=THEME["text_button"],
             activebackground=THEME["bg_button_active"],
@@ -1009,12 +1017,13 @@ class SettingsWindow:
     def _sync_engine_dependent_state(self):
         """Grey out phoneme-only fields unless the phoneme engine is selected.
 
-        "Phoneme anchor mode" (phoneme_good_mode) is handed only to the phoneme
-        engine in engine.configure(); the acoustic engine ignores it and the
-        "none" engine does no scoring at all. Disabling its combobox for any
-        non-phoneme engine signals that the setting is inert for the current
-        choice. The selected (combobox) value drives this, so the field greys
-        the moment the engine is switched, before the pending restart applies.
+        "Phoneme anchor mode" (phoneme_good_mode) is handed to the phoneme and
+        hybrid engines (both run the phoneme sub-engine); the acoustic engine
+        ignores it and the "none" engine does no scoring at all. Disabling its
+        combobox for any engine that does not run the phoneme sub-engine signals
+        that the setting is inert for the current choice. The selected
+        (combobox) value drives this, so the field greys the moment the engine
+        is switched, before the pending restart applies.
         """
         combo = self._widgets.get("phoneme_good_mode")
         if combo is None:
@@ -1023,7 +1032,7 @@ class SettingsWindow:
             else config.ENGINE
         # A readonly combobox toggles between "readonly" (usable, closed list)
         # and "disabled" (greyed); "normal" would wrongly allow free typing.
-        combo.configure(state="readonly" if engine == "phoneme" else "disabled")
+        combo.configure(state="readonly" if engine in ("phoneme", "hybrid") else "disabled")
 
     def _sync_llm_dependent_state(self):
         """Grey out the fields the selected LLM backend ignores.
@@ -1070,9 +1079,10 @@ class SettingsWindow:
 
     # Text of the experimental notice (see _sync_experimental_notice); kept as a
     # constant so the notice can be recognized and cleared.
-    _EXPERIMENTAL_NOTICE = ("The phoneme engine is experimental for this "
-                            "language: no tuned calibration yet, scoring falls "
-                            "back to English.")
+    _EXPERIMENTAL_NOTICE = i18n.tr(
+        "The phoneme engine is experimental for this "
+        "language: no tuned calibration yet, scoring falls "
+        "back to English.")
 
     def _sync_experimental_notice(self):
         """Show or clear the experimental notice for the selected engine+language.
@@ -1093,8 +1103,9 @@ class SettingsWindow:
 
     # Footer hint shown while the preview button is disabled; kept as a
     # constant so _sync_preview_state can recognize (and clear) its own text.
-    _PREVIEW_HINT = ("Voice preview needs a restart into the selected "
-                     "language/variant first.")
+    _PREVIEW_HINT = i18n.tr(
+        "Voice preview needs a restart into the selected "
+        "language/variant first.")
 
     def _sync_preview_state(self):
         """Preview works only for the language and variant the app is running.
@@ -1197,23 +1208,27 @@ class SettingsWindow:
         try:
             number = float(raw.replace(",", "."))
         except ValueError:
-            self._reject_entry(field, f"{field.label}: not a number.")
+            self._reject_entry(
+                field, i18n.tr("{label}: not a number.", label=field.label))
             return
         if field.integer:
             # Reject a fractional value instead of silently truncating it:
             # the user would otherwise see 5.7 turn into 5 with no explanation.
             if number != int(number):
-                self._reject_entry(field,
-                                   f"{field.label}: must be a whole number.")
+                self._reject_entry(
+                    field, i18n.tr("{label}: must be a whole number.",
+                                   label=field.label))
                 return
             number = int(number)
         if field.minimum is not None and number < field.minimum:
-            self._reject_entry(field,
-                               f"{field.label}: must be at least {field.minimum:g}.")
+            self._reject_entry(
+                field, i18n.tr("{label}: must be at least {minimum:g}.",
+                               label=field.label, minimum=field.minimum))
             return
         if field.maximum is not None and number > field.maximum:
-            self._reject_entry(field,
-                               f"{field.label}: must be at most {field.maximum:g}.")
+            self._reject_entry(
+                field, i18n.tr("{label}: must be at most {maximum:g}.",
+                               label=field.label, maximum=field.maximum))
             return
         self._vars[field.key].set(self._display_value(field, number))
         self._emit(field, number)
@@ -1273,15 +1288,16 @@ class SettingsWindow:
     def _reset_defaults(self):
         """Reset every setting to its built-in default (confirmed)."""
         if not messagebox.askyesno(
-                "Reset settings?",
-                "Reset all settings to their defaults?\n\n"
-                "Restart-only settings apply after a restart; "
-                "Cancel still restores the previous values.",
+                i18n.tr("Reset settings?"),
+                i18n.tr("Reset all settings to their defaults?\n\n"
+                        "Restart-only settings apply after a restart; "
+                        "Cancel still restores the previous values."),
                 parent=self.top):
             return
         if not self._cb.on_reset_settings():
-            self._show_status("Reset failed - see the error in the main window.",
-                              kind="error")
+            self._show_status(
+                i18n.tr("Reset failed - see the error in the main window."),
+                kind="error")
             return
         # Repaint the rows from the known defaults (set_value never re-emits;
         # the controller has already applied them). Keys without a fixed
@@ -1317,7 +1333,7 @@ class SettingsWindow:
         # Only the defaults that differ from the running values actually
         # need a restart (a machine already on defaults needs none).
         self._refresh_restart_pending()
-        self._show_status("Settings were reset to their defaults.")
+        self._show_status(i18n.tr("Settings were reset to their defaults."))
 
     def _show_status(self, message: str, *, kind: str = "ok"):
         """One-line footer status: red errors, green confirmations, dim hints."""
@@ -1384,7 +1400,8 @@ class SettingsWindow:
                 self._restart_btn.pack_forget()
             return
         labels = ", ".join(self._restart_pending.values())
-        self._restart_label.config(text=f"Applies after restart: {labels}")
+        self._restart_label.config(
+            text=i18n.tr("Applies after restart: {labels}", labels=labels))
         if not self._restart_btn.winfo_manager():
             # padx keeps a gap from the Cancel button on its right.
             self._restart_btn.pack(side=tk.RIGHT, padx=(0, 8), pady=6)
@@ -1397,9 +1414,9 @@ class SettingsWindow:
         if self._restart_pending:
             labels = ", ".join(self._restart_pending.values())
             if messagebox.askyesno(
-                    "Restart Mimora?",
-                    f"These changes apply after a restart:\n{labels}\n\n"
-                    f"Restart now?",
+                    i18n.tr("Restart Mimora?"),
+                    i18n.tr("These changes apply after a restart:\n{labels}\n\n"
+                            "Restart now?", labels=labels),
                     parent=self.top):
                 self._cb.on_restart_requested()
                 return  # the app is exiting; leave the window as-is

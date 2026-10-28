@@ -33,7 +33,7 @@ from pathlib import Path
 from tkinter import messagebox
 from typing import Any, Callable, Dict, List, Optional
 
-from mimora import config, window_icon
+from mimora import config, i18n, window_icon
 from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_FAMILY_MONO,
@@ -96,7 +96,7 @@ class HistoryBrowseView:
         self.root = root
         self._cb = callbacks
         self._window = tk.Toplevel(root)
-        self._window.title("Practice history")
+        self._window.title(i18n.tr("Practice history"))
         self._window.geometry("820x600")
         window_icon.set_app_user_model_id()
         window_icon.apply_window_icon(self._window)
@@ -122,7 +122,7 @@ class HistoryBrowseView:
     def _build_ui(self) -> None:
         top = tk.Frame(self._window, bg=THEME["bg_main"])
         top.pack(fill=tk.X, padx=12, pady=10)
-        tk.Label(top, text="Practice history",
+        tk.Label(top, text=i18n.tr("Practice history"),
                  font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
                  bg=THEME["bg_main"], fg=THEME["text_emph"]
                  ).pack(side=tk.LEFT)
@@ -133,13 +133,13 @@ class HistoryBrowseView:
 
         buttons = tk.Frame(top, bg=THEME["bg_main"])
         buttons.pack(side=tk.RIGHT)
-        ttk.Button(buttons, text="Export JSON",
+        ttk.Button(buttons, text=i18n.tr("Export JSON"),
                    command=self._on_export_json).pack(side=tk.LEFT, padx=2)
-        ttk.Button(buttons, text="Export CSV",
+        ttk.Button(buttons, text=i18n.tr("Export CSV"),
                    command=self._on_export_csv).pack(side=tk.LEFT, padx=2)
-        ttk.Button(buttons, text="Clear all",
+        ttk.Button(buttons, text=i18n.tr("Clear all"),
                    command=self._on_clear_all).pack(side=tk.LEFT, padx=2)
-        ttk.Button(buttons, text="Close",
+        ttk.Button(buttons, text=i18n.tr("Close"),
                    command=self._window.destroy).pack(side=tk.LEFT, padx=2)
 
         # Scrollable body of session rows.
@@ -181,7 +181,7 @@ class HistoryBrowseView:
         for child in self._body.winfo_children():
             child.destroy()
         if not self._sessions:
-            tk.Label(self._body, text="No practice sessions yet.",
+            tk.Label(self._body, text=i18n.tr("No practice sessions yet."),
                      font=(FONT_FAMILY, FONT_SIZE_BODY, "italic"),
                      fg=THEME["text_dim"], bg=THEME["bg_main"]
                      ).pack(fill=tk.X, padx=12, pady=12)
@@ -192,7 +192,8 @@ class HistoryBrowseView:
         total_takes = sum(len(s.get("takes") or []) for s in self._sessions)
         total_sessions = len(self._sessions)
         self._summary_label.configure(
-            text=f"{total_sessions} sessions · {total_takes} takes")
+            text=i18n.tr("{total} sessions · {takes} takes",
+                         total=total_sessions, takes=total_takes))
 
         # Newest session first.
         for session in reversed(self._sessions):
@@ -201,7 +202,7 @@ class HistoryBrowseView:
         if self._drill_sessions:
             divider = tk.Frame(self._body, bg=THEME["border"])
             divider.pack(fill=tk.X, padx=12, pady=(12, 4))
-            tk.Label(self._body, text="Drill sessions",
+            tk.Label(self._body, text=i18n.tr("Drill sessions"),
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"),
                      fg=THEME["text_emph"], bg=THEME["bg_main"]
                      ).pack(anchor="w", padx=12)
@@ -211,7 +212,7 @@ class HistoryBrowseView:
         if self._dictation_sessions:
             divider = tk.Frame(self._body, bg=THEME["border"])
             divider.pack(fill=tk.X, padx=12, pady=(12, 4))
-            tk.Label(self._body, text="Dictation sessions",
+            tk.Label(self._body, text=i18n.tr("Dictation sessions"),
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"),
                      fg=THEME["text_emph"], bg=THEME["bg_main"]
                      ).pack(anchor="w", padx=12)
@@ -257,7 +258,7 @@ class HistoryBrowseView:
             self._build_take_row(container, session, take, prev_score_by_phrase)
 
         # Delete whole session.
-        delete_btn = tk.Label(container, text="  ✕ delete session",
+        delete_btn = tk.Label(container, text=i18n.tr("  ✕ delete session"),
                               fg=THEME["bad"], bg=THEME["bg_panel"],
                               font=(FONT_FAMILY, FONT_SIZE_CAPTION))
         delete_btn.pack(anchor="w", pady=(4, 4))
@@ -270,13 +271,17 @@ class HistoryBrowseView:
         totals = session.get("totals") or {}
         parts = [f"{started}"]
         if ended:
-            parts.append("–" if not ended.endswith("00") else "")
+            # A session spans a time range; always show the "started – ended"
+            # pair with a separator. (The previous `endswith("00")` check
+            # suppressed the dash when the end minute was ":00", which was an
+            # arbitrary leftover, not a rule about anything.)
+            parts.append("–")
             parts.append(ended)
         if totals:
-            parts.append(f"· {totals.get('takes', 0)} takes")
+            parts.append(i18n.tr("· {n} takes", n=totals.get('takes', 0)))
             avg = totals.get("avg_best_score", 0.0)
             if avg:
-                parts.append(f"· avg {avg:.0f}")
+                parts.append(i18n.tr("· avg {avg:.0f}", avg=avg))
         return "  ".join(p for p in parts if p)
 
     def _build_take_row(self, container, session: Dict[str, Any],
@@ -325,7 +330,8 @@ class HistoryBrowseView:
         if error_words:
             ew_text = ", ".join(w["word"] for w in error_words[:3])
             more = " …" if len(error_words) > 3 else ""
-            tk.Label(row, text=f"work on: {ew_text}{more}",
+            tk.Label(row, text=i18n.tr("work on: {words}{more}",
+                                       words=ew_text, more=more),
                      fg=THEME["bad"], bg=THEME["bg_panel"],
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION)).pack(
                 anchor="s", padx=(4, 4))
@@ -358,12 +364,14 @@ class HistoryBrowseView:
         t_value = target.get("value", "")
         outcome = drill.get("outcome", "")
         outcome_color = THEME["good"] if outcome == "mastered" else THEME["text_dim"]
-        text = f"[{t_type}:{t_value}]  {drill.get('attempts', 0)} attempts  " \
-               f"avg {drill.get('avg_score', 0):.0f}  {outcome}"
+        text = (f"[{t_type}:{t_value}]  "
+                + i18n.tr("{n} attempts", n=drill.get('attempts', 0)) + "  "
+                + i18n.tr("avg {avg:.0f}", avg=drill.get('avg_score', 0))
+                + f"  {outcome}")
         tk.Label(row, text=text, anchor="w",
                  fg=THEME["text_emph"], bg=THEME["bg_panel"],
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION)).pack(fill=tk.X)
-        tk.Label(row, text=f"   result: {outcome}",
+        tk.Label(row, text=i18n.tr("   result: {outcome}", outcome=outcome),
                  fg=outcome_color, bg=THEME["bg_panel"],
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION)).pack(anchor="w")
 
@@ -372,17 +380,19 @@ class HistoryBrowseView:
         row.pack(fill=tk.X, padx=12, pady=2)
         outcome = dt.get("outcome", "")
         outcome_color = THEME["good"] if outcome == "mastered" else THEME["text_dim"]
-        text = (f"{dt.get('attempts', 0)} sentences  "
-                f"avg {dt.get('avg_score', 0):.0f}  {outcome}")
+        text = (i18n.tr("{n} sentences", n=dt.get('attempts', 0)) + "  "
+                + i18n.tr("avg {avg:.0f}", avg=dt.get('avg_score', 0))
+                + f"  {outcome}")
         tk.Label(row, text=text, anchor="w",
                  fg=THEME["text_emph"], bg=THEME["bg_panel"],
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION)).pack(fill=tk.X)
-        tk.Label(row, text=f"   result: {outcome}",
+        tk.Label(row, text=i18n.tr("   result: {outcome}", outcome=outcome),
                  fg=outcome_color, bg=THEME["bg_panel"],
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION)).pack(anchor="w")
         wrong = dt.get("wrong_words") or []
         if wrong:
-            tk.Label(row, text=f"   words to review: {', '.join(wrong[:12])}"
+            tk.Label(row, text=i18n.tr("   words to review: {words}",
+                                       words=", ".join(wrong[:12]))
                      + (" …" if len(wrong) > 12 else ""),
                      fg=THEME["bad"], bg=THEME["bg_panel"],
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION)).pack(anchor="w")
@@ -393,17 +403,16 @@ class HistoryBrowseView:
 
     def _on_delete_take(self, session_id: str, take_id: str) -> None:
         if messagebox.askyesno(
-                "Delete take",
-                "Delete this practice record?\n\n(If audio is stored, its wav "
-                "files are also removed.)",
+                i18n.tr("Delete take"),
+                i18n.tr("Delete this practice record?\n\n(If audio is stored, its wav files are also removed.)"),
                 parent=self._window, icon="warning"):
             self._cb.delete_take(session_id, take_id)
             self.refresh()
 
     def _on_delete_session(self, session_id: str) -> None:
         if messagebox.askyesno(
-                "Delete session",
-                "Delete this whole session and all its takes?",
+                i18n.tr("Delete session"),
+                i18n.tr("Delete this whole session and all its takes?"),
                 parent=self._window, icon="warning"):
             self._cb.delete_session(session_id)
             self._expanded.discard(session_id)
@@ -412,14 +421,14 @@ class HistoryBrowseView:
     def _on_clear_all(self) -> None:
         # Two-step confirm: the user must say "yes" twice.
         if not messagebox.askyesno(
-                "Clear all history",
-                "This deletes every session, take and drill record.\n"
-                "Audio files are also removed.\n\n"
-                "Are you sure?",
+                i18n.tr("Clear all history"),
+                i18n.tr("This deletes every session, take and drill record.\n"
+                        "Audio files are also removed.\n\n"
+                        "Are you sure?"),
                 parent=self._window, icon="warning"):
             return
         if not messagebox.askyesno(
-                "Confirm", "This action cannot be undone. Continue?",
+                i18n.tr("Confirm"), i18n.tr("This action cannot be undone. Continue?"),
                 parent=self._window, icon="warning"):
             return
         self._cb.clear_all()
@@ -429,13 +438,13 @@ class HistoryBrowseView:
     def _on_export_json(self) -> None:
         path = self._cb.export_json()
         if path:
-            messagebox.showinfo("Export complete",
-                                f"JSON saved to:\n{path}",
+            messagebox.showinfo(i18n.tr("Export complete"),
+                                i18n.tr("JSON saved to:\n{path}", path=path),
                                 parent=self._window)
 
     def _on_export_csv(self) -> None:
         path = self._cb.export_csv()
         if path:
-            messagebox.showinfo("Export complete",
-                                f"CSV saved to:\n{path}",
+            messagebox.showinfo(i18n.tr("Export complete"),
+                                i18n.tr("CSV saved to:\n{path}", path=path),
                                 parent=self._window)

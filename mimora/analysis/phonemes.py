@@ -35,7 +35,7 @@ ZH_INTERFERENCE = [
      "example": "very", "severity_rank": 2},
     {"ipa": "r", "hint_zh": "卷舌，中文 r 不卷", "confuses_with": "l",
      "example": "red", "severity_rank": 2},
-    {"ipa": "ɜː", "hint_zh": "中元音，中文无对应", "confuses_with": "e",
+    {"ipa": "ɜ", "hint_zh": "中元音，中文无对应", "confuses_with": "e",
      "example": "bird", "severity_rank": 2},
     {"ipa": "æ", "hint_zh": "美 /æ/，中文常读成 e", "confuses_with": "e",
      "example": "cat", "severity_rank": 3},

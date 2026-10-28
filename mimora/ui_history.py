@@ -10,6 +10,7 @@ history model lives in the controller, which hands the full list to
 """
 import tkinter as tk
 
+from mimora import i18n
 from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_FAMILY_MONO,
@@ -77,7 +78,7 @@ class HistoryPanel:
 
     def _show_placeholder(self):
         self._placeholder = tk.Label(
-            self.rows_frame, text="Your attempts will appear here.",
+            self.rows_frame, text=i18n.tr("Your attempts will appear here."),
             font=(FONT_FAMILY, FONT_SIZE_BODY, "italic"), fg=THEME["text_muted"],
             bg=THEME["bg_panel"], anchor="w")
         self._placeholder.pack(fill=tk.X, padx=12, pady=12)
@@ -237,13 +238,13 @@ class HistoryPanel:
         txt.tag_configure("mono", foreground=THEME["text_dim"], font=(FONT_FAMILY_MONO, FONT_SIZE_BODY))
 
         if entry.get("kind") == "unscored":
-            txt.insert(tk.END, "Heard: ", "label")
-            txt.insert(tk.END, "scoring is off - compare the takes by ear", "text")
+            txt.insert(tk.END, i18n.tr("Heard: "), "label")
+            txt.insert(tk.END, i18n.tr("scoring is off - compare the takes by ear"), "text")
         else:
             # "Words": the target phrase coloured by per-word correctness
             # (good/ok/bad, three-level "level" or the acoustic engine's boolean
             # "correct"); falls back to the plain phrase if tags are empty.
-            txt.insert(tk.END, "Words: ", "label")
+            txt.insert(tk.END, i18n.tr("Words: "), "label")
             ref_words = entry.get("reference_words") or []
             if ref_words:
                 for word in ref_words:
@@ -257,7 +258,7 @@ class HistoryPanel:
                 txt.insert(tk.END, entry.get("phrase") or "-", "text")
             phonemes = entry.get("phonemes") or []
             if phonemes:
-                txt.insert(tk.END, "\nWork on: ", "label")
+                txt.insert(tk.END, "\n" + i18n.tr("Work on: "), "label")
                 for phoneme in phonemes:
                     txt.insert(tk.END, f"/{phoneme}/ ", "mono")
         txt.configure(state=tk.DISABLED)

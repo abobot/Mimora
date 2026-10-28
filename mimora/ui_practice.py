@@ -11,7 +11,7 @@ live here; the controller still reads the text via ``get_text``.
 import tkinter as tk
 from typing import Callable
 
-from mimora import config
+from mimora import config, i18n
 from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_SIZE_BODY,
@@ -54,7 +54,7 @@ class PracticePanel:
         # treatment as the prosody caption).
         self.collapsed = tk.BooleanVar(value=config.PRACTICE_TEXT_COLLAPSED)
         self._caption = FlatButton(
-            header, text="▾ Practice text:",
+            header, text=i18n.tr("▾ Practice text:"),
             command=self._on_caption_clicked,
             font=(FONT_FAMILY, FONT_SIZE_BODY, "bold"), fg=THEME["text_dim"], bg=THEME["bg_main"],
             activebackground=THEME["bg_main"], activeforeground=THEME["text"],
@@ -65,20 +65,20 @@ class PracticePanel:
                           "fg": THEME["text"]},
                    leave={"font": (FONT_FAMILY, FONT_SIZE_BODY, "bold"),
                           "fg": THEME["text_dim"]})
-        Tooltip(self._caption, "Show/hide the practice-text editor")
+        Tooltip(self._caption, i18n.tr("Show/hide the practice-text editor"))
 
         # Quick-edit affordances next to the caption. Their real job is
         # discoverability: a control visible even while the field still shows the
         # pre-filled welcome text is the clearest signal that the box is editable
         # (reviewers kept reading the box as static help text).
         self._paste_btn = FlatButton(
-            header, text="Paste", command=self._paste,
+            header, text=i18n.tr("Paste"), command=self._paste,
             font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_accent"], fg=THEME["text_accent"],
             activebackground=THEME["bg_accent_active"], activeforeground=THEME["text_bright"],
             bd=0, width=10, padx=8, pady=1, cursor="hand2")
         self._paste_btn.pack(side=tk.LEFT, padx=(10, 0))
         self._clear_btn = FlatButton(
-            header, text="Clear text", command=self._clear,
+            header, text=i18n.tr("Clear text"), command=self._clear,
             font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_accent"], fg=THEME["text_accent"],
             activebackground=THEME["bg_accent_active"], activeforeground=THEME["text_bright"],
             bd=0, width=10, padx=8, pady=1, cursor="hand2")
@@ -170,7 +170,8 @@ class PracticePanel:
         self.root.focus_set()
         collapsed = self.collapsed.get()
         self._caption.config(
-            text="▸ Practice text:" if collapsed else "▾ Practice text:")
+            text=i18n.tr("▸ Practice text:") if collapsed
+            else i18n.tr("▾ Practice text:"))
         # Probe the editor frame, not the Text: the Text is permanently
         # packed inside that frame and always answers "pack".
         shown = self._editor.winfo_manager() == "pack"
@@ -200,7 +201,7 @@ class PracticePanel:
         raw = self.text.get("1.0", "end-1c")
         collapsed_ws = " ".join(raw.split())
         if not collapsed_ws:
-            self._preview.config(text="(empty)")
+            self._preview.config(text=i18n.tr("(empty)"))
             return
         limit = 60
         shown = collapsed_ws[:limit].rstrip()

@@ -80,6 +80,57 @@ Work on:    colder
 
 ---
 
+## Feature overview
+
+Mimora is a local, offline pronunciation trainer: a local LLM writes a phrase from your practice text, TTS speaks it, you repeat it, the active engine scores your take, and you keep practicing until satisfied. This section summarizes what the current build offers.
+
+### The practice loop
+
+Each phrase runs five phases (see [How it works](#how-it-works)): **Prompt → Record → Analyze → Feedback → Loop**, driven by `mimora/app.py` (`PronunciationTrainerGUI`). Generation, synthesis, playback, recording and scoring all run in daemon threads and reach the GUI only through `root.after`, so the window never blocks.
+
+### Scoring engines
+
+The engine is chosen in the settings window (**Engine**; settings.json `"engine"`) and dispatched by `mimora/engine.py`:
+
+- **`phoneme`** (default) - espeak reference phonemes vs a wav2vec2 phoneme recognizer, feature-weighted edit distance, calibrated 0-5 grade. Works for every language; the reference is the phrase text.
+- **`acoustic`** - Wav2Vec2 embeddings + cosine DTW + phoneme/word error rates (40/30/30 weighting). English-only; needs the reference audio; calibrated by an `acoustic_good` floor.
+- **`hybrid`** - runs BOTH engines on the same take and blends their axis scores (default 0.5/0.5) into one 0-100 grade, then applies the phoneme engine's calibrated bucket. English-only; needs the reference audio, and without either it degrades to the pure phoneme score. Loads two ~1.2 GB recognizers, so it is the heaviest option.
+- **`none`** - scoring off; every take is accepted, no recognizer is loaded. For slow machines.
+
+Models load lazily; `load_models()` preloads them in a background thread and `warm_up()` removes first-call latency. The LLM runs in a separate process, and recognizers go on the GPU only at >=6 GB free VRAM. The `hybrid` engine needs two recognizers resident at once, so `WAV2VEC2_DEVICE = "cpu"` is often the right choice on a small card.
+
+### Practice modes
+
+- **Standard loop** - the main practice loop above.
+- **Dictation** (`mimora/dictation/`) - hear a sentence, type one word per slot, get scored 0-100 with per-word diagnostics (missed / spelling / extra) from a `difflib` alignment, so an inserted or dropped word does not shift later words into "wrong". The sentence text is deliberately not shown. Phrases come from your source text, cycled with reshuffling, with a small fallback pool when the source is empty.
+- **Drill** (`mimora/drill/`) - repeated practice of one target word or phoneme, with mastery detection (three consecutive passes), a progress bar and a finish report. Falls back to synthetic phrases when the source has no match, and `fallback_reason` explains why (localized).
+
+### Scoring, analysis and feedback
+
+- **Prosody** (`mimora/prosody.py`) - engine-agnostic F0/energy contours (librosa/sklearn, no torch), added after scoring; skipped while the prosody block is collapsed.
+- **Weakness analysis** - `analysis/error_words.py` (per-word leader board with need_practice / watch / improving states), `analysis/phonemes.py` (phoneme weakness plus a Chinese-speaker interference table), `analysis/ipa_map.py` (English word → IPA routed through the engine's own espeak G2P, so the symbols are exactly the folded inventory the scorer uses; `ipa_from_words` batches a whole phrase into one espeak call), `analysis/suggestions.py` (rule-based suggestion cards, <1 ms, no LLM).
+- **UI** - `ui_weakness.py` (overview / word leader board / phoneme heatmap with Chinese hints), `ui_stats.py` (stats dashboard on `tk.Canvas`, no matplotlib), `ui_history_browse.py` (history browser: score chips, trend arrows, per-take play and delete, two-step clear).
+- **Persistence** - `persistence/stats.py` (sessions/takes/roll-ups in `stats.json`, atomic writes, a rolling `.bak`, per-day archives), `persistence/recorder_store.py` (per-take audio under `logs/records/`, only when `HISTORY_MODE == "with_audio"`).
+
+### Speech and LLM
+
+- **TTS** (`mimora/tts.py`) - `KokoroBackend` (torch, 24 kHz, English) and `SupertonicBackend` (ONNX, 44.1 kHz, Spanish), picked by the language profile; playback uses `winsound` on Windows with a `sounddevice` fallback, and a ~150 ms silence lead-in avoids clipping.
+- **LLM** (`mimora/llm.py`, `mimora/llm_server_ctl.py`) - `llama-server` subprocess (default), LM Studio, or `off` (phrases are the practice text's own sentences, verbatim). Critical flags are passed explicitly (`--ctx-size`, `--parallel 1`, `--cache-reuse 256`, `--api-key`, `--no-ui`); a server already answering on the port is adopted as-is and never terminated on exit. `request_extra_body()` disables `thinking` for adopted reasoning models; `phrase_sampling()` uses different sampling for the own vs an adopted server.
+
+### Localization
+
+`mimora/i18n.py` provides the UI translation (English → Chinese). The lookup key IS the English source literal, so a missing translation degrades to the English string; the active language is read at startup and is restart-only (English by default; `SUPPORTED_LANGUAGES = ("en", "zh")`).
+
+### First run, downloads and configuration
+
+Four downloaders (`model_fetch`, `gguf_fetch`, `llama_server_fetch`, `spacy_model_fetch`) are forbidden to import `config` and use sha256 verification. `first_run.py` plans the missing models in three groups (required / optional / translator), and a refusal rewrites `llm_backend` or `translation_language` rather than silently disabling a feature nobody declined. `config.py` flips `HF_HUB_OFFLINE=1` only once every repo the run needs is cached; user overrides live in `config/settings.json`; `detect_hardware.py` probes the machine into `config/hardware_config.json`.
+
+### Engineering constraints
+
+`mimora/` uses absolute imports, `pronunciation/` relative ones (those subpackages are reusable libraries); runtime validation raises `RuntimeError` with a descriptive message rather than `assert`; comments say what breaks if the code changes; `espeak-ng` is registered from the wheel with both `set_library` and `set_data_path`.
+
+---
+
 ## Requirements
 
 - **Hardware** - a typical laptop or desktop: **16 GB RAM and no GPU required**. On CPU the first phrases are slower. An NVIDIA GPU is optional, needs a CUDA build of PyTorch, and speeds up scoring and phrase generation.

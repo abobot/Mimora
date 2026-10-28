@@ -72,6 +72,35 @@ class TestPureLogic(unittest.TestCase):
             0.3, 8 / 40, 12 / 60, acoustic_bad=0.6, acoustic_good=0.2)
         self.assertEqual(short, long)
 
+    def test_acoustic_dtw_score_is_full_at_floor(self):
+        # At the good floor the acoustic component is 100.
+        self.assertEqual(speech.acoustic_dtw_score(0.2, acoustic_bad=0.6, acoustic_good=0.2), 100.0)
+
+    def test_acoustic_dtw_score_is_zero_at_or_beyond_ceiling(self):
+        self.assertEqual(speech.acoustic_dtw_score(0.6, acoustic_bad=0.6, acoustic_good=0.2), 0.0)
+        self.assertEqual(speech.acoustic_dtw_score(1.5, acoustic_bad=0.6, acoustic_good=0.2), 0.0)
+
+    def test_acoustic_dtw_score_clamps_negative_distance(self):
+        # A distance below the floor (noise) must clamp to 100, not overshoot.
+        self.assertEqual(speech.acoustic_dtw_score(0.1, acoustic_bad=0.6, acoustic_good=0.2), 100.0)
+
+    def test_acoustic_phoneme_score_linear(self):
+        self.assertEqual(speech.acoustic_phoneme_score(0.0), 100.0)
+        self.assertEqual(speech.acoustic_phoneme_score(0.5), 50.0)
+        self.assertEqual(speech.acoustic_phoneme_score(1.0), 0.0)
+
+    def test_acoustic_word_score_linear(self):
+        self.assertEqual(speech.acoustic_word_score(0.0), 100.0)
+        self.assertEqual(speech.acoustic_word_score(0.25), 75.0)
+        self.assertEqual(speech.acoustic_word_score(1.0), 0.0)
+
+    def test_compute_uses_the_axis_components(self):
+        # 40/30/30 weighting of the three axis scores.
+        # dtw=100, phoneme=50, word=0 -> 0.4*100 + 0.3*50 + 0.3*0 = 55.
+        score = speech.compute_pronunciation_score(
+            0.2, 0.5, 1.0, acoustic_bad=0.6, acoustic_good=0.2)
+        self.assertEqual(score, 55.0)
+
     def test_random_pair_baseline_handles_empty_embeddings(self):
         # Near-empty audio yields zero embedding frames; the baseline must fall
         # back to the fixed ceiling instead of crashing on integers(0, 0).

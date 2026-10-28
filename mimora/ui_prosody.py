@@ -13,7 +13,7 @@ from typing import Callable
 
 import ttkbootstrap as ttk
 
-from mimora import config, prosody_utils
+from mimora import config, i18n, prosody_utils
 from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_SIZE_BODY,
@@ -52,7 +52,7 @@ class ProsodyPanel:
         # the arrow for a technical artifact).
         self.show_prosody = tk.BooleanVar(value=config.SHOW_PROSODY)
         self._caption = FlatButton(
-            self.frame, text="▾ Intonation & stress",
+            self.frame, text=i18n.tr("▾ Intonation & stress"),
             command=self._on_caption_clicked,
             font=(FONT_FAMILY, FONT_SIZE_BODY, "bold"), fg=THEME["text_dim"], bg=THEME["bg_main"],
             activebackground=THEME["bg_main"], activeforeground=THEME["text"],
@@ -63,7 +63,7 @@ class ProsodyPanel:
                           "fg": THEME["text"]},
                    leave={"font": (FONT_FAMILY, FONT_SIZE_BODY, "bold"),
                           "fg": THEME["text_dim"]})
-        Tooltip(self._caption, "Show/hide the intonation charts")
+        Tooltip(self._caption, i18n.tr("Show/hide the intonation charts"))
 
         # Body: everything hidden while collapsed. toggle() packs/forgets it as
         # a whole, so the individual children are packed once here.
@@ -75,20 +75,20 @@ class ProsodyPanel:
         # a line of vertical space.
         pitch_title_row = tk.Frame(self.body, bg=THEME["bg_main"])
         pitch_title_row.pack(fill=tk.X, pady=(4, 0))
-        tk.Label(pitch_title_row, text="Pitch - intonation (semitones vs your median)",
+        tk.Label(pitch_title_row, text=i18n.tr("Pitch - intonation (semitones vs your median)"),
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION), fg=THEME["text_dim"], bg=THEME["bg_main"]).pack(side=tk.LEFT)
         # Packed right-to-left: "reference" first so "you" lands left of it,
         # keeping the reading order "● you ● reference".
-        tk.Label(pitch_title_row, text="● reference", font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+        tk.Label(pitch_title_row, text=i18n.tr("● reference"), font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                  fg=THEME["reference"], bg=THEME["bg_main"]).pack(side=tk.RIGHT)
-        tk.Label(pitch_title_row, text="● you", font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+        tk.Label(pitch_title_row, text=i18n.tr("● you"), font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                  fg=THEME["info"], bg=THEME["bg_main"]).pack(side=tk.RIGHT, padx=(0, 8))
         self.f0_canvas = tk.Canvas(self.body, height=46, bg=THEME["bg_panel"],
                                    highlightthickness=1, highlightbackground=THEME["border"])
         self.f0_canvas.pack(fill=tk.X, pady=(0, 4))
 
         # Energy chart: same, below the pitch chart.
-        tk.Label(self.body, text="Energy - stress pattern",
+        tk.Label(self.body, text=i18n.tr("Energy - stress pattern"),
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION), fg=THEME["text_dim"], bg=THEME["bg_main"]).pack(anchor=tk.W)
         self.en_canvas = tk.Canvas(self.body, height=46, bg=THEME["bg_panel"],
                                    highlightthickness=1, highlightbackground=THEME["border"])
@@ -97,7 +97,7 @@ class ProsodyPanel:
         # Reading hint: horizontal axis is time (stretched to equal width for both),
         # so the goal is matching the *shape* of the reference, not exact overlap.
         tk.Label(self.body,
-                 text="Time runs (stretched to equal width). Aim to match the reference shape.",
+                 text=i18n.tr("Time runs (stretched to equal width). Aim to match the reference shape."),
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION), fg=THEME["text_dim"], bg=THEME["bg_main"],
                  wraplength=540, justify=tk.LEFT).pack(anchor=tk.W, pady=(3, 0))
 
@@ -105,7 +105,7 @@ class ProsodyPanel:
         # can compare it to the reference charts.
         if self._play_user_recording:
             self._play_btn = ttk.Button(
-                self.body, text="▶  Play my take",
+                self.body, text=i18n.tr("▶  Play my take"),
                 command=self._play_user_recording, width=18)
             self._play_btn.pack(anchor=tk.W, pady=(4, 0))
 
@@ -132,7 +132,8 @@ class ProsodyPanel:
         self.root.focus_set()
         expanded = self.show_prosody.get()
         self._caption.config(
-            text="▾ Intonation & stress" if expanded else "▸ Intonation & stress")
+            text=i18n.tr("▾ Intonation & stress") if expanded
+            else i18n.tr("▸ Intonation & stress"))
         shown = self.body.winfo_manager() == "pack"
         if expanded and not shown:
             self.body.pack(fill=tk.X)

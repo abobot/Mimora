@@ -42,7 +42,7 @@ from tkinter import messagebox, ttk
 import numpy as np
 
 from mimora import (config, detect_hardware, first_run, first_run_window,
-                    lifecycle, models_info, prosody, spacy_model_fetch,
+                    i18n, lifecycle, models_info, prosody, spacy_model_fetch,
                     splash, window_icon)
 from mimora.llm import LLMManager, phrase_sampling
 from mimora.llm_server_ctl import LLMServerController
@@ -121,7 +121,8 @@ class PronunciationTrainerGUI:
         window_icon.set_app_user_model_id()
         self.root = tk.Tk(className=window_icon.WM_CLASS)
         window_icon.apply_window_icon(self.root)
-        self.root.title(f"Mimora · {config.TARGET_LANGUAGE} - Pronunciation Trainer v{__version__}")
+        self.root.title(i18n.tr("Mimora · {language} - Pronunciation Trainer v{version}",
+                                language=config.TARGET_LANGUAGE, version=__version__))
 
         # Tk swallows exceptions raised in widget callbacks (button commands,
         # event handlers, after() callbacks) unless we install a handler. A
@@ -442,7 +443,8 @@ class PronunciationTrainerGUI:
     def load_components(self):
         logging.info("Starting model loading thread...")
         self.root.after(0, self.view.enter_loading)
-        self.root.after(0, self.view.append_system_msg, "Loading TTS and pronunciation models...")
+        self.root.after(0, self.view.append_system_msg,
+                        i18n.tr("Loading TTS and pronunciation models..."))
 
         try:
             self.tts_mgr.load_model()
@@ -452,7 +454,7 @@ class PronunciationTrainerGUI:
             # only confuse; every other engine loads a Wav2Vec2 recognizer.
             if engine.name() != "none":
                 self.root.after(0, self.view.append_system_msg,
-                                "Loading Wav2Vec2 (pronunciation, ~1.2 GB on first run)...")
+                                i18n.tr("Loading Wav2Vec2 (pronunciation, ~1.2 GB on first run)..."))
             # Inject app settings into the active engine before it loads any model.
             # The dispatcher builds the engine-specific config from app settings;
             # this is the analyzer's composition root.
@@ -476,7 +478,7 @@ class PronunciationTrainerGUI:
             # that downloaded the model (_offer_translator_download).
             if config.TRANSLATION_LANGUAGE:
                 self.root.after(0, self.view.append_system_msg,
-                                "Loading translator (NLLB) from disk...")
+                                i18n.tr("Loading translator (NLLB) from disk..."))
                 # load_model() logs the success itself - do not repeat it here.
                 self.translator_mgr.load_model()
 
@@ -484,18 +486,18 @@ class PronunciationTrainerGUI:
                 # Nothing to start or connect to; generation is served by
                 # SourceTextPhraseProvider (see __init__).
                 self.root.after(0, self.view.append_system_msg,
-                                "LLM is off - phrases are taken from the practice text.")
+                                i18n.tr("LLM is off - phrases are taken from the practice text."))
             elif self.llm_backend == "llama-server":
                 model_name = os.path.basename(config.EXTERNAL_MODEL_PATH)
                 self.root.after(0, self.view.append_system_msg,
-                                f"Starting llama-server with {model_name}...")
+                                i18n.tr("Starting llama-server with {name}...", name=model_name))
                 self.root.after(0, self.view.enter_server_starting)
                 if not self.llm_server.start(self.llm_mgr):
                     self.root.after(0, self.view.append_error_msg,
                                     self._server_failure_message())
                     self.root.after(0, self.view.server_failed)
                     return
-                self.root.after(0, self.view.append_system_msg, "LLM server is ready.")
+                self.root.after(0, self.view.append_system_msg, i18n.tr("LLM server is ready."))
                 # Before the window becomes ready, so the first phrase already
                 # uses the sampling values for the server that answers.
                 self.llm_mgr.adopted_server = self.llm_server.adopted
@@ -513,9 +515,10 @@ class PronunciationTrainerGUI:
                     # explains a model or a speed the settings do not.
                     self.root.after(
                         0, self.view.append_system_msg,
-                        f"Using the llama-server already running on "
-                        f"{config.LLM_SERVER_HOST}:{config.LLM_SERVER_PORT}. "
-                        f"It keeps the model it was started with.")
+                        i18n.tr("Using the llama-server already running on "
+                                "{host}:{port}. It keeps the model it was started with.",
+                                host=config.LLM_SERVER_HOST,
+                                port=config.LLM_SERVER_PORT))
                 served_n_ctx = self.llm_server.served_n_ctx
                 if (served_n_ctx is not None
                         and served_n_ctx < config.EXTERNAL_N_CTX):
@@ -524,14 +527,16 @@ class PronunciationTrainerGUI:
                     # overwritten by the next state change at once.
                     self.root.after(
                         0, self.view.append_error_msg,
-                        f"Warning: the LLM server has a context of "
-                        f"{served_n_ctx} tokens instead of "
-                        f"{config.EXTERNAL_N_CTX}. Long prompts may not fit. "
-                        f"See logs/main.log.")
+                        i18n.tr("Warning: the LLM server has a context of "
+                                "{served} tokens instead of {expected}. "
+                                "Long prompts may not fit. See logs/main.log.",
+                                served=served_n_ctx,
+                                expected=config.EXTERNAL_N_CTX))
             else:
                 self.llm_mgr.init_client()
                 if not self.llm_mgr.check_connection():
-                    self.root.after(0, self.view.append_error_msg, "Warning: LM Studio is offline. Start it to generate phrases!")
+                    self.root.after(0, self.view.append_error_msg,
+                                    i18n.tr("Warning: LM Studio is offline. Start it to generate phrases!"))
 
             if config.WARM_UP:
                 self.root.after(0, self.view.enter_warming_up)
@@ -566,7 +571,8 @@ class PronunciationTrainerGUI:
             # is "1": without it the window would say "Initialization Error: 1".
             logging.exception("Error during initialization thread:")
             self.root.after(0, self.view.append_error_msg,
-                            f"Initialization Error: {type(e).__name__}: {e}")
+                            i18n.tr("Initialization Error: {type}: {msg}",
+                                    type=type(e).__name__, msg=e))
             self.root.after(0, self.view.init_failed)
 
     def _server_failure_message(self) -> str:
@@ -589,25 +595,24 @@ class PronunciationTrainerGUI:
         sentence names the port.
         """
         if self.llm_server.last_error:
-            return f"Error: {self.llm_server.last_error}"
+            return i18n.tr("Error: {msg}", msg=self.llm_server.last_error)
         status = first_run.llama_server_status()
         if status == first_run.SERVER_PRESENT:
             # The binary is there and was still not usable, which is a question
             # about this machine rather than about the setup.
-            return ("Error: LLM server failed to start. Check model path and "
-                    "GPU memory.")
+            return i18n.tr("Error: LLM server failed to start. Check model path and GPU memory.")
         if status == first_run.SERVER_MISCONFIGURED:
             # Downloading would not help: it lands in bin/llama/ while the
             # setting keeps winning in the resolver, so the way out is the
             # setting itself.
-            return ('Error: "llama_server_path" in config/settings.json '
-                    'points at a file that is not there. Fix the path, or '
-                    'clear it to use the build Mimora installs itself.')
-        return ('Error: no llama-server binary was found. Install one with '
-                "'python -m mimora.llama_server_fetch', or point "
-                '"llama_server_path" in config/settings.json at a build you '
-                'make yourself, or set "llm_backend" to "lm-studio" and '
-                'generate phrases with LM Studio instead.')
+            return i18n.tr('Error: "llama_server_path" in config/settings.json '
+                           'points at a file that is not there. Fix the path, or '
+                           'clear it to use the build Mimora installs itself.')
+        return i18n.tr('Error: no llama-server binary was found. Install one with '
+                       "'python -m mimora.llama_server_fetch', or point "
+                       '"llama_server_path" in config/settings.json at a build you '
+                       'make yourself, or set "llm_backend" to "lm-studio" and '
+                       'generate phrases with LM Studio instead.')
 
     def load_practice_text(self):
         """Pre-fill the source panel from the practice text file (main thread)."""
@@ -638,16 +643,21 @@ class PronunciationTrainerGUI:
                 text = f.read().strip()
         except (OSError, UnicodeDecodeError) as e:
             logging.warning(f"Could not read practice text file {path!r}: {e}")
-            self.view.append_error_msg(f"Could not read {os.path.basename(path)}: {e}")
+            self.view.append_error_msg(
+                i18n.tr("Could not read {name}: {msg}",
+                        name=os.path.basename(path), msg=e))
             self._revert_practice_file_setting()
             return
         if not text:
-            self.view.append_error_msg(f"{os.path.basename(path)} is empty - nothing to load.")
+            self.view.append_error_msg(
+                i18n.tr("{name} is empty - nothing to load.",
+                        name=os.path.basename(path)))
             self._revert_practice_file_setting()
             return
 
         self.view.set_practice_text(text)
-        self.view.append_system_msg(f"Loaded practice text: {os.path.basename(path)}")
+        self.view.append_system_msg(
+            i18n.tr("Loaded practice text: {name}", name=os.path.basename(path)))
         logging.info(f"Practice text loaded from {path!r}.")
 
         # Persist for the next launch, always as the absolute path, never a
@@ -680,7 +690,7 @@ class PronunciationTrainerGUI:
     def make_app_ready(self):
         self.app_ready = True
         self.view.enter_app_ready()
-        self.view.append_system_msg("Ready. Generate a phrase, listen, then press SPACE to repeat it.")
+        self.view.append_system_msg(i18n.tr("Ready. Generate a phrase, listen, then press SPACE to repeat it."))
         # Speak a personal greeting first, then auto-generate the first phrase.
         # The name and voice are read here, on the main thread (Tk is not
         # thread-safe), and the playback stop event is installed here too (see
@@ -849,11 +859,13 @@ class PronunciationTrainerGUI:
         """
         size_mb = models_info.NLLB.size_mb
         if not messagebox.askyesno(
-                "Mimora",
-                f"Translation needs the offline translator model "
-                f"({size_mb / 1000:.1f} GB), which is not downloaded yet.\n\n"
-                f"Mimora will restart to download it. The current session "
-                f"(phrase and score) is lost.\n\nRestart and download now?",
+                i18n.tr("Mimora"),
+                i18n.tr("Translation needs the offline translator model "
+                        "({size} GB), which is not downloaded yet.\n\n"
+                        "Mimora will restart to download it. The current session "
+                        "(phrase and score) is lost.\n\n"
+                        "Restart and download now?",
+                        size=f"{size_mb / 1000:.1f}"),
                 parent=self.root):
             logging.info("Translator download declined; translation stays off.")
             config.TRANSLATION_LANGUAGE = ""
@@ -1122,7 +1134,7 @@ class PronunciationTrainerGUI:
         if self.last_user_audio is None or self.last_user_audio.size == 0:
             return
         self.playback.play_async(self.last_user_audio, config.AUDIO_SAMPLE_RATE,
-                                 "Playing your recording...")
+                                 i18n.tr("Playing your recording..."))
 
     def _drill_on_auto_next_toggled(self, enabled: bool) -> None:
         """Update the drill's auto-next state."""
@@ -1268,6 +1280,17 @@ class PronunciationTrainerGUI:
         self._dictation_view = None
 
     def _get_source_text(self) -> str:
+        # The practice text lives in the VIEW (ui_practice), not on the
+        # controller; on_generate_phrase reads it via self.view.get_practice_text().
+        # Mirror that here so drills draw phrases from the same corpus the
+        # user is actually practicing, instead of falling back to synthetic
+        # phrases unrelated to the drill target.
+        try:
+            text = self.view.get_practice_text()
+            if isinstance(text, str) and text.strip():
+                return text
+        except (AttributeError, tk.TclError):
+            pass
         for name in ("practice_text", "source_text"):
             v = getattr(self, name, None)
             if isinstance(v, str):
@@ -1304,7 +1327,7 @@ class PronunciationTrainerGUI:
                 if path is None:
                     self.root.after(
                         0, self.view.append_error_msg,
-                        "The recording for that attempt is no longer on disk.")
+                        i18n.tr("The recording for that attempt is no longer on disk."))
                     return
                 with wave.open(str(path), "rb") as w:
                     sample_rate = w.getframerate()
@@ -1314,10 +1337,10 @@ class PronunciationTrainerGUI:
             except Exception:
                 logging.exception("Failed to read the attempt recording:")
                 self.root.after(0, self.view.append_error_msg,
-                                "Could not play that recording.")
+                                i18n.tr("Could not play that recording."))
                 return
             self.root.after(0, self.playback.play_async, audio, sample_rate,
-                            "Playing your recording...")
+                            i18n.tr("Playing your recording..."))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -1330,7 +1353,7 @@ class PronunciationTrainerGUI:
         path = filedialog.asksaveasfilename(
             defaultextension=".json",
             filetypes=[("JSON", "*.json")],
-            initialfile=default, title="Export stats as JSON")
+            initialfile=default, title=i18n.tr("Export stats as JSON"))
         if not path:
             return None
         try:
@@ -1339,7 +1362,7 @@ class PronunciationTrainerGUI:
             return str(path)
         except Exception:
             logging.exception("Export JSON failed:")
-            self.view.append_error_msg("Could not export stats.")
+            self.view.append_error_msg(i18n.tr("Could not export stats."))
             return None
 
     def _stats_export_csv(self):
@@ -1349,7 +1372,7 @@ class PronunciationTrainerGUI:
         path = filedialog.asksaveasfilename(
             defaultextension=".csv",
             filetypes=[("CSV", "*.csv")],
-            initialfile=default, title="Export takes as CSV")
+            initialfile=default, title=i18n.tr("Export takes as CSV"))
         if not path:
             return None
         try:
@@ -1371,7 +1394,7 @@ class PronunciationTrainerGUI:
             return str(path)
         except Exception:
             logging.exception("Export CSV failed:")
-            self.view.append_error_msg("Could not export stats.")
+            self.view.append_error_msg(i18n.tr("Could not export stats."))
             return None
 
     def on_setting_changed(self, key: str, value):
@@ -1451,7 +1474,8 @@ class PronunciationTrainerGUI:
         self.playback.stop()
         stop_event = self.playback.new_event()
         speed = self._selected_speed()
-        status = f"Previewing {voice}..." if speed == 1.0 else f"Previewing {voice} ({speed:g}×)..."
+        status = i18n.tr("Previewing {voice}...", voice=voice) if speed == 1.0 \
+            else i18n.tr("Previewing {voice} ({speed}×)...", voice=voice, speed=f"{speed:g}")
         self.view.playing_status(status)
         threading.Thread(target=self._preview_voice_worker,
                          args=(voice, stop_event), daemon=True).start()
@@ -1470,7 +1494,7 @@ class PronunciationTrainerGUI:
         except Exception:
             logging.exception("Voice preview error:")
             self.root.after(0, self.view.append_error_msg,
-                            f"Could not preview voice {voice}.")
+                            i18n.tr("Could not preview voice {voice}.", voice=voice))
         finally:
             self.root.after(0, self.playback.finished, stop_event)
 
@@ -1484,7 +1508,7 @@ class PronunciationTrainerGUI:
         # Read the editable source text on the main thread (Tk is not thread-safe).
         source_text = self.view.get_practice_text()
         if not source_text:
-            self.view.append_error_msg("Please enter some practice text first.")
+            self.view.append_error_msg(i18n.tr("Please enter some practice text first."))
             return
 
         self.is_generating = True
@@ -1523,13 +1547,15 @@ class PronunciationTrainerGUI:
         try:
             phrase = self.llm_mgr.generate_phrase(source_text, length=length)
             if not phrase:
-                self.root.after(0, self._phrase_generation_failed, "The model returned no phrase. Try again.")
+                self.root.after(0, self._phrase_generation_failed,
+                                i18n.tr("The model returned no phrase. Try again."))
                 return
 
             # Synthesize the reference once; reused for playback and analysis.
             reference_audio = self.tts_mgr.synthesize(phrase, voice=voice)
             if reference_audio.size == 0:
-                self.root.after(0, self._phrase_generation_failed, "Could not synthesize the reference audio.")
+                self.root.after(0, self._phrase_generation_failed,
+                                i18n.tr("Could not synthesize the reference audio."))
                 return
 
             # These are plain-data fields (not Tk widgets), so - unlike widget
@@ -1570,7 +1596,8 @@ class PronunciationTrainerGUI:
 
         except Exception as e:
             logging.exception("Phrase generation / prompt error:")
-            self.root.after(0, self._phrase_generation_failed, f"Error: {e}")
+            self.root.after(0, self._phrase_generation_failed,
+                            i18n.tr("Error: {msg}", msg=e))
 
     def _translate_into_panel(self, phrase: str, language: str):
         """Translate *phrase* and push it to the panel. (Background thread.)
@@ -1601,7 +1628,7 @@ class PronunciationTrainerGUI:
             # change came from. Announced only while a load still looks
             # possible - after a reported failure every phrase would repeat it.
             self.root.after(0, self.view.append_system_msg,
-                            "Loading translator (NLLB) from disk...")
+                            i18n.tr("Loading translator (NLLB) from disk..."))
         translated = self.translator_mgr.translate(phrase, language)
         if not translated and not self.translator_mgr.is_loaded():
             # Once per session: the load is retried on every phrase (the
@@ -1610,8 +1637,8 @@ class PronunciationTrainerGUI:
             if not self._translator_failure_reported:
                 self._translator_failure_reported = True
                 self.root.after(0, self.view.append_system_msg,
-                                "Translation unavailable: the translator model "
-                                "could not be loaded (see logs/main.log).")
+                                i18n.tr("Translation unavailable: the translator model "
+                                        "could not be loaded (see logs/main.log)."))
             return
         # current_phrase is replaced by a fresh generation; if it no longer
         # matches, this translation is for a superseded phrase - drop it.
@@ -1622,7 +1649,7 @@ class PronunciationTrainerGUI:
 
     def _show_new_phrase(self, phrase: str):
         self.view.enter_reference_playing(phrase, self.current_translation)
-        self.view.append_system_msg(f"New phrase: {phrase}")
+        self.view.append_system_msg(i18n.tr("New phrase: {phrase}", phrase=phrase))
 
     def _phrase_ready(self):
         self.is_generating = False
@@ -1773,7 +1800,7 @@ class PronunciationTrainerGUI:
                 # and its callback may still be appending chunks. Reading them
                 # now would race the writer - drop the take.
                 self.root.after(0, self.view.append_error_msg,
-                                "Audio device did not stop in time - take discarded, please try again.")
+                                i18n.tr("Audio device did not stop in time - take discarded, please try again."))
                 self.root.after(0, self._reset_to_retry)
                 return
             self.analyze_recording(stop_event, prep_start)
@@ -1787,7 +1814,8 @@ class PronunciationTrainerGUI:
         Route through the normal stop path on the main thread so the take is
         finalized and analyzed exactly like a manual stop.
         """
-        self.root.after(0, self.view.append_error_msg, "Reached maximum record limit - take cut off.")
+        self.root.after(0, self.view.append_error_msg,
+                        i18n.tr("Reached maximum record limit - take cut off."))
         self.root.after(0, self.trigger_recording_stop)
 
     def _on_record_silence_stop(self):
@@ -1892,12 +1920,12 @@ class PronunciationTrainerGUI:
         try:
             # Play the reference back first (stop_event was installed by the
             # caller; see PlaybackController.new_event).
-            self.root.after(0, self.view.enter_playing, "Playing reference...")
+            self.root.after(0, self.view.enter_playing, i18n.tr("Playing reference..."))
             self.playback.play_with_face(self.reference_audio,
                                          self.tts_mgr.sample_rate, stop_event)
 
             # Then run analysis with the reference as both inputs.
-            self.root.after(0, self.view.enter_analyzing, "Testing with reference...")
+            self.root.after(0, self.view.enter_analyzing, i18n.tr("Testing with reference..."))
             result = engine.analyze(
                 user_audio=self.reference_audio,
                 expected_text=self.current_phrase,
@@ -1915,7 +1943,8 @@ class PronunciationTrainerGUI:
                             self._has_user_recording(), True)  # is_self_test
         except Exception:
             logging.exception("Reference self-test error:")
-            self.root.after(0, self.view.append_error_msg, "Reference test failed.")
+            self.root.after(0, self.view.append_error_msg,
+                            i18n.tr("Reference test failed."))
             self.root.after(0, self._reset_to_retry)
         finally:
             with self.processing_lock:
@@ -1932,7 +1961,8 @@ class PronunciationTrainerGUI:
             audio = self.recorder.get_audio()
             if audio is None or len(audio) < config.AUDIO_SAMPLE_RATE * 0.2:
                 logging.warning("Captured audio too short or empty.")
-                self.root.after(0, self.view.append_error_msg, "Audio is too short. Speak a little longer and try again.")
+                self.root.after(0, self.view.append_error_msg,
+                                i18n.tr("Audio is too short. Speak a little longer and try again."))
                 self.root.after(0, self._reset_to_retry)
                 return
 
@@ -1953,7 +1983,8 @@ class PronunciationTrainerGUI:
             self._save_attempt_audio(raw_audio, audio)
 
             if self.current_phrase is None or self.reference_audio is None:
-                self.root.after(0, self.view.append_error_msg, "No active phrase to compare against.")
+                self.root.after(0, self.view.append_error_msg,
+                                i18n.tr("No active phrase to compare against."))
                 self.root.after(0, self._reset_to_retry)
                 return
 
@@ -1978,7 +2009,8 @@ class PronunciationTrainerGUI:
                 logging.info("Take ready in %.1fs; playing it back to the user "
                              "(%.1fs) before analysis.", prep_seconds,
                              playback_seconds)
-                self.root.after(0, self.view.enter_playing, "Playing your recording...")
+                self.root.after(0, self.view.enter_playing,
+                                i18n.tr("Playing your recording..."))
                 self.playback.play_with_face(self.last_user_audio,
                                              config.AUDIO_SAMPLE_RATE, stop_event)
                 logging.info("Playback finished; starting analysis.")
@@ -2007,7 +2039,8 @@ class PronunciationTrainerGUI:
 
         except Exception:
             logging.exception("Error in analyze_recording:")
-            self.root.after(0, self.view.append_error_msg, "Analysis error. Please try again.")
+            self.root.after(0, self.view.append_error_msg,
+                            i18n.tr("Analysis error. Please try again."))
             self.root.after(0, self._reset_to_retry)
 
     def _has_user_recording(self) -> bool:
@@ -2091,7 +2124,7 @@ class PronunciationTrainerGUI:
         the same lowered-sample-rate slowing as the Slow ▶ reference button.
         """
         self._speak_word_at(word, self._slow_speed(),
-                            f"Playing '{word.strip()}' slowly...")
+                            i18n.tr("Playing '{word}' slowly...", word=word.strip()))
 
     def on_sound_example(self, word: str):
         """Speak a phoneme's example word at normal speed (WORK ON badge click).
@@ -2100,7 +2133,8 @@ class PronunciationTrainerGUI:
         target sound, so it plays at 1.0x rather than the slowed single-word
         replay used for the clicked phrase words.
         """
-        self._speak_word_at(word, 1.0, f"Playing example '{word.strip()}'...")
+        self._speak_word_at(word, 1.0,
+                            i18n.tr("Playing example '{word}'...", word=word.strip()))
 
     def _on_word_drill_clicked(self, word: str):
         """Right-click a mispronounced word to start a drill on it."""
@@ -2286,13 +2320,15 @@ class PronunciationTrainerGUI:
         # deps - and it works with any backend rate (24 kHz Kokoro, 44.1 kHz
         # Supertonic), so slow replay needs no backend-specific code.
         effective_sr = int(self.tts_mgr.sample_rate * speed)
-        status = "Playing reference..." if speed == 1.0 else f"Playing reference ({speed:g}×)..."
+        status = i18n.tr("Playing reference...") if speed == 1.0 \
+            else i18n.tr("Playing reference ({speed}×)...", speed=f"{speed:g}")
         self.playback.play_async(self.reference_audio, effective_sr, status)
 
     def play_user_recording(self):
         if self.last_user_audio is None or self.last_user_audio.size == 0:
             return
-        self.playback.play_async(self.last_user_audio, config.AUDIO_SAMPLE_RATE, "Playing your recording...")
+        self.playback.play_async(self.last_user_audio, config.AUDIO_SAMPLE_RATE,
+                                 i18n.tr("Playing your recording..."))
 
     # ------------------------------------------------------------------
     # Shutdown
@@ -2496,6 +2532,10 @@ def run(append_log: bool = False):
     # config reads at import).
     detect_hardware.warn_if_gpu_unused(config.DEVICE)
     _log_spacy_model_location()
+
+    # Select the UI language before any widget is built. The settings window
+    # marks ui_language as restart-only, so this is the one place it is read.
+    i18n.set_language(config.UI_LANGUAGE)
 
     # Named gui, not app: inside this module "app" is the module itself.
     gui = PronunciationTrainerGUI()

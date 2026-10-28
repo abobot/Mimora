@@ -9,6 +9,7 @@ by ``config.ENGINE`` (set in mimora/config.py):
 
     "acoustic" -> pronunciation.acoustic  (Wav2Vec2 embeddings + cosine-DTW)
     "phoneme"  -> pronunciation.phoneme   (espeak reference + phoneme ASR + edit distance; default)
+    "hybrid"   -> pronunciation.hybrid    (phoneme + acoustic axis-level blend; needs reference audio)
     "none"     -> pronunciation.none      (scoring disabled: no model, every take accepted)
 
 All backends expose the same small interface (``configure`` / ``load_models`` /
@@ -32,6 +33,7 @@ from mimora import config
 _BACKENDS = {
     "acoustic": "pronunciation.acoustic",
     "phoneme": "pronunciation.phoneme",
+    "hybrid": "pronunciation.hybrid",
     "none": "pronunciation.none",
 }
 
@@ -102,6 +104,35 @@ def configure(engine_name: str | None = None) -> None:
             log_dir=Path(config.LOG_DIR),
             user_name=config.USER_NAME,
             calibration_file=_calibration_file("phoneme"),
+        )
+    elif eng_name == "hybrid":
+        # The hybrid wraps one AnalyzerConfig per sub-engine. Both sub-engines
+        # share the device and the espeak dialect; the acoustic engine needs the
+        # reference audio (supplied by app.py), and the phoneme engine's GOOD
+        # mode applies to its sub-result.
+        from pronunciation.phoneme.config import AnalyzerConfig as _PhonemeConfig
+        from pronunciation.acoustic.config import AnalyzerConfig as _AcousticConfig
+        cfg = eng.HybridConfig(
+            phoneme=_PhonemeConfig(
+                model_name=config.WAV2VEC2_PHONEME_MODEL_NAME,
+                device=config.WAV2VEC2_DEVICE,
+                espeak_language=config.ESPEAK_LANGUAGE,
+                score_threshold=config.PRONUNCIATION_SCORE_THRESHOLD,
+                good_mode=config.PHONEME_GOOD_MODE,
+                log_dir=Path(config.LOG_DIR),
+                user_name=config.USER_NAME,
+                calibration_file=_calibration_file("phoneme"),
+            ),
+            acoustic=_AcousticConfig(
+                model_name=config.WAV2VEC2_MODEL_NAME,
+                device=config.WAV2VEC2_DEVICE,
+                espeak_language=config.ESPEAK_LANGUAGE,
+                score_threshold=config.PRONUNCIATION_SCORE_THRESHOLD,
+                acoustic_good=config.PRONUNCIATION_ACOUSTIC_GOOD,
+                log_dir=Path(config.LOG_DIR),
+                user_name=config.USER_NAME,
+                calibration_file=_calibration_file("acoustic"),
+            ),
         )
     else:
         cfg = eng.AnalyzerConfig(

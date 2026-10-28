@@ -19,7 +19,7 @@ import logging
 import os
 from typing import Callable, Optional
 
-from mimora import config
+from mimora import config, i18n
 
 # settings.json key -> (config attribute, cast) for settings that the
 # runtime re-reads from the config module on every use (recorder loop,
@@ -104,7 +104,8 @@ class SettingsGlue:
             return True
         if config.save_user_setting(key, value):
             return True
-        self._report_error(f"Could not save {key} to settings.json.")
+        self._report_error(
+            i18n.tr("Could not save {key} to settings.json.", key=key))
         return False
 
     def persist_and_apply_live(self, key: str, value):
@@ -144,7 +145,7 @@ class SettingsGlue:
         are not written straight back as overrides. Returns True on success.
         """
         if not config.reset_user_settings():
-            self._report_error("Could not reset settings.json.")
+            self._report_error(i18n.tr("Could not reset settings.json."))
             return False
         logging.info("Settings reset to defaults; applying live values.")
         self._suppress_persist = True

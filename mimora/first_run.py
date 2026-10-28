@@ -131,6 +131,15 @@ Model = Union[models_info.HfRepo, models_info.PackagedModel,
 _ENGINE_RECOGNIZER: dict[str, Model] = {
     "phoneme": models_info.WAV2VEC2_PHONEME,   # default engine
     "acoustic": models_info.WAV2VEC2_ACOUSTIC,
+    "hybrid": models_info.WAV2VEC2_PHONEME,    # primary recognizer; see _ENGINE_EXTRA_RECOGNIZERS
+}
+
+# The recognizers an engine loads BESIDES the primary one. Hybrid blends the
+# phoneme and acoustic axes, so it needs both; every other engine loads exactly
+# one. config._hybrid_extra_repos makes the same decision for the offline gate,
+# and the two must not disagree about how many recognizers a run touches.
+_ENGINE_EXTRA_RECOGNIZERS: dict[str, tuple[Model, ...]] = {
+    "hybrid": (models_info.WAV2VEC2_ACOUSTIC,),
 }
 
 # The model each TTS backend loads. Exactly one backend runs per session, so
@@ -286,6 +295,7 @@ def required_models(engine: str, tts_backend: str) -> tuple[Model, ...]:
     recognizer = _ENGINE_RECOGNIZER.get(engine)
     if recognizer is not None:
         models.append(recognizer)
+    models.extend(_ENGINE_EXTRA_RECOGNIZERS.get(engine, ()))
     return tuple(models)
 
 

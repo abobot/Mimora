@@ -32,7 +32,7 @@ from tkinter import messagebox
 from typing import Any, Callable, Dict, List, Optional
 
 
-from mimora import config, window_icon
+from mimora import config, i18n, window_icon
 from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_SIZE_BODY,
@@ -54,17 +54,17 @@ class StatsCallbacks:
 def _fmt_seconds(seconds: int) -> str:
     """1440 → '2h 24m'; 60 → '1m'; 0 → '0m'."""
     if seconds < 60:
-        return f"{seconds}s"
+        return i18n.tr("{seconds}s", seconds=seconds)
     minutes = seconds // 60
     if minutes < 60:
-        return f"{minutes}m"
+        return i18n.tr("{minutes}m", minutes=minutes)
     hours = minutes // 60
     rem = minutes % 60
     if hours < 24:
-        return f"{hours}h {rem}m"
+        return i18n.tr("{hours}h {rem}m", hours=hours, rem=rem)
     days = hours // 24
     rem_h = hours % 24
-    return f"{days}d {rem_h}h"
+    return i18n.tr("{days}d {rem_h}h", days=days, rem_h=rem_h)
 
 
 def _avg_score_for_session(session: Dict[str, Any]) -> float:
@@ -127,7 +127,7 @@ class _CanvasChart:
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION))
         if not values:
             c.create_text(self._width / 2, self._height / 2,
-                          text="No data yet", fill=THEME["text_dim"],
+                          text=i18n.tr("No data yet"), fill=THEME["text_dim"],
                           font=(FONT_FAMILY, FONT_SIZE_BODY))
             return
         # Data points.
@@ -175,7 +175,7 @@ class _CanvasChart:
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION))
         if not values:
             c.create_text(self._width / 2, self._height / 2,
-                          text="No data", fill=THEME["text_dim"],
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
                           font=(FONT_FAMILY, FONT_SIZE_BODY))
             return
         n = len(values)
@@ -208,7 +208,7 @@ class StatsView:
         self.root = root
         self._cb = callbacks
         self._window = tk.Toplevel(root)
-        self._window.title("Practice stats")
+        self._window.title(i18n.tr("Practice stats"))
         self._window.geometry("900x640")
         window_icon.set_app_user_model_id()
         window_icon.apply_window_icon(self._window)
@@ -224,17 +224,17 @@ class StatsView:
     def _build_ui(self) -> None:
         top = tk.Frame(self._window, bg=THEME["bg_main"])
         top.pack(fill=tk.X, padx=16, pady=12)
-        tk.Label(top, text="Practice stats",
+        tk.Label(top, text=i18n.tr("Practice stats"),
                  font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
                  bg=THEME["bg_main"], fg=THEME["text_emph"]
                  ).pack(side=tk.LEFT)
         btns = tk.Frame(top, bg=THEME["bg_main"])
         btns.pack(side=tk.RIGHT)
-        ttk.Button(btns, text="Export JSON",
+        ttk.Button(btns, text=i18n.tr("Export JSON"),
                    command=self._on_export_json).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btns, text="Export CSV",
+        ttk.Button(btns, text=i18n.tr("Export CSV"),
                    command=self._on_export_csv).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btns, text="Close",
+        ttk.Button(btns, text=i18n.tr("Close"),
                    command=self._window.destroy).pack(side=tk.LEFT, padx=2)
 
         # Summary cards.
@@ -276,13 +276,13 @@ class StatsView:
         streak = _compute_streak(sessions,
                                  target_minutes=config.DAILY_TARGET_MINUTES * 60)
         cards = [
-            ("Practice time", _fmt_seconds(total_time)),
-            ("Sessions", str(len(sessions))),
-            ("Takes", f"{total_takes:,}"),
-            ("Unique phrases", f"{unique_phrases}"),
-            ("Avg score", f"{avg:.1f}" if avg else "—"),
-            ("Best score", f"{best:.1f}" if best else "—"),
-            ("Streak", f"{streak}d"),
+            (i18n.tr("Practice time"), _fmt_seconds(total_time)),
+            (i18n.tr("Sessions"), str(len(sessions))),
+            (i18n.tr("Takes"), f"{total_takes:,}"),
+            (i18n.tr("Unique phrases"), f"{unique_phrases}"),
+            (i18n.tr("Avg score"), f"{avg:.1f}" if avg else "—"),
+            (i18n.tr("Best score"), f"{best:.1f}" if best else "—"),
+            (i18n.tr("Streak"), f"{streak}d"),
         ]
         for i, (title, value) in enumerate(cards):
             card = tk.Frame(self._cards, bg=THEME["bg_panel"], bd=1,
@@ -315,7 +315,7 @@ class StatsView:
         trend.canvas.pack(side=tk.LEFT, padx=8, pady=8)
         trend.draw_line(scores_per_day, max_value=100.0,
                         color=THEME["good"],
-                        label="Daily avg score (last 30 days)")
+                        label=i18n.tr("Daily avg score (last 30 days)"))
 
         # Score distribution buckets.
         buckets = [0, 0, 0, 0]
@@ -326,18 +326,18 @@ class StatsView:
         labels = ["0-24", "25-49", "50-74", "75-100"]
         dist = _CanvasChart(self._charts, width=430, height=180)
         dist.canvas.pack(side=tk.RIGHT, padx=8, pady=8)
-        dist.draw_bars(buckets, labels, title="Score distribution")
+        dist.draw_bars(buckets, labels, title=i18n.tr("Score distribution"))
 
     def _render_recent(self, sessions: List[Dict]) -> None:
         for child in self._recent.winfo_children():
             child.destroy()
         if not sessions:
-            tk.Label(self._recent, text="No sessions yet.",
+            tk.Label(self._recent, text=i18n.tr("No sessions yet."),
                      font=(FONT_FAMILY, FONT_SIZE_BODY, "italic"),
                      fg=THEME["text_dim"], bg=THEME["bg_main"]
                      ).pack(anchor="w")
             return
-        tk.Label(self._recent, text="Recent sessions",
+        tk.Label(self._recent, text=i18n.tr("Recent sessions"),
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"),
                  bg=THEME["bg_main"], fg=THEME["text_emph"]
                  ).pack(anchor="w", pady=(4, 2))
@@ -346,8 +346,10 @@ class StatsView:
             started = (session.get("started_at") or "")[:16].replace("T", " ")
             row = tk.Frame(self._recent, bg=THEME["bg_panel"], bd=0)
             row.pack(fill=tk.X, pady=1)
-            text = (f"{started}  ·  {totals.get('takes', 0)} takes  ·  "
-                    f"avg {float(totals.get('avg_best_score') or 0):.0f}  ·  "
+            avg_text = f"{float(totals.get('avg_best_score') or 0):.0f}"
+            text = (f"{started}  ·  "
+                    f"{i18n.tr('{takes} takes', takes=totals.get('takes', 0))}  ·  "
+                    f"{i18n.tr('avg {avg}', avg=avg_text)}  ·  "
                     f"{_fmt_seconds(int(session.get('duration_sec') or 0))}")
             tk.Label(row, text=text, anchor="w",
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION),
@@ -361,15 +363,15 @@ class StatsView:
     def _on_export_json(self) -> None:
         path = self._cb.export_json()
         if path:
-            messagebox.showinfo("Export complete",
-                                f"JSON saved to:\n{path}",
+            messagebox.showinfo(i18n.tr("Export complete"),
+                                i18n.tr("JSON saved to:\n{path}", path=path),
                                 parent=self._window)
 
     def _on_export_csv(self) -> None:
         path = self._cb.export_csv()
         if path:
-            messagebox.showinfo("Export complete",
-                                f"CSV saved to:\n{path}",
+            messagebox.showinfo(i18n.tr("Export complete"),
+                                i18n.tr("CSV saved to:\n{path}", path=path),
                                 parent=self._window)
 
 

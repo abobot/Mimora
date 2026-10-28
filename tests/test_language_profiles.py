@@ -148,7 +148,7 @@ class HelperTests(_ConfigTestBase):
         self.assertEqual(self.config.available_engines(),
                          self.config.available_engines("english"))
         self.assertEqual(self.config.available_engines("english"),
-                         ("phoneme", "acoustic", "none"))
+                         ("phoneme", "acoustic", "hybrid", "none"))
 
     def test_available_engines_unknown_language_is_empty(self):
         self.assertEqual(self.config.available_engines("klingon"), ())

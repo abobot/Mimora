@@ -9,6 +9,7 @@ no Tk, no model, no network.
 """
 
 import unittest
+from unittest import mock
 
 from mimora.analysis import (
     ZH_INTERFERENCE,
@@ -20,6 +21,7 @@ from mimora.analysis import (
     sorted_by_weakness,
     top_words,
     word_to_ipa,
+    ipa_from_words,
 )
 
 
@@ -178,6 +180,20 @@ class InterferencePriorityTest(unittest.TestCase):
 
 
 class IpaMapTest(unittest.TestCase):
+    """word_to_ipa / ipa_from_words route through the engine's G2P.
+
+    The engine's espeak-ng G2P is the primary path; the hand table and
+    character heuristic are only the soft-degrade fallback. These tests
+    run in the fast suite where espeak may be absent, so the G2P is
+    stubbed and the routing (and the fallback) is what is under test.
+    """
+
+    def _patch_g2p(self, engine_fn):
+        """Patch ipa_map._engine_g2p to return *engine_fn* (or raise)."""
+        from unittest import mock
+        with mock.patch("mimora.analysis.ipa_map._engine_g2p",
+                        return_value=engine_fn):
+            yield
 
     def test_known_word_returns_expected_ipa(self):
         # Any of these is a plausible transcription.
@@ -193,6 +209,52 @@ class IpaMapTest(unittest.TestCase):
         result = word_to_ipa("zzz")
         self.assertIsInstance(result, str)
         self.assertTrue(result)
+
+    def test_g2p_routes_through_engine(self):
+        # When the engine G2P answers, word_to_ipa must use its output,
+        # not the heuristic table (prove the routing with a sentinel).
+        from mimora.analysis import ipa_map
+        def fake_g2p(text, lang):
+            self.assertEqual(lang, "en-us")
+            # engine returns one group per token; "thought" -> ["θ", "ɔ", "t"]
+            return [["θ", "ɔ", "t"]]
+        with mock.patch("mimora.analysis.ipa_map._engine_g2p",
+                        return_value=fake_g2p):
+            self.assertEqual(word_to_ipa("thought"), "θɔt")
+
+    def test_g2p_fallback_on_engine_error(self):
+        # A failing engine G2P must fall back to the heuristic, not crash.
+        from mimora.analysis import ipa_map
+        def boom(text, lang):
+            raise RuntimeError("espeak not available")
+        with mock.patch("mimora.analysis.ipa_map._engine_g2p",
+                        return_value=boom):
+            result = word_to_ipa("thought")
+            self.assertIsInstance(result, str)
+            self.assertTrue(result)
+
+    def test_g2p_fallback_on_empty_group(self):
+        # Engine returns an empty group (e.g. punctuation) -> heuristic.
+        from mimora.analysis import ipa_map
+        def empty(text, lang):
+            return [[]]
+        with mock.patch("mimora.analysis.ipa_map._engine_g2p",
+                        return_value=empty):
+            result = word_to_ipa(".")
+            self.assertIsInstance(result, str)
+
+    def test_ipa_from_words_batches(self):
+        # ipa_from_words must make ONE engine call for the whole phrase.
+        from mimora.analysis import ipa_map
+        calls = []
+        def fake_g2p(text, lang):
+            calls.append(text)
+            # one group per token, in order
+            return [["h", "i"], ["θ", "ɔ", "t"]]
+        with mock.patch("mimora.analysis.ipa_map._engine_g2p",
+                        return_value=fake_g2p):
+            self.assertEqual(ipa_from_words("hi thought"), "hi θɔt")
+        self.assertEqual(calls, ["hi thought"])
 
 
 class SuggestionGeneratorTest(unittest.TestCase):

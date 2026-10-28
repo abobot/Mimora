@@ -21,6 +21,10 @@ by [`mimora/engine.py`](mimora/engine.py)):
   recognizer, feature-weighted edit distance, calibrated 0-5 grade.
 - `acoustic` - Wav2Vec2-embedding cosine-DTW plus phoneme/word error rates.
   English-only.
+- `hybrid` - runs BOTH the phoneme and acoustic engines on the same take and
+  blends their axis-level scores into one 0-100 grade. Needs the reference
+  audio, English-only; without either it degrades to the pure phoneme score.
+  Loads two ~1.2 GB recognizers, so it is the heaviest option.
 - `none` - scoring off. No recognizer is loaded, every take is accepted, the
   GUI shows a neutral read-out. For slow machines.
 
@@ -37,6 +41,8 @@ profile module plus an engine calibration, never a new `if language == ...`.
 The pronunciation-scoring core in `pronunciation/acoustic/` is adapted from
 [OpenPronounce](https://github.com/Halleck45/OpenPronounce) (MIT) and reused as
 a GUI-agnostic library.
+
+The dependency files are located in the `%APPDATA%\uv\tools\mimora` directory.
 
 ## Running the App
 
@@ -173,6 +179,15 @@ installs or imports llama-cpp-python.
   fitted on request by
   [`pronunciation/acoustic/calibrate.py`](pronunciation/acoustic/calibrate.py).
   No GUI dependency. Prosody is no longer computed here.
+- [`pronunciation/hybrid/speech.py`](pronunciation/hybrid/speech.py) -
+  combined engine: runs the phoneme and acoustic analyzers on the same take and
+  blends their axis scores (default 0.5/0.5) into one 0-100 grade, then applies
+  the phoneme calibrated bucket. Without the reference audio, or for non-English
+  text, it degrades to the pure phoneme result plus a suffix in
+  `result.feedback`. Its config lives in
+  [`pronunciation/hybrid/config.py`](pronunciation/hybrid/config.py) and
+  `configure()` configures both sub-engines. English-only (Spanish exposes no
+  hybrid in its profile). Loads two recognizers, so it is the heaviest engine.
 - [`mimora/prosody.py`](mimora/prosody.py) - engine-agnostic prosody layer,
   F0/energy contours (librosa/sklearn, no torch). Called by `app.py` after
   `analyze`, skipped entirely while the prosody block is collapsed. Plotting
@@ -189,6 +204,78 @@ installs or imports llama-cpp-python.
   dumps. Returns one 16 kHz mono array.
 - [`mimora/phoneme_examples.py`](mimora/phoneme_examples.py) - static IPA
   phoneme → example word table behind the "WORK ON" badges.
+
+### Practice modes, analysis and persistence
+
+- [`mimora/languages/`](mimora/languages/) - per-language profile data. Each
+  module exposes a single `PROFILE` dict, pure data with no imports or side
+  effects; `config.py` assembles them into `LANGUAGE_PROFILES` and derives
+  every per-run constant from there. Adding a language = add a module here plus
+  an engine calibration, then register it in that assembly - never an
+  `if language == ...` branch. The format is documented in this package's
+  `__init__.py`.
+- [`mimora/dictation/engine.py`](mimora/dictation/engine.py) - dictation-mode
+  logic: phrase selection, attempt tracking, session summary. Pure Python, no
+  Tk, no engine imports; the controller owns one `DictationEngine` per active
+  session. Phrases come from the user's source text (cycled with reshuffling),
+  with a small fallback pool when the source is empty.
+- [`mimora/dictation/scoring.py`](mimora/dictation/scoring.py) - word-level
+  comparison of the typed text against the spoken reference, 0-100 score plus
+  per-word diagnostics. An edit-distance alignment (`difflib`) rather than an
+  index-by-index loop, so an inserted/dropped word does not shift later words
+  into "wrong".
+- [`mimora/drill/engine.py`](mimora/drill/engine.py) - drill-mode logic:
+  progress tracking, mastery detection, phrase selection. Pure Python. A "word
+  drill" picks phrases from the source text containing the target word; a
+  "phoneme drill" drills one IPA symbol. Falls back to synthetic phrases when
+  the source has none.
+- [`mimora/persistence/stats.py`](mimora/persistence/stats.py) - persistent
+  stats storage (`config/stats.json`): sessions, takes, roll-up totals, atomic
+  writes, a rolling `.bak` snapshot and per-day archives, plus a bump-on-write
+  schema version. `sessions[].totals` is a cached roll-up recomputed lazily
+  after a take is deleted; every `save()` is one `os.replace`.
+- [`mimora/persistence/recorder_store.py`](mimora/persistence/recorder_store.py)
+  - per-take audio storage under `logs/records/<session_id>/<HHMMSS>-<hex>/`
+  (`raw.wav` + `normalized.wav` + `meta.json`), replacing the old
+  fixed-name `logs/records/*.wav`. Only writes when
+  `config.HISTORY_MODE == "with_audio"`; the metadata path is always written
+  because the aggregate stats are built from it.
+- [`mimora/analysis/error_words.py`](mimora/analysis/error_words.py) -
+  aggregates per-take `error_words[]` into a per-word leader board with a
+  status (`need_practice` / `watch` / `improving`) that drives the weakness
+  UI colour and the suggestion engine.
+- [`mimora/analysis/phonemes.py`](mimora/analysis/phonemes.py) - phoneme
+  weakness aggregation plus the ZH-interference table (which phonemes a Chinese
+  speaker finds hard and why). A new language adds a sibling module
+  (`phonemes_es.py`, `phonemes_ja.py` ...) with its own table and
+  `interference_priority()` wrapper, wired in at the package level.
+- [`mimora/analysis/ipa_map.py`](mimora/analysis/ipa_map.py) - English word to
+  IPA, routed through the engine's own espeak-ng G2P
+  (`pronunciation.phoneme.speech.reference_word_phonemes`) so the symbols are
+  exactly the folded inventory the scorer uses - never a second, drifting
+  transcription. `word_to_ipa()` is the single seam a future G2P swap plugs
+  into; a hand-curated table plus a character heuristic remain as the soft
+  fallback.
+- [`mimora/analysis/suggestions.py`](mimora/analysis/suggestions.py) -
+  rule-based suggestion generator for the weakness panel (word / phoneme /
+  speed cards), each with a `target` dict the Drill engine consumes directly.
+  v1 is deliberately LLM-free and <1 ms.
+- [`mimora/ui_stats.py`](mimora/ui_stats.py) - stats dashboard Toplevel:
+  summary cards, a daily-average score trend chart and a score-distribution bar
+  chart, all on `tk.Canvas` (no matplotlib).
+- [`mimora/ui_weakness.py`](mimora/ui_weakness.py) - weakness panel Toplevel:
+  Overview (top suggestions), Words (error-word leader board with per-row
+  "Start drill") and Phonemes (IPA heatmap with ZH hints).
+- [`mimora/ui_dictation.py`](mimora/ui_dictation.py) - dictation-mode UI: hear
+  a sentence, type one word per slot, get scored; sentence text deliberately not
+  shown.
+- [`mimora/ui_drill.py`](mimora/ui_drill.py) - drill-mode UI: repeated practice
+  of one target word or phoneme with progress and a finish report. Only one
+  drill at a time.
+- [`mimora/ui_history_browse.py`](mimora/ui_history_browse.py) - history
+  browser Toplevel: every session newest-first with score chips, trend arrows,
+  per-take play (only with `HISTORY_MODE == "with_audio"`) and delete, plus a
+  two-step "Clear all".
 
 ### LLM and translation
 
@@ -410,6 +497,12 @@ answered in `first_run.py` instead.
 - **GPU contention**: Wav2Vec2, Kokoro and llama.cpp compete for VRAM.
   Mitigations: the LLM runs in a separate process, and the loop's phases run
   sequentially. If VRAM is tight, set `WAV2VEC2_DEVICE = "cpu"`.
+  `detect_hardware` only puts a recognizer on the GPU at `>=6 GB` free, because
+  one recognizer (`~1.2 GB`) plus the GGUF (`~2 GB`) must fit together. The
+  `hybrid` engine needs TWO recognizers resident at once (phoneme + acoustic,
+  `~1.2 GB` each), so on a small card it is the first to overflow; prefer
+  `WAV2VEC2_DEVICE = "cpu"` there, and note each take costs both inferences
+  serially (roughly 1.5-2x a single engine on CPU).
 
 - **Phrase generation**: `generate_phrase()` is stateless and non-streaming,
   with no conversational history. Variety comes from a sliding window over the

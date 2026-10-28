@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from tkinter import messagebox
 from typing import Any, Callable, Dict, List
 
-from mimora import config, window_icon
+from mimora import config, i18n, window_icon
 from mimora.analysis import (
     ZH_INTERFERENCE,
     aggregate_error_words,
@@ -69,9 +69,9 @@ def _status_color(status: str) -> str:
 
 def _status_label(status: str) -> str:
     return {
-        "need_practice": "🔴 需练习",
-        "watch": "🟡 关注",
-        "improving": "🟢 改善中",
+        "need_practice": "🔴 " + i18n.tr("Need practice"),
+        "watch": "🟡 " + i18n.tr("Watch"),
+        "improving": "🟢 " + i18n.tr("Improving"),
     }.get(status, "  ")
 
 
@@ -84,7 +84,7 @@ class WeaknessView:
         self._cb = callbacks
         self._native = native_language or "zh"
         self._window = tk.Toplevel(root)
-        self._window.title("Pronunciation weakness")
+        self._window.title(i18n.tr("Pronunciation weakness"))
         self._window.geometry("900x640")
         window_icon.set_app_user_model_id()
         window_icon.apply_window_icon(self._window)
@@ -104,11 +104,11 @@ class WeaknessView:
     def _build_ui(self) -> None:
         header = tk.Frame(self._window, bg=THEME["bg_main"])
         header.pack(fill=tk.X, padx=16, pady=10)
-        tk.Label(header, text="Pronunciation weakness",
+        tk.Label(header, text=i18n.tr("Pronunciation weakness"),
                  font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
                  bg=THEME["bg_main"], fg=THEME["text_emph"]
                  ).pack(side=tk.LEFT)
-        ttk.Button(header, text="Close",
+        ttk.Button(header, text=i18n.tr("Close"),
                    command=self._window.destroy).pack(side=tk.RIGHT)
 
         self._nb = ttk.Notebook(self._window)
@@ -116,15 +116,20 @@ class WeaknessView:
         self._tab_overview = tk.Frame(self._nb, bg=THEME["bg_main"])
         self._tab_words = tk.Frame(self._nb, bg=THEME["bg_main"])
         self._tab_phonemes = tk.Frame(self._nb, bg=THEME["bg_main"])
-        self._nb.add(self._tab_overview, text="Overview")
-        self._nb.add(self._tab_words, text="Words")
-        self._nb.add(self._tab_phonemes, text="Phonemes")
+        self._nb.add(self._tab_overview, text=i18n.tr("Overview"))
+        self._nb.add(self._tab_words, text=i18n.tr("Words"))
+        self._nb.add(self._tab_phonemes, text=i18n.tr("Phonemes"))
 
-        # Refresh is triggered when the tab is first shown or when the
-        # user hits Refresh.
-        for tab in (self._tab_overview, self._tab_words, self._tab_phonemes):
-            tab.bind("<FocusIn>", lambda _e: self.refresh())
-        ttk.Button(header, text="Refresh",
+        # The tabs are populated once on open (__init__ calls self.refresh()).
+        # There is deliberately NO <FocusIn> binding here: a ttk.Notebook tab
+        # frame receives FocusIn when a CHILD BUTTON inside it is clicked, and
+        # refresh() destroys all children — including the very button being
+        # clicked — between ButtonPress and ButtonRelease. That leaves the
+        # release targeting a destroyed widget, so the button command never
+        # fires and the click appears to do nothing. Refresh is a manual
+        # action (the Refresh button) because the data only changes while
+        # practicing, which happens in the main window, not here.
+        ttk.Button(header, text=i18n.tr("Refresh"),
                    command=self.refresh).pack(side=tk.LEFT, padx=8)
 
     # ------------------------------------------------------------------
@@ -153,13 +158,13 @@ class WeaknessView:
         for child in self._tab_overview.winfo_children():
             child.destroy()
         tk.Label(self._tab_overview,
-                 text="Suggested next steps (based on your last 30 takes)",
+                 text=i18n.tr("Suggested next steps (based on your last 30 takes)"),
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                  bg=THEME["bg_main"], fg=THEME["text_dim"]
                  ).pack(anchor="w", pady=(4, 8))
         if not suggestions:
             tk.Label(self._tab_overview,
-                     text="No obvious weaknesses. Keep practicing!",
+                     text=i18n.tr("No obvious weaknesses. Keep practicing!"),
                      font=(FONT_FAMILY, FONT_SIZE_BODY),
                      bg=THEME["bg_main"], fg=THEME["text_emph"]
                      ).pack(pady=20)
@@ -177,7 +182,7 @@ class WeaknessView:
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                      bg=THEME["bg_panel"], fg=THEME["text"]
                      ).pack(anchor="w", padx=10, pady=(0, 8))
-            ttk.Button(card, text="Start drill →",
+            ttk.Button(card, text=i18n.tr("Start drill →"),
                        command=lambda t=s["target"]: self._start_drill(t)
                        ).pack(anchor="e", padx=10, pady=(0, 6))
 
@@ -186,7 +191,7 @@ class WeaknessView:
             child.destroy()
         if not word_agg:
             tk.Label(self._tab_words,
-                     text="No word-level data yet. Take some practice first.",
+                     text=i18n.tr("No word-level data yet. Take some practice first."),
                      font=(FONT_FAMILY, FONT_SIZE_BODY),
                      bg=THEME["bg_main"], fg=THEME["text_emph"]
                      ).pack(pady=20)
@@ -204,12 +209,13 @@ class WeaknessView:
                      ).pack(side=tk.LEFT, padx=(0, 12))
             # Error types.
             etype = ", ".join(sorted(entry.get("error_types", {}).keys()))
-            tk.Label(row, text=f"{entry.get('count', 0)}×  err "
+            tk.Label(row, text=f"{entry.get('count', 0)}×  "
+                               f"{i18n.tr('err')} "
                                f"{entry.get('error_rate', 0):.0%}  {etype}",
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                      bg=THEME["bg_panel"], fg=THEME["text_dim"]
                      ).pack(side=tk.LEFT, fill=tk.X, expand=True)
-            ttk.Button(row, text="Drill",
+            ttk.Button(row, text=i18n.tr("Drill"),
                        command=lambda w=word:
                        self._start_drill({"type": "word", "value": w})
                        ).pack(side=tk.RIGHT, padx=6)
@@ -219,15 +225,16 @@ class WeaknessView:
             child.destroy()
         if not phoneme_agg:
             tk.Label(self._tab_phonemes,
-                     text="No phoneme-level data yet. The phoneme engine "
-                          "provides this automatically.",
+                     text=i18n.tr("No phoneme-level data yet. The phoneme engine "
+                                  "provides this automatically."),
                      font=(FONT_FAMILY, FONT_SIZE_BODY),
                      bg=THEME["bg_main"], fg=THEME["text_emph"]
                      ).pack(pady=20)
             return
         # Header.
         tk.Label(self._tab_phonemes,
-                 text=f"Issued phonemes (native: {self._native})",
+                 text=i18n.tr("Issued phonemes (native: {native})",
+                              native=self._native),
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                  bg=THEME["bg_main"], fg=THEME["text_dim"]
                  ).pack(anchor="w", pady=(4, 6))
@@ -247,14 +254,15 @@ class WeaknessView:
                      font=(FONT_FAMILY_MONO, 20, "bold"),
                      bg=THEME["bg_panel"], fg=color,
                      ).pack(pady=(8, 0))
-            tk.Label(card, text=f"{entry.get('count', 0)}×  score "
+            tk.Label(card, text=f"{entry.get('count', 0)}×  "
+                                f"{i18n.tr('score')} "
                                 f"{entry.get('avg_score', 0):.0%}",
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                      bg=THEME["bg_panel"], fg=THEME["text_dim"]
                      ).pack(pady=(0, 4))
             hint = hint_for(ipa)
             example = example_word_for(ipa)
-            tip_text = f"例词: {example}" if example else ""
+            tip_text = i18n.tr("Example word: {example}", example=example) if example else ""
             if hint:
                 tip_text = (f"{tip_text}  {hint}"
                             if tip_text else hint)
@@ -263,7 +271,7 @@ class WeaknessView:
                          font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                          bg=THEME["bg_panel"], fg=THEME["text_emph"]
                          ).pack(pady=(0, 4))
-            ttk.Button(card, text="Drill",
+            ttk.Button(card, text=i18n.tr("Drill"),
                        command=lambda i=ipa:
                        self._start_drill({"type": "phoneme", "value": i})
                        ).pack(pady=(0, 6))
@@ -277,4 +285,8 @@ class WeaknessView:
     def _start_drill(self, target: Dict[str, str]) -> None:
         logging.info("Weakness: _start_drill target=%r", target)
         self._cb.start_drill(target)
-        self._window.destroy()
+        # Keep this window open: the drill opens as a separate Toplevel on top
+        # (DrillView lifts and focuses itself), so the user can start another
+        # drill from the same weakness view without reopening it. Destroying
+        # this window here made the weakness panel vanish on every drill start.
+        # self._window.destroy()

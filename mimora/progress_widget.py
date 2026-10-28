@@ -43,6 +43,7 @@ import tkinter as tk
 
 from PIL import Image, ImageDraw, ImageTk
 
+from mimora import i18n
 from mimora.ui_theme import FONT_FAMILY, FONT_SIZE_CAPTION, THEME
 
 # Frames are drawn this many times larger than the widget and downscaled with
@@ -135,7 +136,7 @@ class ProgressRing(tk.Frame):
         self._max_item = self.canvas.create_text(
             size / 2, size * 0.66, text="", fill=sub_color, font=sub_font)
 
-        self.count_label = tk.Label(self, text="0 phrases",
+        self.count_label = tk.Label(self, text=i18n.tr("{count} phrases", count=0),
                                     font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                                     fg=sub_color, bg=bg)
         self.count_label.grid(row=1, column=1, pady=(2, 0))
@@ -232,7 +233,8 @@ class ProgressRing(tk.Frame):
             self.canvas.itemconfigure(self._max_item, text=f"/ {self._maximum:g}")
 
         plural = "" if self._count == 1 else "s"
-        self.count_label.configure(text=f"{self._count} phrase{plural}")
+        self.count_label.configure(
+            text=i18n.tr("{count} phrase{plural}", count=self._count, plural=plural))
 
         dim = min(self._cw, self._ch)
         if dim <= 1:  # not laid out yet

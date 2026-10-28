@@ -1132,6 +1132,27 @@ def _grade_for_score(bucket: int, score: float) -> tuple:
     return label, round(bucket + (third - 1) / 3.0, 2)
 
 
+def bucketize_score(score: float) -> tuple:
+    """Coarsen a raw 0-100 score onto the calibrated 0-5 bucket system.
+
+    Public wrapper around the three private bucket helpers so a host that
+    blends scores from another engine (the hybrid engine) can reuse THIS
+    engine's human-calibrated buckets without importing private names.
+    Returns ``(bucket, user_percent, grade, grade_value, passed)``. When no
+    buckets are configured, ``bucket`` is -1 and the raw score/threshold apply.
+    """
+    bucket = _score_to_bucket(score)
+    if bucket >= 0:
+        passed = bucket >= PASS_BUCKET
+        user_percent = _bucket_to_percent(bucket, score)
+        grade, grade_value = _grade_for_score(bucket, score)
+    else:
+        passed = score >= get_config().score_threshold
+        user_percent = score
+        grade, grade_value = "", -1.0
+    return bucket, user_percent, grade, grade_value, passed
+
+
 # =====================================================================
 # Entry point.
 # =====================================================================

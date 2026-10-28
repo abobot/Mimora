@@ -116,6 +116,9 @@ _KNOWN_USER_KEYS = {
     "drill_max_attempts",
     "dictation_pass_threshold",
     "dictation_max_attempts",
+    # UI localization: the interface language (independent of the practice
+    # language). Values are i18n.SUPPORTED_LANGUAGES codes.
+    "ui_language",
 }
 for _key in _USER:
     if not _key.startswith("_") and _key not in _KNOWN_USER_KEYS:
@@ -182,6 +185,9 @@ USER_SETTING_DEFAULTS = {
     "drill_max_attempts": 10,
     "dictation_pass_threshold": 80.0,
     "dictation_max_attempts": 10,
+    # UI language. English is the default; Chinese ("zh") is the first
+    # localization. Validated against i18n.SUPPORTED_LANGUAGES below.
+    "ui_language": "en",
 }
 
 
@@ -799,7 +805,7 @@ REFERENCE_SLOW_MIN = 0.5
 #                 compares the takes by ear)
 # The dispatcher (mimora/engine.py) binds one backend at startup; only that engine's
 # models are loaded. Changing the engine requires a restart.
-ENGINE_CHOICES = ("phoneme", "acoustic", "none")
+ENGINE_CHOICES = ("phoneme", "acoustic", "hybrid", "none")
 ENGINE = _USER.get("engine", "phoneme")
 if not isinstance(ENGINE, str) or ENGINE not in ENGINE_CHOICES:
     print(f"[config] settings.json: unknown engine {ENGINE!r} "
@@ -1066,17 +1072,26 @@ if TRANSLATION_LANGUAGE not in translation_targets():
 _ENGINE_MODEL_REPO = {
     "phoneme": WAV2VEC2_PHONEME_MODEL_NAME,   # default engine
     "acoustic": WAV2VEC2_MODEL_NAME,
+    # Hybrid runs BOTH engines on the same take. The phoneme repo is the primary
+    # (it is also the default engine's repo), so it is the "engine repo" here;
+    # the acoustic repo is added separately in _CACHED_REPOS below.
+    "hybrid": WAV2VEC2_PHONEME_MODEL_NAME,
 }
 # ENGINE was validated above, so a missing entry can only mean "none".
 _engine_repo = _ENGINE_MODEL_REPO.get(ENGINE)
 # The TTS requirement follows the active backend: only the Kokoro backend
 # loads the Kokoro repo, so requiring it under Supertonic would needlessly
 # keep the Hub online for weights the run never touches (and vice versa).
+# The hybrid engine loads BOTH recognizers (phoneme ASR + acoustic ASR), so it
+# needs both repos cached; every other engine needs only its own. This is the
+# offline gate: with HF_HUB_OFFLINE=1 the run can only use models it cached.
+_hybrid_extra_repos = (WAV2VEC2_MODEL_NAME,) if ENGINE == "hybrid" else ()
 _CACHED_REPOS = (
     # NLLB-200 offline translator, only when the panel asks for translations.
     ((NLLB_TRANSLATOR_MODEL_NAME,) if TRANSLATION_LANGUAGE else ())
     + ((models_info.KOKORO.repo_id,) if TTS_BACKEND == "kokoro" else ())
     + ((_engine_repo,) if _engine_repo else ())  # active engine's recognizer
+    + _hybrid_extra_repos                        # hybrid's second recognizer
 )
 
 
@@ -1333,6 +1348,30 @@ DICTATION_PASS_THRESHOLD = _num("dictation_pass_threshold", 80.0,
 # How many attempts a dictation session runs before it reports done.
 DICTATION_MAX_ATTEMPTS = _num("dictation_max_attempts", 10,
                               minimum=1, maximum=100)
+
+# UI language (the interface, not the practice language). English is the
+# default and the first localization is Chinese. The code list lives in
+# i18n.SUPPORTED_LANGUAGES; config stays dependency-light, so the validation
+# below is a small local copy of that tuple's valid codes.
+UI_LANGUAGE = _USER.get("ui_language") if isinstance(
+    _USER.get("ui_language"), str) else "en"
+if UI_LANGUAGE not in ("en", "zh"):
+    print(f"[config] settings.json: ui_language must be one of "
+          f"('en', 'zh'), got {UI_LANGUAGE!r}; using 'en'",
+          file=sys.stderr)
+    UI_LANGUAGE = "en"
+
+
+def ui_language_choices() -> tuple:
+    """The selectable UI language codes (used by the settings window).
+
+    KEEP IN SYNC with i18n.SUPPORTED_LANGUAGES: config must not import i18n
+    (config flips the offline gate at import and i18n is a UI-layer module),
+    so this is a deliberate local copy. If a language is added to i18n, both
+    this tuple and the ``UI_LANGUAGE`` validation above must gain it too.
+    """
+    return ("en", "zh")
+
 
 # Filesystem locations. ``STATS_FILE`` sits next to settings.json because it
 # is the same kind of thing - user-editable, portable across machines. The

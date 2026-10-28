@@ -115,6 +115,13 @@ class DrillEngine:
     takes: List[DrillTake] = field(default_factory=list)
     _phrase_index: int = field(default=0, repr=False)
     _phrase_history: List[str] = field(default_factory=list, repr=False)
+    # Why the candidate list is not built from the target's own sentences.
+    # Empty when the drill found real matches. Set by _find_phrases so the
+    # UI can explain a synthetic fallback instead of silently showing
+    # unrelated sentences (the exact "first line matches, rest random"
+    # confusion). Values: "", "no_target", "empty_source",
+    # "word_not_in_source", "phoneme_not_in_source".
+    fallback_reason: str = field(default="", repr=False)
 
     def __post_init__(self) -> None:
         if self.pass_threshold <= 0 or self.pass_threshold > 100:
@@ -129,11 +136,46 @@ class DrillEngine:
     # Phrase selection
     # ------------------------------------------------------------------
 
+    def fallback_message(self, tr=None) -> str:
+        """Human-readable explanation when the drill fell back to synthetic.
+
+        The engine silently substitutes the synthetic pool when the source
+        text has no sentence containing the target. Without this message the
+        UI shows unrelated sentences that look random - the exact confusion
+        the user reported ("first line matches, rest random"). The message
+        names the reason so the UI can tell the user how to fix it.
+
+        ``tr`` is an optional translator callable (e.g. ``i18n.tr``); when
+        omitted the English templates are returned verbatim. The engine stays
+        GUI- and i18n-free; the caller localizes at display time.
+        """
+        tr = tr or (lambda key, **kw: key)
+        reason = self.fallback_reason
+        if not reason:
+            return ""
+        value = self.target.get("value") or ""
+        if reason == "no_target":
+            return tr("No target value was given, so the drill uses sample phrases.")
+        if reason == "empty_source":
+            return tr("Your practice text is empty, so the drill uses sample "
+                      "phrases. Add the target word to your practice text, or "
+                      "load a text that contains it.")
+        if reason == "word_not_in_source":
+            return tr("The word \"{value}\" is not in your practice text, so "
+                      "the drill uses sample phrases. Add it to the practice "
+                      "text, or pick a word that appears there.", value=value)
+        if reason == "phoneme_not_in_source":
+            return tr("No word in your practice text contains the sound /{value}/, "
+                      "so the drill uses sample phrases. Add a word with this "
+                      "sound to your practice text.", value=value)
+        return tr("The drill uses sample phrases because the target was not found in your practice text.")
+
     def _find_phrases(self) -> List[str]:
         """Return the phrases this drill will cycle through."""
         target_type = (self.target.get("type") or "").lower()
         value = self.target.get("value") or ""
         if not value:
+            self.fallback_reason = "no_target"
             return list(_SYNTHETIC_PHRASES)
 
         # free_form short-circuits: the value IS the phrase.
@@ -152,17 +194,23 @@ class DrillEngine:
                         continue
                     if pattern.search(sentence):
                         phrases.append(sentence)
+                if not phrases:
+                    self.fallback_reason = "word_not_in_source"
             elif target_type == "phoneme":
-                # Find words whose IPA contains the target symbol.
-                from mimora.analysis.ipa_map import word_to_ipa
+                # Find words whose IPA contains the target symbol. Batch the
+                # phonemization: one espeak call per sentence instead of one
+                # per word (ipa_from_words phonemizes the whole phrase at once).
+                from mimora.analysis.ipa_map import ipa_from_words
                 for sentence in re.split(r"[.!?]+\s+", source):
                     sentence = sentence.strip()
                     if not sentence:
                         continue
-                    for word in re.findall(r"[A-Za-z']+", sentence):
-                        if value.lower() in word_to_ipa(word):
-                            phrases.append(sentence)
-                            break
+                    if value.lower() in ipa_from_words(sentence).lower():
+                        phrases.append(sentence)
+                if not phrases:
+                    self.fallback_reason = "phoneme_not_in_source"
+        else:
+            self.fallback_reason = "empty_source"
 
         # Fall back to the synthetic pool when the source had no hits.
         if not phrases:

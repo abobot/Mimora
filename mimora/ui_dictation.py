@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from tkinter import messagebox
 from typing import Any, Callable, Dict, List, Optional
 
-from mimora import config, window_icon
+from mimora import config, i18n, window_icon
 from mimora.dictation.engine import DictationEngine
 from mimora.dictation.scoring import tokenize_words
 from mimora.ui_stats import _CanvasChart
@@ -49,14 +49,26 @@ import ttkbootstrap as ttk
 
 
 # Source choices the dropdown offers. "built-in" maps to an empty source so the
-# engine falls back to its pool; the label is what the user sees.
+# engine falls back to its pool; the English label is the canonical key, and
+# the displayed label is localized at widget-build time (see _source_labels).
 _SOURCE_CHOICES = [
     ("Practice text", "practice"),
     ("Custom text", "custom"),
     ("Built-in", "built-in"),
 ]
-_SOURCE_LABELS = [label for label, _ in _SOURCE_CHOICES]
-_SOURCE_KEYS = {label: key for label, key in _SOURCE_CHOICES}
+
+
+def _source_labels() -> List[str]:
+    """The localized display labels for the source dropdown."""
+    return [i18n.tr(label) for label, _ in _SOURCE_CHOICES]
+
+
+def _source_key(label: str) -> str:
+    """Map a (possibly localized) dropdown label back to its engine key."""
+    for en, key in _SOURCE_CHOICES:
+        if label == en or label == i18n.tr(en):
+            return key
+    return "practice"
 
 
 @dataclass(frozen=True)
@@ -86,7 +98,7 @@ class DictationView:
         self._cb = callbacks
         self.engine = engine
         self._window = tk.Toplevel(root)
-        self._window.title("Dictation · 听写")
+        self._window.title(i18n.tr("Dictation"))
         self._window.geometry("720x620")
         window_icon.set_app_user_model_id()
         window_icon.apply_window_icon(self._window)
@@ -115,25 +127,25 @@ class DictationView:
     def _build_ui(self) -> None:
         header = tk.Frame(self._window, bg=THEME["bg_main"])
         header.pack(fill=tk.X, padx=16, pady=10)
-        tk.Label(header, text="Dictation · 听写",
+        tk.Label(header, text=i18n.tr("Dictation"),
                  font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
                  bg=THEME["bg_main"], fg=THEME["text_emph"]
                  ).pack(side=tk.LEFT)
-        ttk.Button(header, text="Finish & report",
+        ttk.Button(header, text=i18n.tr("Finish & report"),
                    command=self._on_finish, takefocus=0).pack(side=tk.RIGHT, padx=(0, 8))
-        ttk.Button(header, text="Cancel",
+        ttk.Button(header, text=i18n.tr("Cancel"),
                    command=self._on_cancel, takefocus=0).pack(side=tk.RIGHT)
 
         # Source selector row (sentence source can be changed mid-session).
         source_frame = tk.Frame(self._window, bg=THEME["bg_main"])
         source_frame.pack(fill=tk.X, padx=16, pady=(0, 4))
-        tk.Label(source_frame, text="Source:",
+        tk.Label(source_frame, text=i18n.tr("Source:"),
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                  bg=THEME["bg_main"], fg=THEME["text_dim"]
                  ).pack(side=tk.LEFT)
-        self._source_var = tk.StringVar(value=_SOURCE_LABELS[0])
+        self._source_var = tk.StringVar(value=_source_labels()[0])
         self._source_cb = ttk.Combobox(source_frame, textvariable=self._source_var,
-                                       values=_SOURCE_LABELS, state="readonly",
+                                       values=_source_labels(), state="readonly",
                                        width=16, takefocus=0)
         self._source_cb.pack(side=tk.LEFT, padx=4)
         self._source_cb.bind("<<ComboboxSelected>>", self._on_source_selected)
@@ -151,7 +163,9 @@ class DictationView:
         # Progress line.
         progress = tk.Frame(self._window, bg=THEME["bg_main"])
         progress.pack(fill=tk.X, padx=16, pady=(0, 8))
-        self._progress_var = tk.StringVar(value="0 / 10  ·  0 passed")
+        self._progress_var = tk.StringVar(
+            value=i18n.tr("{current} / {total}  ·  {passed} passed",
+                          current=0, total=10, passed=0))
         tk.Label(progress, textvariable=self._progress_var,
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                  bg=THEME["bg_main"], fg=THEME["text_dim"]
@@ -165,15 +179,15 @@ class DictationView:
         # Playback + hint/show area (the reference is never shown until checked).
         play_frame = tk.Frame(self._window, bg=THEME["bg_main"])
         play_frame.pack(fill=tk.X, padx=16, pady=4)
-        ttk.Button(play_frame, text="🔊  播放",
+        ttk.Button(play_frame, text=i18n.tr("🔊  Play"),
                    command=self._on_play, takefocus=0).pack(side=tk.LEFT, padx=4)
-        ttk.Button(play_frame, text="🐢  慢速播放",
+        ttk.Button(play_frame, text=i18n.tr("🐢  Slow play"),
                    command=self._on_play_slow, takefocus=0).pack(side=tk.LEFT, padx=4)
-        ttk.Button(play_frame, text="💡  提示",
+        ttk.Button(play_frame, text=i18n.tr("💡  Hint"),
                    command=self._on_hint, takefocus=0).pack(side=tk.LEFT, padx=4)
-        ttk.Button(play_frame, text="👁  显示例句",
+        ttk.Button(play_frame, text=i18n.tr("👁  Show sentence"),
                    command=self._on_show_sentence, takefocus=0).pack(side=tk.LEFT, padx=4)
-        self._listen_label = tk.Label(play_frame, text="Listen, then type what you hear.",
+        self._listen_label = tk.Label(play_frame, text=i18n.tr("Listen, then type what you hear."),
                                       font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                                       bg=THEME["bg_main"], fg=THEME["text_dim"])
         self._listen_label.pack(side=tk.LEFT, padx=12)
@@ -198,7 +212,7 @@ class DictationView:
         # Word-slot input area: one Entry per reference word.
         input_frame = tk.Frame(self._window, bg=THEME["bg_main"])
         input_frame.pack(fill=tk.X, padx=16, pady=4)
-        tk.Label(input_frame, text="Your answer (one word per slot):",
+        tk.Label(input_frame, text=i18n.tr("Your answer (one word per slot):"),
                  font=(FONT_FAMILY, FONT_SIZE_BODY),
                  bg=THEME["bg_main"], fg=THEME["text_dim"]
                  ).pack(anchor=tk.W)
@@ -229,12 +243,12 @@ class DictationView:
         # Controls.
         controls = tk.Frame(self._window, bg=THEME["bg_main"])
         controls.pack(fill=tk.X, padx=16, pady=(0, 16))
-        self._check_btn = ttk.Button(controls, text="✓  Check answer",
+        self._check_btn = ttk.Button(controls, text=i18n.tr("✓  Check answer"),
                                      command=self._on_submit, takefocus=0)
         self._check_btn.pack(side=tk.LEFT, padx=4)
-        ttk.Button(controls, text="⏮  Previous",
+        ttk.Button(controls, text=i18n.tr("⏮  Previous"),
                    command=self._on_previous, takefocus=0).pack(side=tk.LEFT, padx=4)
-        ttk.Button(controls, text="⏭  Next",
+        ttk.Button(controls, text=i18n.tr("⏭  Next"),
                    command=self._on_skip, takefocus=0).pack(side=tk.LEFT, padx=4)
 
     # ------------------------------------------------------------------
@@ -287,7 +301,7 @@ class DictationView:
         """Show the first letter of each reference word as a hint."""
         words = tokenize_words(reference)
         hint = "  ".join(word[0].upper() if word else "_" for word in words)
-        self._hint_label.configure(text=f"Hint: {hint}")
+        self._hint_label.configure(text=i18n.tr("Hint: {hint}", hint=hint))
 
     # ------------------------------------------------------------------
     # Actions
@@ -297,7 +311,8 @@ class DictationView:
         """Update the progress read-out from the engine (navigation-aware)."""
         p = self.engine.progress()
         self._progress_var.set(
-            f"{p['current']} / {p['total']}  ·  {p['passed']} passed")
+            i18n.tr("{current} / {total}  ·  {passed} passed",
+                    current=p['current'], total=p['total'], passed=p['passed']))
 
     def _advance_phrase(self) -> None:
         """Advance to the next sentence, clearing input and hiding the answer."""
@@ -308,7 +323,7 @@ class DictationView:
         self._answer_label.configure(text="")
         self._feedback_label.configure(text="")
         self._hint_label.configure(text="")
-        self._listen_label.configure(text="Listen, then type what you hear.")
+        self._listen_label.configure(text=i18n.tr("Listen, then type what you hear."))
         self._check_btn.configure(state=tk.NORMAL)
         self._build_slots(phrase)
         self._refresh_progress_label()
@@ -350,20 +365,20 @@ class DictationView:
         self._answer_label.configure(text="")
         self._feedback_label.configure(text="")
         self._hint_label.configure(text="")
-        self._listen_label.configure(text="Previous sentence - type what you hear.")
+        self._listen_label.configure(text=i18n.tr("Previous sentence - type what you hear."))
         self._build_slots(phrase)
         self._refresh_progress_label()
 
     def _on_source_selected(self, event=None) -> None:
         """Apply the chosen sentence source to the engine."""
         label = self._source_var.get()
-        key = _SOURCE_KEYS.get(label, "practice")
+        key = _source_key(label)
         if key == "custom":
             self._custom_frame.pack(fill=tk.X, padx=16, pady=4)
             text = self._custom_text.get("1.0", tk.END).strip()
             if not text:
                 self._listen_label.configure(
-                    text="Type your sentences above, then press Next.")
+                    text=i18n.tr("Type your sentences above, then press Next."))
         else:
             self._custom_frame.pack_forget()
             text = self._cb.get_practice_text() if key == "practice" else ""
@@ -399,10 +414,13 @@ class DictationView:
         """
         p = self.engine.progress()
         self._progress_var.set(
-            f"{p['current']} / {p['total']}  ·  {p['passed']} passed")
+            i18n.tr("{current} / {total}  ·  {passed} passed",
+                    current=p['current'], total=p['total'], passed=p['passed']))
         if p["streak"] >= 1:
             self._streak_var.set(
-                f"🔥 streak {p['streak']}/{self.engine.mastered_streak_required}")
+                i18n.tr("🔥 streak {streak}/{required}",
+                        streak=p['streak'],
+                        required=self.engine.mastered_streak_required))
         if last_score >= 0:
             color = THEME["good"] if last_score >= self.engine.pass_threshold \
                 else THEME["bad"]
@@ -410,7 +428,8 @@ class DictationView:
         self._mini_chart.draw_line(
             p["scores"], max_value=100.0,
             color=THEME["good"] if p.get("mastered") else THEME["text_emph"],
-            label=f"target ≥ {self.engine.pass_threshold:.0f}")
+            label=i18n.tr("target ≥ {threshold:.0f}",
+                          threshold=self.engine.pass_threshold))
         self._update_feedback(details)
         # Lock the check button until the next sentence.
         self._check_btn.configure(state=tk.DISABLED)
@@ -428,29 +447,31 @@ class DictationView:
             missed = [s["word"] for s in status if s["state"] == "missed"]
             wrong = [s["word"] for s in status if s["state"] == "wrong"]
             if correct:
-                parts.append("✅ " + ", ".join(correct[:6]))
+                parts.append(i18n.tr("✅ ") + ", ".join(correct[:6]))
             if missed:
-                parts.append("❌ 遗漏: " + ", ".join(missed[:6]))
+                parts.append(i18n.tr("❌ Missed: ") + ", ".join(missed[:6]))
             if wrong:
-                parts.append("✏️ 拼写: " + ", ".join(wrong[:6]))
+                parts.append(i18n.tr("✏️ Spelling: ") + ", ".join(wrong[:6]))
         if extra:
-            parts.append("➕ 多余: " + ", ".join(extra[:6]))
+            parts.append(i18n.tr("➕ Extra: ") + ", ".join(extra[:6]))
         self._feedback_label.configure(text="  |  ".join(parts))
 
     def _show_report(self, outcome) -> None:
         wrong = outcome.wrong_words or []
-        wrong_line = ("\n\nWords to review:\n" + ", ".join(wrong[:20])
+        wrong_line = (i18n.tr("\n\nWords to review:\n") + ", ".join(wrong[:20])
                       + (" …" if len(wrong) > 20 else "")) if wrong else ""
         extra = outcome.extra_words or []
-        extra_line = ("\nExtra words:\n" + ", ".join(extra[:12])
+        extra_line = (i18n.tr("\nExtra words:\n") + ", ".join(extra[:12])
                       + (" …" if len(extra) > 12 else "")) if extra else ""
-        text = (f"Dictation finished\n\n"
-                f"Attempts: {outcome.total_attempts}\n"
-                f"Passed: {outcome.total_passed}\n"
-                f"First score: {outcome.first_score:.0f}\n"
-                f"Last score:  {outcome.last_score:.0f}\n"
-                f"Average:     {outcome.avg_score:.1f}\n\n"
-                f"Outcome: {'✅ Mastered' if outcome.mastered else '🔁 Try again next time'}"
-                f"{wrong_line}{extra_line}")
-        messagebox.showinfo("Dictation report", text, parent=self._window)
+        text = (i18n.tr("Dictation finished") + "\n\n"
+                + i18n.tr("Attempts: {n}", n=outcome.total_attempts) + "\n"
+                + i18n.tr("Passed: {n}", n=outcome.total_passed) + "\n"
+                + i18n.tr("First score: {score:.0f}", score=outcome.first_score) + "\n"
+                + i18n.tr("Last score:  {score:.0f}", score=outcome.last_score) + "\n"
+                + i18n.tr("Average:     {score:.1f}", score=outcome.avg_score) + "\n\n"
+                + (i18n.tr("Outcome: ✅ Mastered") if outcome.mastered
+                   else i18n.tr("Outcome: 🔁 Try again next time"))
+                + wrong_line + extra_line)
+        messagebox.showinfo(i18n.tr("Dictation report"), text,
+                            parent=self._window)
         self._window.destroy()
