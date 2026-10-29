@@ -72,7 +72,7 @@ Work on:    colder
 - 🎙️ **One-press recording** - press once, speak, and it stops by itself when you go quiet.
 - 🗣️ **One consistent reference voice** - the prompt and the scored reference are the same voice, so the target never changes. Prefer variety? Turn on **Random voice per phrase** in the settings.
 - 🧠 **Practice your own material** - paste a paragraph, a song or a few sentences into the *practice text* panel, and the local LLM turns them into an endless stream of phrases.
-- ⚙️ **Settings window** (the gear button) - the practice **language** and its **accent** (both apply after a restart), the TTS **voice** and playback **speed**, **Random voice per phrase** (needs at least two voices of the current language), the **phrase length** (full phrase or a few words), the **translation language** shown under the phrase, and a **user name** that selects the per-user scoring calibration.
+- ⚙️ **Settings window** (the gear button) - the practice **language** and its **accent** (both apply after a restart), the TTS **voice** and playback **speed**, **Random voice per phrase** (needs at least two voices of the current language), the **phrase length** (full phrase or a few words), the **phrase source** (LLM-generated phrases, or the practice text's own sentences in order), the **translation language** shown under the phrase, and a **user name** that selects the per-user scoring calibration.
 - 📊 **Two interchangeable scoring engines**, selected in the settings window (**Engine**; settings.json `"engine"`). The default **phoneme** engine compares the phonemes of your take with the phonemes of the reference text. The **acoustic** engine compares the sound of the two recordings instead. Both are length-invariant, and both can be calibrated to your voice (`python pronunciation/<engine>/calibrate.py`).
 - 🔁 **Replay reference vs. your recording** to hear the difference.
 - 😀 **Articulation face** - a schematic mouth moves with the speech while audio plays, and shows a smiley for your score while idle.
@@ -386,10 +386,10 @@ LLM server. Cached models are just a load that takes a moment; a missing model i
 downloaded first, which takes a while. Once the app shows **Ready**:
 
 1. Edit the **Practice text** panel, or keep the default.
-2. Click **Next phrase ▶**. Mimora generates a phrase and speaks it.
+2. Click **Next phrase ▶**. Mimora generates a phrase and speaks it. Long-press it to choose the phrase source (LLM-generated phrases, or the practice text's own sentences in order).
 3. **Press `SPACE`** (or click the mic button) and repeat the phrase. The take stops on silence, or on a second `SPACE`.
 4. Read your **score** and verdict on the phrase card. Mispronounced words are underlined, and a click plays one slowly. The **WORK ON** badges name the sounds to fix, and a click gives an example word. Earlier takes stay in the attempt history below.
-5. Use **Reference ▶** (or **Slow ▶**) and **My recording ▶** to compare, then repeat the phrase or generate the next one.
+5. Use **Reference ▶** (or **Slow ▶**) and **My recording ▶** to compare, then repeat the phrase or generate the next one. Long-press **Reference ▶** to choose the playback speed (the chosen speed stays for the next phrases), or long-press **Slow ▶** to adjust the slow-playback multiplier in ±0.1 steps.
 
 The **first few phrases run noticeably slowly** while the models warm up. This is
 normal, and the speed settles after the first few requests.
