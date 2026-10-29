@@ -17,6 +17,7 @@ package (which mimora/llm.py needs), so the sentence splitter shared with
 
 import hashlib
 import logging
+import random
 import re
 from typing import List, Optional
 
@@ -31,13 +32,18 @@ class SourceTextPhraseProvider:
     """Yields the source text's sentences as practice phrases, one per call.
 
     Sentences are returned sequentially with wraparound at the end of the
-    text: predictable coverage, no immediate repeats. Editing the source text
-    restarts the walk from the first sentence - detected by hashing the text,
-    the same reset idea as ``LLMManager._current_window``.
+    text (predictable coverage, no immediate repeats) unless ``random_order``
+    is set, in which case each call returns a random sentence - avoiding the
+    immediately-previous one so the same sentence is not repeated back to
+    back. Editing the source text restarts the walk from the first sentence -
+    detected by hashing the text, the same reset idea as
+    ``LLMManager._current_window``.
     """
 
-    def __init__(self):
+    def __init__(self, random_order: bool = False):
+        self._random_order = bool(random_order)
         self._next_index = 0
+        self._last_phrase: Optional[str] = None
         self._text_hash: Optional[str] = None
 
     def generate_phrase(self, source_text: str, length: str = "full") -> str:
@@ -60,10 +66,21 @@ class SourceTextPhraseProvider:
         if text_hash != self._text_hash:
             self._text_hash = text_hash
             self._next_index = 0
+            self._last_phrase = None
 
-        # Modulo guards against an index left beyond the end by an edit that
-        # produced the same hash state but fewer sentences (defensive only).
-        phrase = sentences[self._next_index % len(sentences)]
-        self._next_index = (self._next_index + 1) % len(sentences)
+        if self._random_order:
+            if len(sentences) == 1:
+                phrase = sentences[0]
+            else:
+                pool = [s for s in sentences if s != self._last_phrase]
+                if not pool:
+                    pool = list(sentences)
+                phrase = random.choice(pool)
+            self._last_phrase = phrase
+        else:
+            # Modulo guards against an index left beyond the end by an edit
+            # that produced the same hash state but fewer sentences (defensive).
+            phrase = sentences[self._next_index % len(sentences)]
+            self._next_index = (self._next_index + 1) % len(sentences)
         logging.info(f"Source-text practice phrase: {phrase!r}")
         return phrase

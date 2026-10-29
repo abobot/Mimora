@@ -46,7 +46,8 @@ from mimora import (config, detect_hardware, first_run, first_run_window,
                     splash, window_icon)
 from mimora.llm import LLMManager, phrase_sampling
 from mimora.llm_server_ctl import LLMServerController
-from mimora.phrase_source import SourceTextPhraseProvider
+from mimora.phrase_source import SourceTextPhraseProvider, split_sentences
+from mimora.review import ReviewStore
 from mimora.tts import TTSManager
 from mimora.translator import TranslatorManager
 from mimora.recorder import (
@@ -368,9 +369,17 @@ class PronunciationTrainerGUI:
         # phrase button: "llm" (default) generates a fresh phrase through the
         # active backend; "practice" walks the source text's own sentences
         # verbatim. A separate provider instance keeps its own walk so toggling
-        # does not share state with the "off"-backend fallback above.
+        # does not share state with the "off"-backend fallback above. The
+        # random_order flag follows the "phrase_source_random" setting (it is
+        # read at construction; flipping the setting restarts the app).
         self._phrase_source_mode: str = config.PHRASE_SOURCE
-        self._source_text_provider = SourceTextPhraseProvider()
+        self._source_text_provider = SourceTextPhraseProvider(
+            random_order=config.PHRASE_SOURCE_RANDOM)
+        # Spaced-repetition review store (Ebbinghaus schedule, mimora/review.py).
+        # Loaded lazily on first use; a failure to read it must never stop the
+        # practice loop, so review is a best-effort add-on to generation.
+        self._review_enabled: bool = config.REVIEW_ENABLED
+        self._review_store = None  # built on first _select_phrase
 
         # Compose the view: it builds and owns the widgets, and forwards widget
         # callbacks back to this controller through an explicit ViewCallbacks
@@ -1637,6 +1646,10 @@ class PronunciationTrainerGUI:
                 self._on_phrase_source_changed(value)
             else:
                 self.settings_ctl.persist("phrase_source", config.PHRASE_SOURCE)
+        elif key in ("phrase_source_random", "review_enabled"):
+            # Restart-only (they shape the provider / review store built at
+            # startup); just persist, mirroring the other restart-only keys.
+            self.settings_ctl.persist(key, value)
         elif key == "translation_language":
             config.TRANSLATION_LANGUAGE = value
             self.on_translation_language_changed()
@@ -1756,6 +1769,92 @@ class PronunciationTrainerGUI:
                                self._phrase_source_mode, stop_event),
                          daemon=True).start()
 
+    def _select_phrase(self, source_text: str, length: str,
+                       phrase_source: str) -> str:
+        """Pick the next practice phrase, honoring spaced-repetition review.
+
+        Returns "" when no phrase could be produced (the caller treats that
+        as a failed generation). Runs on the generation worker thread.
+
+        With review enabled, phrases that are due on the Ebbinghaus forgetting
+        curve (see mimora/review.py) are re-presented first - the "appearance"
+        method the user asked for. Due practice-text sentences are filtered to
+        the current source text (a changed text must not re-surface an old
+        sentence); due LLM phrases come from the LLM bank. When nothing is due,
+        a fresh phrase is produced normally: practice mode picks from the text
+        (sequential or random per ``phrase_source_random``), LLM mode generates
+        one. Every phrase is recorded so it can be reviewed later.
+        """
+        due = self._due_review_phrases(source_text, phrase_source)
+        if due:
+            # Re-present the most-overdue phrase. Touch the store so the
+            # appearance itself is logged; the SRS advance happens on scoring
+            # (see _record_review_result).
+            phrase = due[0]
+            try:
+                self._review_store.record_phrase(phrase, source=phrase_source)
+            except Exception:  # noqa: BLE001 - review is best-effort
+                logging.exception("Failed to touch review phrase:")
+            logging.info(f"Review (Ebbinghaus) phrase: {phrase!r}")
+            return phrase
+
+        if phrase_source == "practice":
+            phrase = self._source_text_provider.generate_phrase(
+                source_text, length=length)
+        else:
+            phrase = self.llm_mgr.generate_phrase(source_text, length=length)
+        if phrase and self._review_enabled:
+            try:
+                self._review_store.record_phrase(phrase, source=phrase_source)
+            except Exception:  # noqa: BLE001 - review is best-effort
+                logging.exception("Failed to record review phrase:")
+        return phrase
+
+    def _due_review_phrases(self, source_text: str, phrase_source: str):
+        """Due-for-review phrases for *phrase_source*, most overdue first.
+
+        Returns an empty list when review is disabled or nothing is due.
+        Practice mode is filtered to the current text's sentences; LLM mode
+        returns due LLM phrases. ``_review_store`` is built lazily here, on
+        the worker thread, and guarded so a store failure disables review.
+        """
+        if not self._review_enabled:
+            return []
+        if self._review_store is None:
+            try:
+                self._review_store = ReviewStore()
+                self._review_store.load()
+            except Exception:  # noqa: BLE001 - never break generation
+                logging.exception("Could not open review store; review off:")
+                self._review_enabled = False
+                return []
+        try:
+            due = self._review_store.due_phrases(source=phrase_source)
+        except Exception:  # noqa: BLE001 - best-effort
+            logging.exception("Review lookup failed; skipping review:")
+            return []
+        if phrase_source == "practice":
+            current = set(split_sentences(source_text))
+            due = [p for p in due if p in current]
+        return due
+
+    def _record_review_result(self, phrase: str, passed: bool) -> None:
+        """Advance *phrase*'s Ebbinghaus schedule after a scored take.
+
+        Best-effort: review persistence must never surface into the practice
+        loop. The store is built lazily so a run that never enabled review
+        does not touch disk here.
+        """
+        if not self._review_enabled:
+            return
+        try:
+            if self._review_store is None:
+                self._review_store = ReviewStore()
+                self._review_store.load()
+            self._review_store.record_result(phrase, passed)
+        except Exception:  # noqa: BLE001 - never break the practice loop
+            logging.exception("Failed to record review result:")
+
     def _generate_and_prompt(self, source_text: str, length: str,
                              language: str, voice: str, speed: float,
                              phrase_source: str,
@@ -1769,11 +1868,7 @@ class PronunciationTrainerGUI:
         widgets or mutate the shared playback state (Tk is not thread-safe).
         """
         try:
-            if phrase_source == "practice":
-                phrase = self._source_text_provider.generate_phrase(
-                    source_text, length=length)
-            else:
-                phrase = self.llm_mgr.generate_phrase(source_text, length=length)
+            phrase = self._select_phrase(source_text, length, phrase_source)
             if not phrase:
                 self.root.after(0, self._phrase_generation_failed,
                                 i18n.tr("The model returned no phrase. Try again."))
@@ -2737,6 +2832,11 @@ class PronunciationTrainerGUI:
         stats = self.session.record_take(phrase, score, graded)
         if stats is not None:
             self.view.update_session_stats(*stats)
+        # Advance the phrase's Ebbinghaus review schedule, best-effort: a
+        # review-persistence failure must never surface into the practice loop.
+        result = details.get("result") if details is not None else None
+        passed = bool(getattr(result, "passed", False)) if result is not None else False
+        self._record_review_result(phrase, passed)
         # Persistence path: only when the store is enabled and we have
         # the full result (unscored takes reach here with details=None).
         if config.STATS_ENABLED and details is not None:
@@ -2751,7 +2851,6 @@ class PronunciationTrainerGUI:
         # auto-advance (the view already disabled "Next phrase" for it; this
         # keeps auto-next consistent with the manual button).
         if config.AUTO_NEXT_PHRASE:
-            result = details.get("result") if details is not None else None
             if (not config.PASS_GATING_ENABLED) or (result is not None and getattr(result, "passed", True)):
                 delay_ms = int(config.AUTO_NEXT_DELAY * 1000)
                 self.root.after(delay_ms, self.on_generate_phrase)

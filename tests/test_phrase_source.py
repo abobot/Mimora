@@ -84,5 +84,45 @@ class TestSourceTextPhraseProvider(unittest.TestCase):
                          "Only one here.")
 
 
+class TestSourceTextPhraseProviderRandom(unittest.TestCase):
+    """Random order: never an immediate repeat, still covers the text."""
+
+    TEXT = "First one. Second one! Third one?"
+
+    def test_random_never_repeats_immediately(self):
+        provider = SourceTextPhraseProvider(random_order=True)
+        last = provider.generate_phrase(self.TEXT)
+        for _ in range(50):
+            phrase = provider.generate_phrase(self.TEXT)
+            self.assertNotEqual(phrase, last)
+            last = phrase
+
+    def test_random_covers_all_sentences(self):
+        provider = SourceTextPhraseProvider(random_order=True)
+        seen = {provider.generate_phrase(self.TEXT) for _ in range(200)}
+        self.assertEqual(seen, {"First one.", "Second one!", "Third one?"})
+
+    def test_random_single_sentence_repeats(self):
+        provider = SourceTextPhraseProvider(random_order=True)
+        self.assertEqual(provider.generate_phrase("Only one here."),
+                         "Only one here.")
+
+    def test_random_empty_text_returns_empty(self):
+        provider = SourceTextPhraseProvider(random_order=True)
+        self.assertEqual(provider.generate_phrase(""), "")
+
+    def test_random_text_edit_resets_state(self):
+        # The hash reset must clear the "last phrase" guard so the first
+        # sentence of a new text is not skipped because it equals the last.
+        provider = SourceTextPhraseProvider(random_order=True)
+        provider.generate_phrase("Same. Second.")
+        provider.generate_phrase("Same. Second.")
+        provider.generate_phrase("Same. Second.")
+        edited = "Same. New second."
+        for _ in range(50):
+            phrase = provider.generate_phrase(edited)
+            self.assertIn(phrase, {"Same.", "New second."})
+
+
 if __name__ == "__main__":
     unittest.main()

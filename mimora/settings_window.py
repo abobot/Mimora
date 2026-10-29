@@ -210,6 +210,21 @@ def build_sections() -> tuple:
                                "practice = cycle the practice text's own "
                                "sentences in order. Also selectable by "
                                "long-pressing the Next button.")),
+            Field("phrase_source_random",
+                  i18n.tr("Random order from practice text"), "bool",
+                  lambda: config.user_setting("phrase_source_random",
+                                              config.PHRASE_SOURCE_RANDOM),
+                  help=i18n.tr("When the phrase source is practice, pick a "
+                               "random sentence instead of cycling in order. "
+                               "Requires a restart to take effect.")),
+            Field("review_enabled", i18n.tr("Spaced repetition (Ebbinghaus)"),
+                  "bool",
+                  lambda: config.user_setting("review_enabled",
+                                              config.REVIEW_ENABLED),
+                  help=i18n.tr("Re-present phrases you have practiced on the "
+                               "Ebbinghaus forgetting-curve schedule (1, 2, 4, "
+                               "7, 15, 30, 60 days) instead of only generating "
+                               "new ones. Requires a restart to take effect.")),
             Field("reference_speed", i18n.tr("Reference speed"), "scale",
                   lambda: config.user_setting("reference_speed",
                                               config.REFERENCE_SPEED),

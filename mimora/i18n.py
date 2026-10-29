@@ -361,6 +361,8 @@ _ZH: Dict[str, str] = {
     "Play at speed": "以指定速度播放",
     "Slow multiplier": "慢速倍率",
     "Phrase source": "短语来源",
+    "Random order from practice text": "从练习文本随机选择",
+    "Spaced repetition (Ebbinghaus)": "间隔复习（艾宾浩斯）",
     "Hint": "提示",
     "Show sentence": "显示例句",
     "Check answer": "检查答案",
@@ -472,6 +474,10 @@ _ZH: Dict[str, str] = {
     "Phrase source": "短语来源",
     "llm = generate phrases with the LLM, practice = cycle the practice text's own sentences in order. Also selectable by long-pressing the Next button.":
         "llm = 由 LLM 生成短语，practice = 按顺序循环练习文本自己的句子。也可通过长按“下一句”按钮选择。",
+    "When the phrase source is practice, pick a random sentence instead of cycling in order. Requires a restart to take effect.":
+        "当短语来源为 practice 时，随机选择句子而非按顺序循环。需重启后生效。",
+    "Re-present phrases you have practiced on the Ebbinghaus forgetting-curve schedule (1, 2, 4, 7, 15, 30, 60 days) instead of only generating new ones. Requires a restart to take effect.":
+        "按艾宾浩斯遗忘曲线时间表（1、2、4、7、15、30、60 天）重新呈现你练习过的短语，而非只生成新句。需重启后生效。",
     "Reference speed": "参考语速",
     "Normal reference playback speed. The Slow ▶ button next to Reference plays 0.1 below this (e.g. 0.9 -> 0.8).":
         "正常参考播放语速。“参考发音”旁的“慢速 ▶”按钮以比此低 0.1 的速度播放（例如 0.9 → 0.8）。",

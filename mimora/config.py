@@ -100,6 +100,8 @@ _KNOWN_USER_KEYS = {
     "user_name",
     "phrase_length",
     "phrase_source",
+    "phrase_source_random",
+    "review_enabled",
     "reference_speed",
     "random_voice",
     "playback_own_recording",
@@ -172,6 +174,8 @@ USER_SETTING_DEFAULTS = {
     "user_name": "",
     "phrase_length": "full",
     "phrase_source": "llm",
+    "phrase_source_random": False,
+    "review_enabled": True,
     "reference_speed": 1.0,
     "random_voice": False,
     "playback_own_recording": True,
@@ -1058,6 +1062,17 @@ if PHRASE_SOURCE not in PHRASE_SOURCE_CHOICES:
     PHRASE_SOURCE = "llm"
     _USER["phrase_source"] = PHRASE_SOURCE
 
+# Random vs sequential selection from the practice text ("phrase_source_random").
+# False (the default) keeps the historical sequential walk; True picks a random
+# sentence, avoiding an immediate repeat. Applies only to practice mode.
+PHRASE_SOURCE_RANDOM = bool(_USER.get("phrase_source_random", False))
+
+# Spaced-repetition review of practiced phrases ("review_enabled"). When on,
+# the phrase-source selection prefers phrases that are due on the Ebbinghaus
+# forgetting curve (see mimora/review.py) over generating a fresh one, so the
+# phrases you practice reappear on the review schedule.
+REVIEW_ENABLED = bool(_USER.get("review_enabled", True))
+
 # Offline translation engine: a dedicated NLLB-200 model (mimora/translator.py),
 # NOT the chat LLM - the local 3B LLM produced unusable translations (empty CJK,
 # leaked English). NLLB is a 200-language MT model that is small and CPU-friendly.
@@ -1454,6 +1469,10 @@ def ui_language_choices() -> tuple:
 # has history to fall back to without scanning the primary file.
 STATS_FILE = str(CONFIG_DIR / "stats.json")
 DAILY_BACKUP_DIR = str(CONFIG_DIR / "daily")
+# Spaced-repetition review state sits next to settings.json for the same reason
+# as STATS_FILE: it is user data, portable across machines, and belongs with
+# the other user-editable files rather than in the log tree.
+REVIEW_FILE = str(CONFIG_DIR / "review.json")
 # Directory that holds per-session audio recordings. Lives under LOG_DIR
 # because it is diagnostic output with the same audience as main.log; kept
 # out of CONFIG_DIR so a settings.json backup does not drag gigabytes of
@@ -1464,3 +1483,8 @@ RECORDS_DIR = str(LOG_DIR / "records")
 def stats_path() -> str:
     """Path to the primary stats.json file (as a str)."""
     return STATS_FILE
+
+
+def review_path() -> str:
+    """Path to the spaced-repetition review.json file (as a str)."""
+    return REVIEW_FILE

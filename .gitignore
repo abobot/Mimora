@@ -84,3 +84,5 @@ config/daily
 sessions
 config/stats.json
 config/stats.json.bak
+config/review.json
+config/review.json.bak

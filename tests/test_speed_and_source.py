@@ -96,6 +96,10 @@ class PhraseSourceBranchTests(unittest.TestCase):
         c._source_text_provider.generate_phrase.return_value = "from practice text."
         c.llm_mgr = mock.MagicMock()
         c.llm_mgr.generate_phrase.return_value = "from llm."
+        # Review is off for these branch tests: _select_phrase falls through
+        # to the plain provider dispatch (review wiring is tested separately).
+        c._review_enabled = False
+        c._review_store = None
         c.tts_mgr = mock.MagicMock()
         c.tts_mgr.sample_rate = 24000
         c.tts_mgr.synthesize.return_value = np.zeros(2400, dtype=np.float32)
