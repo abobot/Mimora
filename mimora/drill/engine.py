@@ -178,8 +178,10 @@ class DrillEngine:
             self.fallback_reason = "no_target"
             return list(_SYNTHETIC_PHRASES)
 
-        # free_form short-circuits: the value IS the phrase.
-        if target_type == "free_form":
+        # free_form short-circuits: the value IS the phrase. single_word is the
+        # same shape for the word drilled in isolation (double-click a phrase
+        # word): the value IS the whole practice phrase.
+        if target_type in ("free_form", "single_word"):
             return [value]
 
         source = (self.source_text or "").strip()

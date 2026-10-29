@@ -32,6 +32,7 @@ from mimora.ui_theme import (
     FONT_SIZE_CAPTION,
     FONT_SIZE_SUBTITLE,
     THEME,
+    make_icon_button,
 )
 import logging
 import tkinter as tk
@@ -94,6 +95,8 @@ class DrillView:
         target_type = self.engine.target.get("type", "")
         target_value = self.engine.target.get("value", "")
         if target_type == "word":
+            title = i18n.tr("Word drill · {value}", value=target_value)
+        elif target_type == "single_word":
             title = i18n.tr("Word drill · {value}", value=target_value)
         elif target_type == "phoneme":
             title = i18n.tr("Phoneme drill · {value}", value=target_value)
@@ -165,19 +168,22 @@ class DrillView:
         # Buttons.
         controls = tk.Frame(self._window, bg=THEME["bg_main"])
         controls.pack(fill=tk.X, padx=16, pady=(0, 16))
-        self._record_btn = ttk.Button(controls, text=i18n.tr("▶  Record (Space)"),
-                                      command=self._on_record)
+        self._record_btn = make_icon_button(
+            controls, i18n.tr("▶"), i18n.tr("Record (Space)"), self._on_record)
         self._record_btn.pack(side=tk.LEFT, padx=4)
-        ttk.Button(controls, text=i18n.tr("🔊  Example"),
-                   command=self._on_play_reference).pack(side=tk.LEFT, padx=4)
-        self._play_rec_btn = ttk.Button(controls, text=i18n.tr("🎙  My recording"),
-                                        command=self._on_play_recording,
-                                        state="disabled")
+        make_icon_button(
+            controls, i18n.tr("🔊"), i18n.tr("Example"), self._on_play_reference
+        ).pack(side=tk.LEFT, padx=4)
+        self._play_rec_btn = make_icon_button(
+            controls, i18n.tr("🎙"), i18n.tr("My recording"), self._on_play_recording)
         self._play_rec_btn.pack(side=tk.LEFT, padx=4)
-        ttk.Button(controls, text=i18n.tr("⏮  Previous"),
-                   command=self._on_previous).pack(side=tk.LEFT, padx=4)
-        ttk.Button(controls, text=i18n.tr("⏭  Next"),
-                   command=self._on_skip).pack(side=tk.LEFT, padx=4)
+        self._play_rec_btn.config(state=tk.DISABLED)
+        make_icon_button(
+            controls, i18n.tr("⏮"), i18n.tr("Previous"), self._on_previous
+        ).pack(side=tk.LEFT, padx=4)
+        make_icon_button(
+            controls, i18n.tr("⏭"), i18n.tr("Next"), self._on_skip
+        ).pack(side=tk.LEFT, padx=4)
         # Auto-next toggle.
         self._auto_next_var = tk.BooleanVar(value=self._cb.is_auto_next())
         ttk.Checkbutton(controls, text=i18n.tr("Auto-next phrase"),
@@ -277,7 +283,7 @@ class DrillView:
                           threshold=self.engine.pass_threshold))
         self._update_feedback(details)
         if p["current"] >= 1:
-            self._play_rec_btn.configure(state="normal")
+            self._play_rec_btn.configure(state=tk.NORMAL)
 
     def _update_feedback(self, details: Dict[str, Any]) -> None:
         """Render missed words and weak phonemes from the analysis result."""

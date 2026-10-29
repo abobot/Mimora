@@ -48,6 +48,17 @@ LIVE_CONFIG_ATTRS = {
     "native_language": ("NATIVE_LANGUAGE", str),
     "drill_pass_threshold": ("DRILL_PASS_THRESHOLD", float),
     "drill_max_attempts": ("DRILL_MAX_ATTEMPTS", int),
+    # Fluency axis + pass gate (P0#2/P0#3). All apply live: the axis is read at
+    # analysis time and the gate at feedback time, so a toggle takes effect on
+    # the next take without a restart.
+    "fluency_enabled": ("FLUENCY_ENABLED", bool),
+    "fluency_weight": ("FLUENCY_WEIGHT", float),
+    "fluency_reference_wpm": ("FLUENCY_REFERENCE_WPM", float),
+    "pass_gating_enabled": ("PASS_GATING_ENABLED", bool),
+    # Shadowing mode (P1#4). Applies live: the axis is read at analysis time
+    # and the take is auto-started at the next prompt, so no restart needed.
+    "shadowing_enabled": ("SHADOWING_ENABLED", bool),
+    "shadowing_weight": ("SHADOWING_WEIGHT", float),
 }
 
 # settings.json key -> config attribute holding the value the running app

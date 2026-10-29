@@ -72,15 +72,16 @@ FONT_FAMILY_MONO = _FONT_FAMILIES_MONO.get(platform.system(), "DejaVu Sans Mono"
 # CSS px (Windows ~1.3x), so e.g. the 16pt phrase lands near the original hero
 # text. Sizes that share a value are still kept as separate, role-named
 # constants so each can be tuned independently later.
-FONT_SIZE_SCORE = 26         # hero verdict score - the single largest element
-FONT_SIZE_EMOJI = 20         # emoji glyph drawn on the round record button
-FONT_SIZE_PHRASE = 16        # hero practice phrase (the sentence being trained)
-FONT_SIZE_ICON = 15          # header gear / settings glyph
-FONT_SIZE_TITLE = 14         # header brand title ("MIMORA + language")
-FONT_SIZE_SUBTITLE = 11      # emphasized secondary text: translation line, history rows
-FONT_SIZE_BODY = 10          # default body / label text
-FONT_SIZE_SMALL = 9          # compact controls: status bar, settings fields and buttons
-FONT_SIZE_CAPTION = 8        # captions, help text, legends, sublabels
+FONT_SIZE_SCORE = 30         # hero verdict score - the single largest element
+FONT_SIZE_EMOJI = 22         # emoji glyph drawn on the round record button
+FONT_SIZE_PHRASE = 18        # hero practice phrase (the sentence being trained)
+FONT_SIZE_ICON = 16          # header gear / settings glyph
+FONT_SIZE_CONTROL_ICON = 20  # control-row icon buttons (speaker/turtle/cassette/skip)
+FONT_SIZE_TITLE = 15         # header brand title ("MIMORA + language")
+FONT_SIZE_SUBTITLE = 12      # emphasized secondary text: translation line, history rows
+FONT_SIZE_BODY = 11          # default body / label text
+FONT_SIZE_SMALL = 10         # compact controls: status bar, settings fields and buttons
+FONT_SIZE_CAPTION = 9        # captions, help text, legends, sublabels
 
 # The wheel-event sequences a scrollable widget must listen to: <MouseWheel>
 # covers Windows and macOS; X11 (Linux) delivers Button-4/Button-5 instead.
@@ -322,3 +323,27 @@ class Tooltip:
         if self._tip is not None:
             self._tip.destroy()
             self._tip = None
+
+def make_icon_button(parent, glyph, tip, command, padx=4, pady=8, font_size=None):
+    """Build a flat, icon-only button with a hover tooltip.
+
+    Shared by the main control row and the drill/dictation mode UIs so every
+    icon button looks the same: the glyph sits on the page background (no
+    coloured pill), at a readable icon size, and the ``tip`` names the action
+    since the icon alone does not say what it does. Returns the button; the
+    caller packs it into its parent.
+
+    ``font_size`` defaults to :data:`FONT_SIZE_CONTROL_ICON` so the glyph is
+    larger than body text; pass a smaller value for compact rows.
+    """
+    if font_size is None:
+        font_size = FONT_SIZE_CONTROL_ICON
+    btn = FlatButton(parent, text=glyph, command=command,
+                     font=(FONT_FAMILY, font_size, "bold"),
+                     bg=THEME["bg_main"], fg=THEME["text"],
+                     activebackground=THEME["bg_accent_active"],
+                     activeforeground=THEME["text_bright"],
+                     bd=0, padx=padx, pady=pady, cursor="hand2",
+                     disabledforeground=THEME["text_disabled"])
+    Tooltip(btn, tip)
+    return btn

@@ -35,8 +35,10 @@ that package's `__init__.py`). The active language/variant comes from
 settings.json `"practice_language"` / `"accent"` and applies after a restart.
 English (`american`/`british`) is fully calibrated; Spanish (`castilian`) runs
 the phoneme engine as **experimental** until
-`pronunciation/phoneme/es_model_calibration.json` lands. Adding a language is a
-profile module plus an engine calibration, never a new `if language == ...`.
+`pronunciation/phoneme/es_model_calibration.json` lands. Mandarin
+(`standard`) does the same until `cmn_model_calibration.json` lands. Adding a
+language is a profile module plus an engine calibration, never a new
+`if language == ...`.
 
 The pronunciation-scoring core in `pronunciation/acoustic/` is adapted from
 [OpenPronounce](https://github.com/Halleck45/OpenPronounce) (MIT) and reused as
@@ -192,6 +194,20 @@ installs or imports llama-cpp-python.
   F0/energy contours (librosa/sklearn, no torch). Called by `app.py` after
   `analyze`, skipped entirely while the prosody block is collapsed. Plotting
   helpers in [`prosody_utils.py`](mimora/prosody_utils.py).
+- [`mimora/fluency.py`](mimora/fluency.py) - the fluency axis blended into the
+  score when `fluency_enabled`: half tempo (WPM vs
+  `FLUENCY_REFERENCE_WPM`, `_speed_label` too slow/natural/too fast), half
+  prosody similarity (cosine of resampled F0/energy contours). `app.py`
+  `_apply_fluency` blends it into `result.score` at `FLUENCY_WEIGHT`% and
+  re-buckets, so a take is graded on pronunciation + fluency together.
+- [`mimora/shadowing.py`](mimora/shadowing.py) - the shadowing (跟读) axis
+  blended into the score when `shadowing_enabled`: cross-correlates the
+  user's amplitude envelope against the reference's to find the time offset
+  (`delay_sec`, positive = the user trails) and the peak overlap, then
+  penalizes lag beyond `LAG_TOLERANCE_SEC`. `app.py` `_apply_shadowing`
+  blends it at `SHADOWING_WEIGHT`% and re-buckets, and `_start_shadowing_take`
+  opens the recorder without stopping the reference playback so the user can
+  speak along with it.
 - [`mimora/tts.py`](mimora/tts.py) - `TTSManager`: facade over per-variant
   backends selected by profile data - `KokoroBackend` (torch, 24 kHz, English)
   and `SupertonicBackend` (ONNX, 44.1 kHz, Spanish). `synthesize()` returns the
@@ -463,8 +479,9 @@ answered in `first_run.py` instead.
    calls `engine.analyze(...)`.
 4. **Feedback** - `_show_feedback` (via `root.after`) fills the hero card and
    appends the take to the history.
-5. **Loop** - the user decides when to move on. **`result.passed` is not
-   enforced yet** - see the Pass-threshold note below.
+5. **Loop** - the user decides when to move on. With
+   `pass_gating_enabled` the next phrase is unlocked only once this take
+   passes (`result.passed`); otherwise it is always available.
 
 ## Key Patterns & Gotchas
 
@@ -486,13 +503,12 @@ answered in `first_run.py` instead.
   removes first-call latency. `speech.py` reads config via `getattr(...,
   default)` so it stays usable without config edits.
 
-- **Pass threshold / `result.passed` are currently inert**, reserved for a
-  future gating loop. `config.PRONUNCIATION_SCORE_THRESHOLD` feeds each engine's
-  `score_threshold` and produces `result.passed`, but nothing in `app.py` or
-  `ui.py` reads it: the score read-out, quality band, face and history all come
-  from the score/bucket. When that gate is implemented, wire it to
-  `result.passed` and account for the phoneme engine's calibrated-bucket path,
-  where the raw threshold does not apply.
+- **Pass gating**: `config.PASS_GATING_ENABLED` (settings `pass_gating_enabled`)
+  makes `result.passed` live: when on, the Next-phrase button and auto-next
+  stay locked until the current take passes. For the phoneme engine the
+  calibrated-bucket path decides `passed` (`bucket >= PASS_BUCKET`), not the
+  raw `score_threshold`; the acoustic/hybrid engines use the raw threshold.
+  The gate lives in `ui.py` (`can_advance`) and `app.py` (`on_take_scored`).
 
 - **GPU contention**: Wav2Vec2, Kokoro and llama.cpp compete for VRAM.
   Mitigations: the LLM runs in a separate process, and the loop's phases run
@@ -573,3 +589,119 @@ subprocess where needed, so it downloads nothing and runs anywhere.
 - **Comments say what breaks if the code changes, not how the code got here.**
   Dates, release-candidate numbers, rejected hypotheses and step numbers from
   other files belong in git history and in the task notes, not in the source.
+
+---
+
+# AI Agent Collaboration Rules
+
+This section is the behaviour contract for every AI Agent working on this
+project. Read it in full before starting any task.
+
+## 0. Project Information
+
+- This project (secondary development): <https://github.com/abobot/Mimora>
+- Upstream original project: <https://github.com/vikonix/Mimora/>
+- This project does not aim for compatibility with or synchronisation to the
+  upstream; it evolves as an independent project.
+
+## 1. Mandatory at Task Start
+
+1. Read `TODO.md` and find the current `-[doing]` task, or the highest-priority
+   `-[todo]` task.
+2. If no matching task exists, add one to `TODO.md` first (see §2).
+3. Before starting work, change that task's status to `-[doing]`.
+
+## 2. TODO.md Operation Rules
+
+- File path: `TODO.md` at the project root.
+- Timestamp format: `==YYYY-MM-DD HH:mm==`
+- Status markers (must be used strictly):
+  - `-[todo]` — to-do
+  - `-[doing]` — in progress (only 1 allowed at a time)
+  - `-[done]` — done (the line must end with a completion time
+    `(YYYY-MM-DD HH:mm)`)
+- Ordering: newest timestamp block on top, older below (descending).
+- When adding a task, create a new timestamp block on top; when only changing
+  status, edit in place.
+- Write the file back immediately after any status change; do not batch
+  changes up.
+
+Example:
+
+```
+==2026-10-29 14:30==
+ -[doing] Implement feature XXX
+ -[todo] Fix issue YYY
+
+==2026-10-28 09:00==
+ -[done] Completed module AAA (2026-10-28 18:00)
+```
+
+## 3. CHANGELOG.md Operation Rules
+
+- File path: `CHANGELOG.md` at the project root.
+- Follow Keep a Changelog; version numbers follow Semantic Versioning.
+- Categories are limited to: Added / Changed / Fixed / Removed / Deprecated /
+  Security.
+- Trigger: when a `TODO.md` item is marked `-[done]` and the change is visible
+  externally, it must be written to the CHANGELOG in the same pass.
+- Unreleased content goes under the `## [Unreleased]` section.
+
+Example:
+
+```
+## [Unreleased]
+### Added
+- Added feature XXX
+
+## [1.1.0] - 2026-10-29
+### Fixed
+- Fixed defect YYY
+```
+
+## 4. Documentation Sync Check (before every commit)
+
+After completing code changes, check each item and state the result in the PR
+description:
+
+- [ ] Does `AGENT.md` need updating? (when the rules change)
+- [ ] Does `readme.md` need updating? (user-visible features / install / usage
+      changes)
+- [ ] Does `dav_readme.md` need updating? (DAV-related changes)
+- [ ] Other related docs (config examples, API docs, etc.)
+
+Rule: for any item that needs no update, write "checked, no update needed" in
+the PR description.
+
+## 5. Commits and Branches
+
+- Branches: `feature/<name>` or `fix/<name>`, cut from `main`.
+- Commit messages follow Conventional Commits:
+  - `feat: ...` / `fix: ...` / `docs: ...` / `refactor: ...` / `chore: ...`
+- One feature/fix corresponds to one PR.
+
+## 6. Acceptance and Upload (Important)
+
+1. After the feature/fix branch is complete, **stop** and submit it to the user
+   for acceptance.
+2. Only after the user explicitly confirms it passes may you:
+   - merge into `main`
+   - push to <https://github.com/abobot/Mimora>
+   - update `TODO.md` (to done) and `CHANGELOG.md`
+3. Before the user confirms, do not merge or push. Keep the status `doing`.
+
+## 7. Pre-Merge Checklist (confirm each item)
+
+- [ ] `TODO.md` updated
+- [ ] `CHANGELOG.md` updated (if externally visible)
+- [ ] `AGENT.md` / `readme.md` / `dav_readme.md` checked
+- [ ] Other related docs checked
+- [ ] Commit message conforms to the convention
+- [ ] Local self-test passed
+- [ ] User acceptance passed
+
+## 8. Rollback
+
+- On a serious problem, `git revert` the offending commit.
+- Record it in `CHANGELOG.md` under Fixed/Changed.
+- Add a new fix task (`-[todo]`) in `TODO.md`.

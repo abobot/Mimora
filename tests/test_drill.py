@@ -43,6 +43,14 @@ class PhraseCyclingTest(unittest.TestCase):
         phrases = engine.candidate_phrases
         self.assertEqual(phrases, ["Custom phrase here."])
 
+    def test_single_word_drill_returns_word_verbatim(self):
+        # A single-word drill (double-click a phrase word) practices the word
+        # alone: the value IS the whole practice phrase, no sentence around it.
+        engine = DrillEngine(target={"type": "single_word", "value": "thought"},
+                             source_text="The thought is deep.")
+        phrases = engine.candidate_phrases
+        self.assertEqual(phrases, ["thought"])
+
     def test_next_phrase_cycles_and_reshuffles(self):
         source = "Sentence one. Sentence two. Sentence three."
         engine = DrillEngine(target={"type": "word", "value": "Sentence"},

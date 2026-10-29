@@ -33,7 +33,7 @@ from mimora import config, i18n, window_icon
 # Reuse the main view's resolved palette, platform font and wheel-event
 # helpers so the settings window matches the app theme exactly and scrolls
 # on every platform (ui.py builds/hosts all of these).
-from mimora.ui import (
+from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
@@ -249,6 +249,36 @@ def build_sections() -> tuple:
                   runtime_value=lambda: config.PHONEME_GOOD_MODE,
                   help=i18n.tr("global = one calibrated anchor (default, faster); "
                                "ceiling = a flawless read maps to 100 per phrase.")),
+            Field("fluency_enabled", i18n.tr("Include fluency & stress in score"), "bool",
+                  lambda: config.user_setting("fluency_enabled",
+                                              config.FLUENCY_ENABLED),
+                  help=i18n.tr("Blend speaking rate (WPM) and intonation shape "
+                               "into the pronunciation score. Off keeps the "
+                               "engine score as-is.")),
+            Field("fluency_weight", i18n.tr("Fluency weight (%)"), "number",
+                  lambda: config.user_setting("fluency_weight",
+                                              config.FLUENCY_WEIGHT),
+                  minimum=0, maximum=100,
+                  help=i18n.tr("How much the fluency axis counts in the blended "
+                               "score. 0 = show but do not blend.")),
+            Field("fluency_reference_wpm", i18n.tr("Target speaking rate (WPM)"), "number",
+                  lambda: config.user_setting("fluency_reference_wpm",
+                                              config.FLUENCY_REFERENCE_WPM),
+                  minimum=0, maximum=400,
+                  help=i18n.tr("Words per minute the tempo half scores against. "
+                               "0 = no tempo penalty (shape only).")),
+            Field("shadowing_enabled", i18n.tr("Shadowing mode (speak along with the reference)"), "bool",
+                  lambda: config.user_setting("shadowing_enabled",
+                                              config.SHADOWING_ENABLED),
+                  help=i18n.tr("When on, the reference plays and you speak along "
+                               "with it; the take is scored on pronunciation plus "
+                               "how well you kept up (delay/overlap).")),
+            Field("shadowing_weight", i18n.tr("Shadowing weight (%)"), "number",
+                  lambda: config.user_setting("shadowing_weight",
+                                              config.SHADOWING_WEIGHT),
+                  minimum=0, maximum=100,
+                  help=i18n.tr("How much the shadowing alignment counts in the "
+                               "blended score. 0 = show but do not blend.")),
         )),
         Section(i18n.tr("Appearance"), (
             Field("color_theme", i18n.tr("Color theme"), "choice",
@@ -274,6 +304,12 @@ def build_sections() -> tuple:
                   minimum=1, maximum=30,
                   help=i18n.tr("Delay before auto-generating the next phrase. "
                                "Longer delay gives time to read error feedback.")),
+            Field("pass_gating_enabled", i18n.tr("Require passing score for next phrase"), "bool",
+                  lambda: config.user_setting("pass_gating_enabled",
+                                              config.PASS_GATING_ENABLED),
+                  help=i18n.tr("When on, 'Next phrase' is disabled until the take "
+                               "passes the threshold (repeat until it passes). "
+                               "When off, you may move on at any time.")),
             Field("show_prosody", i18n.tr("Show intonation & stress"), "bool",
                   lambda: config.user_setting("show_prosody",
                                               config.SHOW_PROSODY),

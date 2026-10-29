@@ -322,6 +322,7 @@ class PronunciationTrainerGUI:
             on_generate_phrase=self.on_generate_phrase,
             on_word_clicked=self.on_word_clicked,
             on_word_drill_clicked=self._on_word_drill_clicked,
+            on_word_single_drill_clicked=self._on_word_single_drill_clicked,
             on_sound_example=self.on_sound_example,
             on_take_scored=self.on_take_scored,
             on_history_entry=self.on_history_entry,
@@ -953,6 +954,7 @@ class PronunciationTrainerGUI:
                 play_recording=self._play_take_file,
                 export_json=self._stats_export_json,
                 export_csv=self._stats_export_csv,
+                start_drill=self._drill_take_from_history,
             )))
 
     def on_stats_clicked(self) -> None:
@@ -965,6 +967,8 @@ class PronunciationTrainerGUI:
                 },
                 export_json=self._stats_export_json,
                 export_csv=self._stats_export_csv,
+                export_report_png=self._stats_export_report_png,
+                export_report_pdf=self._stats_export_report_pdf,
             )))
 
     def on_weakness_clicked(self) -> None:
@@ -976,6 +980,7 @@ class PronunciationTrainerGUI:
                 ),
                 start_drill=self._start_drill,
                 open_practice=lambda: self.root.lift(),
+                play_example=self.on_sound_example,
             ),
             native_language=config.NATIVE_LANGUAGE,
         ))
@@ -1003,6 +1008,36 @@ class PronunciationTrainerGUI:
         except Exception:
             logging.exception("Could not pick default drill target:")
         phrase = getattr(self, "current_phrase", None) or ""
+        return {"type": "free_form", "value": phrase or "The thought is a thought."}
+
+    def _drill_take_from_history(self, take: dict) -> None:
+        """P2#6: start a Drill on one past take's weakest word.
+
+        Called by the history browser's "Re-drill" row button. The take's own
+        ``error_words`` is the direct evidence of what failed, so the first one
+        (or the first phoneme when a take has phoneme errors but no word errors)
+        becomes the drill target. A take with neither falls back to a free-form
+        drill of its own phrase - always something to do, never a dead button.
+        """
+        target = self._drill_target_for_take(take)
+        self._start_drill(target)
+
+    @staticmethod
+    def _drill_target_for_take(take: dict) -> dict:
+        """Pick a Drill target dict for a past take (pure, testable)."""
+        error_words = take.get("error_words") or []
+        if error_words:
+            word = error_words[0]["word"] if isinstance(error_words[0], dict) \
+                else str(error_words[0])
+            if word:
+                return {"type": "word", "value": word}
+        phoneme_scores = take.get("phoneme_scores") or []
+        if phoneme_scores:
+            phoneme = phoneme_scores[0]["ipa"] if isinstance(phoneme_scores[0], dict) \
+                else str(phoneme_scores[0])
+            if phoneme:
+                return {"type": "phoneme", "value": phoneme}
+        phrase = (take.get("phrase") or "").strip()
         return {"type": "free_form", "value": phrase or "The thought is a thought."}
 
     def _start_drill(self, target: dict) -> None:
@@ -1397,6 +1432,42 @@ class PronunciationTrainerGUI:
             self.view.append_error_msg(i18n.tr("Could not export stats."))
             return None
 
+    def _stats_export_report_png(self):
+        """P2#7: export the progress report as a PNG image."""
+        return self._stats_export_report("png")
+
+    def _stats_export_report_pdf(self):
+        """P2#7: export the progress report as a PDF document."""
+        return self._stats_export_report("pdf")
+
+    def _stats_export_report(self, kind: str):
+        """Shared save-as flow for the offline report renderer."""
+        from tkinter import filedialog
+        import mimora.report as report_mod
+        ext = "png" if kind == "png" else "pdf"
+        default = f"mimora-report-{_date_stamp()}.{ext}"
+        path = filedialog.asksaveasfilename(
+            defaultextension=f".{ext}",
+            filetypes=[(ext.upper(), f"*.{ext}")],
+            initialfile=default,
+            title=i18n.tr("Export progress report as {ext}", ext=ext.upper()))
+        if not path:
+            return None
+        try:
+            sessions = self.stats_store.all_sessions()
+            takes = [t for _, t in self.stats_store.all_takes()]
+            if kind == "png":
+                data = report_mod.render_report_png(sessions, takes)
+            else:
+                data = report_mod.render_report_pdf(sessions, takes)
+            with open(path, "wb") as fh:
+                fh.write(data)
+            return str(path)
+        except Exception:
+            logging.exception("Export report (%s) failed:", kind)
+            self.view.append_error_msg(i18n.tr("Could not export stats."))
+            return None
+
     def on_setting_changed(self, key: str, value):
         """Apply one settings-window change (Tk main thread).
 
@@ -1579,11 +1650,18 @@ class PronunciationTrainerGUI:
             # (stop_event was installed by the caller; see PlaybackController.new_event).
             self.root.after(0, self._show_new_phrase, phrase)
             # Auto-play the reference only when the setting is on. When off,
-            # the user can press "Reference ▶" to hear it manually.
-            if config.AUTO_PLAY_PHRASE:
+            # the user can press "Reference ▶" to hear it manually. Shadowing
+            # mode forces auto-play: there is nothing to shadow without the
+            # reference being heard.
+            if config.AUTO_PLAY_PHRASE or config.SHADOWING_ENABLED:
                 # Honor the selected reference speed (see play_reference for the
                 # lowered-sample-rate slowing approach) instead of always 1.0×.
                 effective_sr = int(self.tts_mgr.sample_rate * speed)
+                # Shadowing: start the take at the same moment the reference
+                # begins, so the user speaks *along with* it (no prompt pause).
+                # Scheduled first so the recorder is live before the speaker.
+                if config.SHADOWING_ENABLED:
+                    self.root.after(0, self._start_shadowing_take)
                 self.playback.play_with_face(self.reference_audio, effective_sr,
                                              stop_event)
 
@@ -1761,6 +1839,24 @@ class PronunciationTrainerGUI:
         # take: playing the reference (or the previous attempt) into an open
         # microphone would end up inside the recording and corrupt analysis.
         # Re-enabled in show_feedback / _reset_to_retry.
+        self.view.enter_recording()
+
+    def _start_shadowing_take(self):
+        """Start a take *while* the reference keeps playing (shadowing mode).
+
+        Unlike trigger_recording_start, this does NOT stop the current
+        playback: the whole point of shadowing is that the user speaks along
+        with the reference, so the speaker must stay live while the mic opens.
+        The reference may or may not be playing yet (the worker schedules this
+        just before play_with_face); if it is not, the recorder simply captures
+        the tail of the silence, which the VAD trims. Runs on the Tk thread.
+        """
+        if not self._can_record():
+            return
+        if self.recorder.is_active():
+            return
+        if not self.recorder.start():
+            return
         self.view.enter_recording()
 
     def trigger_recording_stop(self):
@@ -2034,14 +2130,137 @@ class PronunciationTrainerGUI:
             result.prosody = self._compute_prosody_safe(audio,
                                                          config.AUDIO_SAMPLE_RATE)
 
+            # Fluency axis: blend the take's tempo + intonation shape into the
+            # engine score when enabled. Computed here (after the engine's
+            # segmental score) so the blended score drives the same bucket/grade
+            # path the engine already calibrated.
+            if config.FLUENCY_ENABLED:
+                self._apply_fluency(result, audio, config.AUDIO_SAMPLE_RATE)
+
+            # Shadowing axis: blend how well the take kept up with the reference
+            # (delay/overlap alignment) when shadowing mode is enabled. Same
+            # re-bucket semantics as fluency: the blended score drives the same
+            # verdict the engine would have produced.
+            if config.SHADOWING_ENABLED:
+                self._apply_shadowing(result, audio, config.AUDIO_SAMPLE_RATE)
+
             self.root.after(0, self.view.show_feedback, result, self.current_phrase,
-                            self._has_user_recording())
+                            self._has_user_recording(),
+                            False, self._drill_engine is None)
 
         except Exception:
             logging.exception("Error in analyze_recording:")
             self.root.after(0, self.view.append_error_msg,
                             i18n.tr("Analysis error. Please try again."))
             self.root.after(0, self._reset_to_retry)
+
+    def _apply_fluency(self, result, audio, user_sr) -> None:
+        """Compute the fluency axis and blend it into ``result`` (in place).
+
+        The axis (mimora/fluency.py) needs the same waveforms the engine scored
+        plus the ASR transcript and the recorded duration; all are available on
+        the analysis worker thread. Blending re-derives ``passed``/``bucket``/
+        ``grade`` exactly the way the active engine would, so the score the user
+        sees and the score the loop gates on stay consistent. Best effort: a
+        fluency failure degrades to the engine score unchanged.
+        """
+        try:
+            from mimora import fluency
+            transcript = getattr(result, "transcription", "") or ""
+            duration = len(audio) / user_sr if user_sr > 0 else 0.0
+            fx = fluency.compute_fluency(
+                user_audio=audio,
+                user_sr=user_sr,
+                reference_audio=self.reference_audio,
+                reference_sr=self.tts_mgr.sample_rate,
+                transcript=transcript,
+                audio_duration_sec=duration,
+                reference_wpm=config.FLUENCY_REFERENCE_WPM,
+            )
+        except Exception:
+            logging.exception("Fluency computation failed; keeping engine score:")
+            return
+        result.fluency_axis = float(fx["score"])
+        result.speed_label = str(fx.get("speed_label", ""))
+        result.wpm = float(fx.get("wpm", 0.0))
+        logging.info(
+            "[fluency] axis=%.1f (tempo=%.1f prosody=%.1f) wpm=%.1f ratio=%.2f label=%r",
+            fx["score"], fx.get("tempo_score", 0.0), fx.get("prosody_score", 0.0),
+            fx.get("wpm", 0.0), fx.get("wpm_ratio", 0.0), fx.get("speed_label", ""))
+
+        weight = config.FLUENCY_WEIGHT / 100.0
+        if weight <= 0:
+            return  # axis computed and logged; no blend requested
+        blended = round(result.score * (1.0 - weight) + float(fx["score"]) * weight, 1)
+        result.score = blended
+        # Re-derive the verdict the way the engine would for the new score. The
+        # phoneme/hybrid engines bucketize (bucket >= 0); the acoustic engine
+        # uses the raw threshold. bucketize_score is the engine's own public
+        # wrapper, so the calibrated cutpoints/pass_bucket stay authoritative.
+        if result.bucket >= 0:
+            try:
+                from pronunciation.phoneme.speech import bucketize_score
+                bucket, user_percent, grade, grade_value, passed = bucketize_score(blended)
+                result.bucket = bucket
+                result.user_percent = user_percent
+                result.grade = grade
+                result.grade_value = grade_value
+                result.passed = passed
+            except Exception:
+                logging.exception("Re-bucketing the blended score failed:")
+        else:
+            result.passed = blended >= config.PRONUNCIATION_SCORE_THRESHOLD
+        logging.info("[fluency] blended score=%.1f passed=%s", result.score, result.passed)
+
+    def _apply_shadowing(self, result, audio, user_sr) -> None:
+        """Compute the shadowing axis and blend it into ``result`` (in place).
+
+        The axis (mimora/shadowing.py) needs the same waveforms the engine
+        scored; both are available on the analysis worker thread. Blending
+        re-derives ``passed``/``bucket``/``grade`` exactly the way the active
+        engine would, so the score the user sees and the score the loop gates
+        on stay consistent (the same approach as _apply_fluency). Best effort:
+        a shadowing failure degrades to the engine score unchanged.
+        """
+        try:
+            from mimora import shadowing
+            sx = shadowing.compute_shadowing(
+                user_audio=audio,
+                user_sr=user_sr,
+                reference_audio=self.reference_audio,
+                reference_sr=self.tts_mgr.sample_rate,
+            )
+        except Exception:
+            logging.exception("Shadowing computation failed; keeping engine score:")
+            return
+        result.shadowing_axis = round(float(sx["shadowing_axis"]) * 100.0, 1)
+        result.delay_sec = float(sx["delay_sec"])
+        result.overlap = float(sx["overlap"])
+        logging.info(
+            "[shadowing] axis=%.1f delay=%.3fs overlap=%.3f",
+            result.shadowing_axis, result.delay_sec, result.overlap)
+
+        weight = config.SHADOWING_WEIGHT / 100.0
+        if weight <= 0:
+            return  # axis computed and logged; no blend requested
+        blended = round(
+            result.score * (1.0 - weight) + result.shadowing_axis * weight, 1)
+        result.score = blended
+        # Re-derive the verdict the way the engine would for the new score.
+        if result.bucket >= 0:
+            try:
+                from pronunciation.phoneme.speech import bucketize_score
+                bucket, user_percent, grade, grade_value, passed = bucketize_score(blended)
+                result.bucket = bucket
+                result.user_percent = user_percent
+                result.grade = grade
+                result.grade_value = grade_value
+                result.passed = passed
+            except Exception:
+                logging.exception("Re-bucketing the blended score failed:")
+        else:
+            result.passed = blended >= config.PRONUNCIATION_SCORE_THRESHOLD
+        logging.info("[shadowing] blended score=%.1f passed=%s", result.score, result.passed)
 
     def _has_user_recording(self) -> bool:
         """True when a user take exists to replay or feed back against.
@@ -2137,8 +2356,23 @@ class PronunciationTrainerGUI:
                             i18n.tr("Playing example '{word}'...", word=word.strip()))
 
     def _on_word_drill_clicked(self, word: str):
-        """Right-click a mispronounced word to start a drill on it."""
+        """Right-click a mispronounced word to start a drill on it.
+
+        Drills the word in sentence context (the engine picks source phrases
+        that contain the word), so the mispronunciation is practiced where it
+        occurred. The double-click path uses
+        :meth:`_on_word_single_drill_clicked` to drill the word alone.
+        """
         target = {"type": "word", "value": word.strip()}
+        self._start_drill(target)
+
+    def _on_word_single_drill_clicked(self, word: str):
+        """Double-click a phrase word to start a drill on that word alone.
+
+        The word itself becomes the whole practice phrase (a ``single_word``
+        drill), so the user repeats just that word - not a sentence around it.
+        """
+        target = {"type": "single_word", "value": word.strip()}
         self._start_drill(target)
 
     def on_take_scored(self, phrase: str, score: float, graded: bool = False,
@@ -2170,9 +2404,14 @@ class PronunciationTrainerGUI:
 
         # Auto-generate the next phrase after a delay, so the user
         # can see the score and error feedback before the phrase changes.
+        # Gated by the pass gate: when on, a take that did not pass does not
+        # auto-advance (the view already disabled "Next phrase" for it; this
+        # keeps auto-next consistent with the manual button).
         if config.AUTO_NEXT_PHRASE:
-            delay_ms = int(config.AUTO_NEXT_DELAY * 1000)
-            self.root.after(delay_ms, self.on_generate_phrase)
+            result = details.get("result") if details is not None else None
+            if (not config.PASS_GATING_ENABLED) or (result is not None and getattr(result, "passed", True)):
+                delay_ms = int(config.AUTO_NEXT_DELAY * 1000)
+                self.root.after(delay_ms, self.on_generate_phrase)
 
     def _persist_take(self, phrase: str, score: float, graded: bool,
                       details: dict) -> None:

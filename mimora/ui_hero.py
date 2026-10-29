@@ -31,6 +31,40 @@ from mimora.ui_theme import (
     Tooltip,
 )
 
+# How long a single click waits before playing the word. A double-click fires
+# two single-clicks first, so the playback is deferred just long enough for the
+# double-click to cancel it and start a drill instead - without this the word
+# would play twice before the drill window opened.
+_DOUBLE_CLICK_DELAY_MS = 250
+
+
+def parse_word_levels(reference_words: list) -> list:
+    """Resolve per-word quality from either engine's ``reference_words`` shape.
+
+    Both engines report one entry per target-phrase word, in order, but with
+    different keys: the phoneme engine fills a three-level ``level``
+    ("good"/"ok"/"bad"); the acoustic engine fills only a boolean ``correct``.
+    This normalises both into ``(word, level)`` pairs so the word-feedback strip
+    can colour every word identically regardless of engine:
+
+    * level in ("good", "ok", "bad") - taken verbatim (phoneme engine);
+    * otherwise - "good" when ``correct`` is true, "bad" when false
+      (acoustic engine; there is no "ok" band, a word is simply right or not).
+
+    A word with neither a usable level nor a ``correct`` flag defaults to
+    "good" (no evidence of a problem - do not flag it). Punctuation/case are
+    kept exactly as the engine reported them.
+    """
+    resolved = []
+    for word in reference_words or []:
+        level = word.get("level")
+        if level in ("good", "ok", "bad"):
+            resolved.append((word.get("word", ""), level))
+        else:
+            resolved.append((word.get("word", ""),
+                             "good" if word.get("correct", True) else "bad"))
+    return resolved
+
 
 class HeroCard:
     """The phrase + score card, including the talking face.
@@ -45,17 +79,22 @@ class HeroCard:
     def __init__(self, root,
                  on_word_clicked: Callable[[str], None],
                  on_sound_example: Callable[[str], None],
-                 on_word_drill_clicked: Callable[[str], None] = None):
+                 on_word_drill_clicked: Callable[[str], None] = None,
+                 on_word_single_drill_clicked: Callable[[str], None] = None):
         self.root = root
         self._on_word_clicked = on_word_clicked
         self._on_sound_example = on_sound_example
         self._on_word_drill_clicked = on_word_drill_clicked
+        self._on_word_single_drill_clicked = on_word_single_drill_clicked
+        # Pending single-click word playback, so a double-click can cancel it
+        # (see _schedule_word_playback / _DOUBLE_CLICK_DELAY_MS).
+        self._scheduled_word_after_id = None
 
         # Drawn on bg_card, the lightest of the three surfaces (bg_main <
         # bg_panel < bg_card), so the card visually leads the whole window.
         self.frame = tk.Frame(root, bg=THEME["bg_card"],
                               highlightthickness=1, highlightbackground=THEME["border"])
-        self.frame.pack(side=tk.TOP, fill=tk.X, padx=20, pady=(8, 10))
+        self.frame.pack(side=tk.TOP, fill=tk.X, padx=24, pady=(10, 12))
 
         # Phrase: a read-only tk.Text (not a Label) so individual words can carry
         # tags - every word is clickable to hear it slowly (the "word" tag) and
@@ -67,7 +106,7 @@ class HeroCard:
             fg=THEME["phrase"], bg=THEME["bg_card"], wrap=tk.WORD, bd=0,
             highlightthickness=0, height=1, cursor="arrow", takefocus=0,
             padx=16, pady=0)
-        self.phrase_text.pack(fill=tk.X, padx=10, pady=(18, 0))
+        self.phrase_text.pack(fill=tk.X, padx=14, pady=(22, 0))
         # All content is inserted with the "center" tag: tk.Text has no
         # widget-level justify, only per-tag.
         self.phrase_text.tag_configure("center", justify=tk.CENTER)
@@ -88,6 +127,13 @@ class HeroCard:
         # background could not target one word without lighting up the rest.
         self.phrase_text.tag_configure("hover", background=THEME["bg_accent_active"])
         self.phrase_text.tag_bind("word", "<Button-1>", self._on_phrase_word_clicked)
+        # Double-click any word to start a single-word drill on it (bound on the
+        # same "word" tag as the single-click playback). The single click is
+        # deferred (see _DOUBLE_CLICK_DELAY_MS) so the double-click cancels the
+        # playback instead of playing the word twice before the drill opens.
+        if self._on_word_single_drill_clicked:
+            self.phrase_text.tag_bind("word", "<Double-Button-1>",
+                                       self._on_phrase_word_double_clicked)
         # Right-click a mispronounced word to start a drill on it.
         if self._on_word_drill_clicked:
             self.phrase_text.tag_bind("miss", "<Button-3>",
@@ -109,6 +155,17 @@ class HeroCard:
         # single "text" option like a Label).
         self._bind_copy_menu(self.phrase_text,
                              getter=lambda: self.phrase_text.get("1.0", "end-1c"))
+
+        # Word-feedback strip: one coloured cell per target-phrase word, laid out
+        # under the phrase (above the translation) so the user sees, in one glance,
+        # which words were judged right (green), acceptable (grey) or wrong (red).
+        # Rebuilt per scored take by set_word_feedback; hidden in the empty and
+        # unscored states (reset_word_feedback). Each cell is clickable to hear
+        # that word slowly (same on_word_clicked the phrase words use). Created
+        # before set_phrase("-") below, which clears it via reset_word_feedback.
+        self.word_feedback = tk.Frame(self.frame, bg=THEME["bg_card"])
+        self._word_feedback_cells = []
+
         # Placeholder until the first phrase arrives.
         self.set_phrase("-")
 
@@ -131,7 +188,7 @@ class HeroCard:
 
         # Bottom padding of the phrase block, then a 1px divider above the
         # score row (the card's only internal separator).
-        tk.Frame(self.frame, height=14, bg=THEME["bg_card"]).pack(fill=tk.X)
+        tk.Frame(self.frame, height=18, bg=THEME["bg_card"]).pack(fill=tk.X)
         tk.Frame(self.frame, height=1, bg=THEME["border"]).pack(fill=tk.X)
 
         # Score row, left to right: [face] [SCORE column] [WORK ON badges]
@@ -140,7 +197,7 @@ class HeroCard:
         # reset_score_row shows the empty state ("--" and "record to get a
         # score") until the first take.
         score_row = tk.Frame(self.frame, bg=THEME["bg_card"])
-        score_row.pack(fill=tk.X, padx=18, pady=(10, 12))
+        score_row.pack(fill=tk.X, padx=20, pady=(12, 16))
 
         # Kept as an attribute so toggle_face can pack the face *before* it -
         # i.e. as the leftmost child of the row (see toggle_face).
@@ -159,6 +216,27 @@ class HeroCard:
             fg=THEME["text_dim"], bg=THEME["bg_card"])
         self.score_verdict_label.pack()
 
+        # Fluency axis line under the verdict: the blended fluency/stress score
+        # with its tempo verdict ("natural" / "too slow" / "too fast"). Hidden
+        # until a take with fluency scoring arrives (set_fluency); reset_score_row
+        # clears it. Off by default - only filled when config.FLUENCY_ENABLED.
+        self.fluency_label = tk.Label(
+            score_col, text="", font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+            fg=THEME["text_dim"], bg=THEME["bg_card"])
+        self.fluency_label.pack()
+        self._fluency_shown = False
+
+        # Shadowing axis line under the fluency line: the blended alignment score
+        # with its delay verdict (how far ahead/behind the user tracked the
+        # reference). Hidden until a take with shadowing arrives (set_shadowing);
+        # reset_score_row clears it. Off by default - only filled when
+        # config.SHADOWING_ENABLED.
+        self.shadowing_label = tk.Label(
+            score_col, text="", font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+            fg=THEME["text_dim"], bg=THEME["bg_card"])
+        self.shadowing_label.pack()
+        self._shadowing_shown = False
+
         # Session-average ring on the right of the row (mirrors the face on the
         # left), with the current phrase's attempt-dot column on its left flank.
         # Packed here - before the expanding WORK ON column below - so the
@@ -173,7 +251,7 @@ class HeroCard:
         # The badges are rebuilt per result (set_badges); clicking one speaks an
         # example word.
         workon_col = tk.Frame(score_row, bg=THEME["bg_card"])
-        workon_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20, 8))
+        workon_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(24, 10))
         self.workon_caption = tk.Label(
             workon_col, text="", font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"),
             fg=THEME["warn"], bg=THEME["bg_card"])
@@ -185,7 +263,7 @@ class HeroCard:
         # set_hint), so the empty/unscored states stay quiet.
         self.hint_label = tk.Label(
             workon_col,
-            text=i18n.tr("Click a word or a sound to hear it."),
+            text=i18n.tr("Click a word or sound to hear it. Double-click a word to drill it."),
             font=(FONT_FAMILY, FONT_SIZE_CAPTION), fg=THEME["text_muted"],
             bg=THEME["bg_card"], justify=tk.LEFT, wraplength=320)
 
@@ -211,9 +289,11 @@ class HeroCard:
 
         The phrase is split into words so each carries the "word" tag and can be
         clicked to hear it spoken; no word is a miss yet. The "miss" underlines
-        are added later per analysis result (see mark_miss_words).
+        are added later per analysis result (see mark_miss_words). A new phrase
+        also clears any previous word-feedback strip (it described the old take).
         """
         words = (text or "-").split() or ["-"]
+        self.reset_word_feedback()
         self._render_phrase([(word, False) for word in words])
 
     def _render_phrase(self, tokens: list):
@@ -228,6 +308,9 @@ class HeroCard:
         self.phrase_text.configure(state=tk.NORMAL)
         self.phrase_text.tag_remove("hover", "1.0", tk.END)
         self.phrase_text.delete("1.0", tk.END)
+        # Drop any pending single-click playback: the word it was scheduled for
+        # no longer exists in the rendered phrase.
+        self._cancel_scheduled_word_playback()
         last = len(tokens) - 1
         for i, (word, is_miss) in enumerate(tokens):
             tags = ("center", "word", "miss") if is_miss else ("center", "word")
@@ -283,6 +366,79 @@ class HeroCard:
         self._render_phrase(tokens)
         return misses
 
+    # ------------------------------------------------------------------
+    # Word-feedback strip (per-word coloured cells under the phrase)
+    # ------------------------------------------------------------------
+    # Cell colours per quality level: good -> theme good, bad -> theme bad,
+    # ok -> a muted grey between them (the phoneme engine's "acceptable but
+    # not perfect" band). The cell text is the word itself, so the strip is
+    # self-labelling even without a legend.
+    _LEVEL_COLORS = {
+        "good": THEME["good"],
+        "ok": THEME["text_dim"],
+        "bad": THEME["bad"],
+    }
+
+    def set_word_feedback(self, reference_words: list):
+        """Rebuild the word-feedback strip from a scored take's breakdown.
+
+        Renders one cell per target-phrase word (in order) coloured by its
+        quality level (see :func:`parse_word_levels`), so a long phrase becomes
+        an at-a-glance "traffic light" for every word: green = right, grey =
+        acceptable, red = wrong. Clicking a cell hears that word slowly (the
+        same ``on_word_clicked`` the phrase words use), and a hover tooltip
+        names the word and its quality. An empty or absent breakdown hides the
+        strip (nothing was judged to show).
+        """
+        for child in self._word_feedback_cells:
+            child.destroy()
+        self._word_feedback_cells = []
+        resolved = parse_word_levels(reference_words)
+        if not resolved:
+            self.word_feedback.pack_forget()
+            return
+        # Packed between the phrase and the translation (translation, when
+        # visible, packs itself under the phrase via refresh_translation_ui's
+        # after=self.phrase_text, so the strip must come first in the stacking
+        # order - pack it before the translation would move it above the phrase).
+        # after=self.phrase_text keeps it directly under the phrase regardless
+        # of whether the translation is currently packed.
+        self.word_feedback.pack(fill=tk.X, padx=26, pady=(6, 0),
+                                after=self.phrase_text)
+        for word, level in resolved:
+            color = self._LEVEL_COLORS.get(level, THEME["text_dim"])
+            cell = tk.Label(
+                self.word_feedback, text=word, fg=color, bg=THEME["bg_card"],
+                font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                cursor="hand2", padx=6, pady=2,
+                highlightthickness=1, highlightbackground=color)
+            cell.pack(side=tk.LEFT, padx=(0, 6))
+            # Click to hear this word slowly; bind via a default argument so
+            # each cell keeps its own word (not the loop's last one).
+            cell.bind("<Button-1>", lambda e, w=word: self._on_feedback_cell_clicked(w))
+            quality = i18n.tr("good") if level == "good" else (
+                i18n.tr("acceptable") if level == "ok" else i18n.tr("needs work"))
+            Tooltip(cell, f"{word} - {quality}")
+            self._word_feedback_cells.append(cell)
+
+    def _on_feedback_cell_clicked(self, word: str):
+        """Hear the word behind a feedback cell slowly (same as the phrase words).
+
+        Returns focus to the window so the spacebar record toggle keeps working
+        (app.py's global click handler skips Text widgets, but a cell is a
+        Label and would otherwise swallow the spacebar via its own focus).
+        """
+        self.root.focus_set()
+        if word:
+            self._on_word_clicked(word)
+
+    def reset_word_feedback(self):
+        """Hide the word-feedback strip (empty / unscored / new phrase)."""
+        self.word_feedback.pack_forget()
+        for child in self._word_feedback_cells:
+            child.destroy()
+        self._word_feedback_cells = []
+
     def _phrase_word_at(self, event) -> str:
         """The cleaned phrase word under the pointer, or "" over a gap.
 
@@ -300,18 +456,74 @@ class HeroCard:
         return self.phrase_text.get(*tag_range).strip(".,!?;:\"'()").strip()
 
     def _on_phrase_word_clicked(self, event):
-        """Speak the clicked phrase word slowly (any word, via the controller)."""
+        """Defer speaking the clicked phrase word slowly (any word).
+
+        The playback is delayed by ``_DOUBLE_CLICK_DELAY_MS`` so a double-click
+        (which fires two single-clicks first) can cancel it and start a drill
+        instead - without the delay the word would play twice before the drill
+        opened. A single click therefore hears the word after a short pause; a
+        double-click hears nothing and drills the word.
+        """
         word = self._phrase_word_at(event)
         # Return focus to the window so the spacebar record toggle keeps
         # working (app.py's global click handler skips Text widgets).
         self.root.focus_set()
         if word:
+            self._schedule_word_playback(word)
+
+    def _schedule_word_playback(self, word: str):
+        """Arrange for ``word`` to be played after the double-click window.
+
+        Replaces any previously scheduled word (a click on another word within
+        the window supersedes it). Stored as an ``after`` id so a double-click
+        can cancel it via :meth:`_cancel_scheduled_word_playback`.
+        """
+        self._cancel_scheduled_word_playback()
+        self._scheduled_word_after_id = self.root.after(
+            _DOUBLE_CLICK_DELAY_MS, lambda: self._play_scheduled_word(word))
+
+    def _play_scheduled_word(self, word: str):
+        """Play a word that survived the double-click window (single click)."""
+        self._scheduled_word_after_id = None
+        if word:
             self._on_word_clicked(word)
+
+    def _cancel_scheduled_word_playback(self):
+        """Drop any pending single-click playback (double-click or new phrase)."""
+        if self._scheduled_word_after_id is not None:
+            try:
+                self.root.after_cancel(self._scheduled_word_after_id)
+            except tk.TclError:
+                pass
+            self._scheduled_word_after_id = None
+
+    def _on_phrase_word_double_clicked(self, event):
+        """Double-click a phrase word to start a single-word drill on it.
+
+        Cancels the pending single-click playback (the word does not play) and
+        starts a drill on the word alone via ``on_word_single_drill_clicked``
+        (the word itself is the whole practice phrase - no surrounding
+        sentence). Returning "break" suppresses the native double-click text
+        selection, which would otherwise select the word while the drill window
+        opens.
+        """
+        word = self._phrase_word_at(event)
+        self.root.focus_set()
+        self._cancel_scheduled_word_playback()
+        if word:
+            self._start_word_single_drill(word)
+        return "break"
+
+    def _start_word_single_drill(self, word: str):
+        """Start a single-word drill on ``word`` (no-op without the callback)."""
+        if word and self._on_word_single_drill_clicked:
+            self._on_word_single_drill_clicked(word)
 
     def _on_miss_word_right_clicked(self, event):
         """Right-click a mispronounced word to start a drill on it."""
         word = self._phrase_word_at(event)
         self.root.focus_set()
+        self._cancel_scheduled_word_playback()
         if word and self._on_word_drill_clicked:
             self._on_word_drill_clicked(word)
 
@@ -371,7 +583,7 @@ class HeroCard:
         if show and not packed:
             # Inside the hero card, right under the phrase (no separator - the
             # dimmer, smaller type is the whole distinction).
-            self.translation_label.pack(fill=tk.X, padx=26, pady=(8, 0),
+            self.translation_label.pack(fill=tk.X, padx=26, pady=(10, 0),
                                         after=self.phrase_text)
         elif not show and packed:
             self.translation_label.pack_forget()
@@ -384,6 +596,48 @@ class HeroCard:
         already-resolved verdict color (never green for a "needs work")."""
         self.score_num_label.configure(text=number, fg=color)
         self.score_verdict_label.configure(text=verdict, fg=color)
+
+    def set_fluency(self, axis: float, speed_label: str):
+        """Fill the fluency line under the verdict.
+
+        ``axis`` is the 0-100 fluency score (blended by the host when
+        ``config.FLUENCY_ENABLED``); ``speed_label`` is the tempo verdict
+        ("natural" / "too slow" / "too fast", translated at display time).
+        An axis below 0 (not computed) hides the line. The label is shown even
+        when the weight is 0 (axis computed, not blended) so the user sees the
+        fluency read-out without it affecting the mark.
+        """
+        if axis is None or axis < 0:
+            if self._fluency_shown:
+                self.fluency_label.configure(text="")
+                self._fluency_shown = False
+            return
+        verdict = i18n.tr(speed_label) if speed_label else ""
+        self.fluency_label.configure(
+            text=i18n.tr("Fluency") + f" {axis:.0f}" + (f" · {verdict}" if verdict else ""),
+            fg=THEME["accent"])
+        self._fluency_shown = True
+
+    def set_shadowing(self, axis: float, delay_sec: float, overlap: float):
+        """Fill the shadowing line under the fluency line.
+
+        ``axis`` is the 0-100 shadowing score (blended by the host when
+        ``config.SHADOWING_ENABLED``); ``delay_sec`` is the alignment offset
+        (seconds, positive = behind) and ``overlap`` the 0-1 tracked fraction.
+        An axis below 0 (not computed) hides the line.
+        """
+        if axis is None or axis < 0:
+            if self._shadowing_shown:
+                self.shadowing_label.configure(text="")
+                self._shadowing_shown = False
+            return
+        text = i18n.tr("Shadowing") + f" {axis:.0f}"
+        if delay_sec:
+            text += f" · {delay_sec:+.2f}s"
+        if overlap:
+            text += f" · {overlap:.0%}"
+        self.shadowing_label.configure(text=text, fg=THEME["accent"])
+        self._shadowing_shown = True
 
     def set_progress(self, value: Optional[float], maximum: float, count: int,
                      attempts: Optional[list[float]] = None):
@@ -420,10 +674,10 @@ class HeroCard:
                               bg=THEME["bg_accent"], fg=THEME["text_accent"],
                               activebackground=THEME["bg_button"],
                               activeforeground=THEME["text_button"],
-                              bd=0, padx=10, pady=2, cursor="hand2",
+                              bd=0, padx=12, pady=3, cursor="hand2",
                               highlightthickness=1,
                               highlightbackground=THEME["accent"])
-            badge.pack(side=tk.LEFT, padx=(0, 6))
+            badge.pack(side=tk.LEFT, padx=(0, 7))
             if example:
                 # Bind the current example per button via a default argument so
                 # every badge keeps its own word (not the loop's last one).
@@ -451,6 +705,9 @@ class HeroCard:
                                            fg=THEME["text_dim"])
         self.set_badges([])
         self.set_hint(False)
+        self.reset_word_feedback()
+        self.set_fluency(-1.0, "")
+        self.set_shadowing(-1.0, 0.0, 0.0)
         # Drop any underlines from the previous take (the phrase itself stays;
         # a new phrase is replaced wholesale by set_phrase).
         self.phrase_text.tag_remove("miss", "1.0", tk.END)

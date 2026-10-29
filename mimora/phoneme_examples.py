@@ -98,6 +98,65 @@ _ENGLISH_EXAMPLES: dict[str, str] = {
     "w": "wet",
 }
 
+# Mandarin (普通话) table, keyed by the espeak-ng ``cmn`` IPA inventory the
+# phoneme engine phonemizes into. espeak attaches a tone digit to the vowel
+# tokens (e.g. ``i5``, ``ɑu2``); ``example_for`` strips a trailing decimal
+# digit before the length/stress fallback, so a tone-bearing token resolves to
+# the same example word. The table covers the common Mandarin initials and
+# finals a learner sees; an unknown token returns None (badge shows without a
+# tooltip) rather than inventing one. The example words are written in
+# pinyin-with-tone-mark where a bare character is ambiguous.
+_MANDARIN_EXAMPLES: dict[str, str] = {
+    # --- Simple vowels / finals ---
+    "a": "妈", "ɑ": "妈",
+    "o": "我",
+    "ə": "饿", "ɤ": "饿",
+    "e": "呢",
+    "i": "一",
+    "u": "五",
+    "y": "鱼",
+    # --- Diphthongs / compound finals ---
+    "ai": "爱", "aɪ": "爱",
+    "ei": "杯", "eɪ": "杯",
+    "au": "好", "ɑu": "好",
+    "ou": "走", "oʊ": "走",
+    "an": "看", "en": "很",
+    "in": "心",
+    "un": "问",
+    "iɑ": "家", "ia": "家",
+    "iɛ": "也", "ie": "也",
+    "uɑ": "花", "ua": "花",
+    "uɔ": "说", "uo": "说",
+    "yɛ": "学", "ye": "学",
+    # --- Plosive initials ---
+    "p": "怕",
+    "b": "爸",
+    "t": "他",
+    "d": "大",
+    "k": "看",
+    "ɡ": "哥", "g": "哥",
+    # --- Affricate initials ---
+    "tɕ": "家", "tʃ": "家",
+    "ts": "在", "ʦ": "在",
+    "tʂ": "中", "ʈʂ": "中",
+    # --- Fricative initials ---
+    "f": "飞",
+    "s": "三",
+    "z": "人",
+    "ɕ": "想",
+    "ʂ": "是",
+    "χ": "好", "x": "好",
+    "h": "好",
+    # --- Nasal / lateral initials ---
+    "m": "妈",
+    "n": "你",
+    "ŋ": "中",
+    "l": "来",
+    # --- Glides ---
+    "w": "我",
+    "j": "一",
+}
+
 # Peninsular (Castilian) Spanish table, keyed by the espeak-ng ``es`` IPA
 # inventory the phoneme engine phonemizes into. The example words are common
 # and each clearly carries its sound. The intervocalic spirants (β, ð, ɣ) and
@@ -155,6 +214,7 @@ _SPANISH_EXAMPLES: dict[str, str] = {
 PHONEME_EXAMPLES_BY_LANGUAGE: dict[str, dict[str, str]] = {
     "english": _ENGLISH_EXAMPLES,
     "spanish": _SPANISH_EXAMPLES,
+    "mandarin": _MANDARIN_EXAMPLES,
 }
 
 # Marks espeak may attach to a symbol that do not change which example applies:
@@ -162,6 +222,10 @@ PHONEME_EXAMPLES_BY_LANGUAGE: dict[str, dict[str, str]] = {
 # mark. Stripped in order by ``example_for`` until a key matches.
 _STRESS_MARKS = "ˈˌ"
 _LENGTH_MARK = "ː"
+# Mandarin espeak attaches a tone digit to a vowel token (``i5``, ``ɑu2``).
+# Stripped by ``example_for`` as the last fallback so a tone-bearing token
+# resolves to the same example word as its plain vowel.
+_TONE_DIGITS = "0123456789"
 
 
 def example_for(phoneme: str, language: str = None) -> Optional[str]:
@@ -171,7 +235,8 @@ def example_for(phoneme: str, language: str = None) -> Optional[str]:
     practice language, so the badge tooltip and spoken example match what the
     user is practicing. Tries the symbol as given, then with stress marks
     removed, then also without the length mark - so ``ˈiː`` and ``i`` both
-    resolve to the same example. An unknown symbol (or an unknown language)
+    resolve to the same example - and finally with a trailing Mandarin tone
+    digit removed (``i5`` -> ``i``). An unknown symbol (or an unknown language)
     returns ``None`` (the caller shows the badge without an example rather than
     inventing one).
     """
@@ -187,7 +252,12 @@ def example_for(phoneme: str, language: str = None) -> Optional[str]:
     if stripped in table:
         return table[stripped]
     no_length = stripped.replace(_LENGTH_MARK, "")
-    return table.get(no_length)
+    if no_length in table:
+        return table[no_length]
+    no_tone = no_length.rstrip(_TONE_DIGITS)
+    if no_tone and no_tone != no_length:
+        return table.get(no_tone)
+    return None
 
 
 __all__ = ["PHONEME_EXAMPLES_BY_LANGUAGE", "example_for"]

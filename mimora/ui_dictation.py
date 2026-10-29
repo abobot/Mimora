@@ -44,6 +44,7 @@ from mimora.ui_theme import (
     FONT_SIZE_CAPTION,
     FONT_SIZE_SUBTITLE,
     THEME,
+    make_icon_button,
 )
 import ttkbootstrap as ttk
 
@@ -179,14 +180,18 @@ class DictationView:
         # Playback + hint/show area (the reference is never shown until checked).
         play_frame = tk.Frame(self._window, bg=THEME["bg_main"])
         play_frame.pack(fill=tk.X, padx=16, pady=4)
-        ttk.Button(play_frame, text=i18n.tr("🔊  Play"),
-                   command=self._on_play, takefocus=0).pack(side=tk.LEFT, padx=4)
-        ttk.Button(play_frame, text=i18n.tr("🐢  Slow play"),
-                   command=self._on_play_slow, takefocus=0).pack(side=tk.LEFT, padx=4)
-        ttk.Button(play_frame, text=i18n.tr("💡  Hint"),
-                   command=self._on_hint, takefocus=0).pack(side=tk.LEFT, padx=4)
-        ttk.Button(play_frame, text=i18n.tr("👁  Show sentence"),
-                   command=self._on_show_sentence, takefocus=0).pack(side=tk.LEFT, padx=4)
+        make_icon_button(
+            play_frame, i18n.tr("🔊"), i18n.tr("Play reference"), self._on_play
+        ).pack(side=tk.LEFT, padx=4)
+        make_icon_button(
+            play_frame, i18n.tr("🐢"), i18n.tr("Play reference slowly"), self._on_play_slow
+        ).pack(side=tk.LEFT, padx=4)
+        make_icon_button(
+            play_frame, i18n.tr("💡"), i18n.tr("Hint"), self._on_hint
+        ).pack(side=tk.LEFT, padx=4)
+        make_icon_button(
+            play_frame, i18n.tr("👁"), i18n.tr("Show sentence"), self._on_show_sentence
+        ).pack(side=tk.LEFT, padx=4)
         self._listen_label = tk.Label(play_frame, text=i18n.tr("Listen, then type what you hear."),
                                       font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                                       bg=THEME["bg_main"], fg=THEME["text_dim"])
@@ -243,13 +248,15 @@ class DictationView:
         # Controls.
         controls = tk.Frame(self._window, bg=THEME["bg_main"])
         controls.pack(fill=tk.X, padx=16, pady=(0, 16))
-        self._check_btn = ttk.Button(controls, text=i18n.tr("✓  Check answer"),
-                                     command=self._on_submit, takefocus=0)
+        self._check_btn = make_icon_button(
+            controls, i18n.tr("✓"), i18n.tr("Check answer"), self._on_submit)
         self._check_btn.pack(side=tk.LEFT, padx=4)
-        ttk.Button(controls, text=i18n.tr("⏮  Previous"),
-                   command=self._on_previous, takefocus=0).pack(side=tk.LEFT, padx=4)
-        ttk.Button(controls, text=i18n.tr("⏭  Next"),
-                   command=self._on_skip, takefocus=0).pack(side=tk.LEFT, padx=4)
+        make_icon_button(
+            controls, i18n.tr("⏮"), i18n.tr("Previous"), self._on_previous
+        ).pack(side=tk.LEFT, padx=4)
+        make_icon_button(
+            controls, i18n.tr("⏭"), i18n.tr("Next"), self._on_skip
+        ).pack(side=tk.LEFT, padx=4)
 
     # ------------------------------------------------------------------
     # Word slots

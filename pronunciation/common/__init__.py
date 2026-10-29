@@ -96,5 +96,29 @@ class PronunciationResult:
     recall: float = 0.0                           # 0-1 phoneme-weighted recall of reference phones
     good_anchor: float = 0.0                      # GOOD anchor actually used (per-phrase in ceiling mode)
 
+    # --- Fluency / prosody axis (host-computed, mimora/fluency.py). ---
+    # fluency_axis: 0-100 score for how the take *flowed* (tempo + stress/intonation
+    # shape), blended into ``score`` by the host when fluency scoring is enabled.
+    # -1.0 means "not computed" (fluency scoring off, or no usable prosody).
+    fluency_axis: float = -1.0
+    # speed_label: the tempo verdict ("too slow" / "natural" / "too fast"), shown
+    # next to the fluency score so the user sees WHY it is not perfect.
+    speed_label: str = ""
+    # wpm: the take's actual speaking rate (words per minute), from the ASR
+    # transcript and the recorded duration. Diagnostic; the axis is what counts.
+    wpm: float = 0.0
+
+    # --- Shadowing axis (host-computed, mimora/shadowing.py). ---
+    # shadowing_axis: 0-100 score for how well the take *kept up* with the
+    # reference (delay/overlap alignment), blended into ``score`` by the host
+    # when shadowing mode is enabled. -1.0 means "not computed".
+    shadowing_axis: float = -1.0
+    # delay_sec: the time offset between the user's speech and the reference
+    # (positive = the user trails). Diagnostic; the axis is what counts.
+    delay_sec: float = 0.0
+    # overlap: 0-1 normalized peak correlation between the two amplitude
+    # envelopes - how much of the reference the user actually tracked.
+    overlap: float = 0.0
+
 
 __all__ = ["PronunciationResult"]

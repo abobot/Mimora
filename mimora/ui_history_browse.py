@@ -60,6 +60,11 @@ class HistoryCallbacks:
     play_recording: Callable[[str, str], None]
     export_json: Callable[[], Optional[Path]]
     export_csv: Callable[[], Optional[Path]]
+    # P2#6 re-drill: start a Drill on a past take's weakest word, so the user
+    # can practice the exact word that failed without hunting through the
+    # weakness panel. The take dict is passed in; the controller extracts the
+    # target (first error word, else the phrase itself as free_form).
+    start_drill: Callable[[Dict[str, Any]], None] = None
 
 
 def _fmt_timestamp(iso: str) -> str:
@@ -355,6 +360,18 @@ class HistoryBrowseView:
         del_btn.pack(side=tk.RIGHT, padx=(4, 4))
         del_btn.bind("<Button-1>", lambda e, sid=session["id"],
                      tid=take["id"]: self._on_delete_take(sid, tid))
+
+        # P2#6 re-drill: start a Drill on this take's weakest word. Always
+        # offered - the controller picks the error word or falls back to the
+        # phrase itself - so a user can drill any past take in one click.
+        if self._cb.start_drill is not None:
+            drill_btn = tk.Label(row, text=i18n.tr("Re-drill"),
+                                 fg=THEME["text_emph"],
+                                 bg=THEME["bg_panel"], padx=8, cursor="hand2",
+                                 font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+            drill_btn.pack(side=tk.RIGHT, padx=(0, 4))
+            drill_btn.bind("<Button-1>", lambda e, t=take:
+                           self._cb.start_drill(t))
 
     def _build_drill_row(self, drill: Dict[str, Any]) -> None:
         row = tk.Frame(self._body, bg=THEME["bg_panel"], bd=0)

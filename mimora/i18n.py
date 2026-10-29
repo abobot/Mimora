@@ -65,17 +65,33 @@ _ZH: Dict[str, str] = {
         "Mimora · {language} - 发音训练器 v{version}",
     "MIMORA · {language} - Pronunciation Trainer v{version}":
         "MIMORA · {language} - 发音训练器 v{version}",
+    "Pronunciation Trainer": "发音训练器",
     "- Pronunciation Trainer": "- 发音训练器",
     "Starting...": "正在启动…",
-    "Tip: press SPACE or click the mic to record. \"Reference ▶\" replays the example.":
-        "提示：按空格键或点击麦克风进行录音。“参考发音 ▶”可重播示例。",
-    "Listen to the example": "听示例发音",
+    "Tip: press SPACE or click the mic to record. Tap the 🔊 button to replay the example.":
+        "提示：按空格键或点击麦克风进行录音。点击 🔊 按钮可重播示例。",
+    # Icon glyphs for the control buttons. These are same in every language, so
+    # the Chinese entry is the literal itself (identity mapping).
+    "🔊": "🔊",
+    "🐢": "🐢",
+    "📼": "📼",
+    "⏭": "⏭",
+    "Play reference": "播放参考发音",
+    "Play reference slowly": "慢速播放参考发音",
     "Reference ▶": "参考发音 ▶",
     "Slow ▶": "慢速 ▶",
-    "Press SPACE or click": "按空格键或点击",
-    "Record first to listen": "先录音再听",
+    "Record (Click/Press SPACE)": "录音（点击/按空格键）",
+    "Record (Space)": "录音（空格键）",
+    "Example": "示例",
+    "My recording": "我的录音",
+    "Previous": "上一个",
+    "Next": "下一个",
+    "▶": "▶",
+    "🎙": "🎙",
+    "⏮": "⏮",
+    "Play my recording": "播放我的录音",
     "My recording ▶": "我的录音 ▶",
-    "Skip to the next phrase": "跳到下一句",
+    "Next phrase": "下一句",
     "Next phrase ▶": "下一句 ▶",
     "Ready": "就绪",
     "Generating phrase (LLM)...": "正在生成句子（LLM）…",
@@ -161,8 +177,28 @@ _ZH: Dict[str, str] = {
     "SCORE": "得分",
     "record to get a score": "录音以获取得分",
     "WORK ON": "重点练习",
+    "Click a word or sound to hear it. Double-click a word to drill it.": "单击单词或音标试听，双击单词进入练习。",
     "Click a word or a sound to hear it.": "点击单词或音标可试听。",
     "as in '{example}'": "如“{example}”",
+    # Word-feedback strip quality labels (clickable per-word cells).
+    "good": "好",
+    "acceptable": "尚可",
+    "needs work": "待改进",
+    # Pass-gating status line (P0#3): shown instead of the quality verdict when
+    # the gate is on and the take did not pass - "Next phrase" stays locked.
+    "Keep trying - the next phrase unlocks when this take passes.": "继续练习——通过后才会解锁下一句。",
+    # Fluency tempo verdicts (P0#2). The label is rendered verbatim next to the
+    # fluency score, so the user sees which way to adjust their pace.
+    "too slow": "语速偏慢",
+    "natural": "语速自然",
+    "too fast": "语速偏快",
+    "Fluency": "流利度",
+    # Shadowing (P1#4): the axis label and the settings-window strings.
+    "Shadowing": "跟读",
+    "Shadowing mode (speak along with the reference)": "跟读模式（跟随参考句同步朗读）",
+    "Shadowing weight (%)": "跟读权重（%）",
+    "When on, the reference plays and you speak along with it; the take is scored on pronunciation plus how well you kept up (delay/overlap).": "开启后，参考句播放时你同步朗读；评分同时考察发音质量和跟随程度（延迟/重叠）。",
+    "How much the shadowing alignment counts in the blended score. 0 = show but do not blend.": "跟读对齐在混合得分中的权重。0 = 仅显示不混合。",
     "{count} phrase{plural}": "{count} 个句子",
     "{count} phrases": "{count} 个句子",
 
@@ -202,6 +238,7 @@ _ZH: Dict[str, str] = {
     "Export complete": "导出完成",
     "JSON saved to:\n{path}": "JSON 已保存到：\n{path}",
     "CSV saved to:\n{path}": "CSV 已保存到：\n{path}",
+    "Report saved to:\n{path}": "报告已保存到：\n{path}",
     "{sessions} sessions · {takes} takes":
         "{sessions} 个会话 · {takes} 次尝试",
     "{total} sessions · {takes} takes":
@@ -243,6 +280,9 @@ _ZH: Dict[str, str] = {
     "Practice stats": "练习统计",
     "Export JSON": "导出 JSON",
     "Export CSV": "导出 CSV",
+    "Export PNG": "导出 PNG",
+    "Export PDF": "导出 PDF",
+    "Export progress report as {ext}": "导出进度报告为 {ext}",
     "Close": "关闭",
     "Practice time": "练习时长",
     "Sessions": "会话数",
@@ -291,7 +331,10 @@ _ZH: Dict[str, str] = {
     "{count}×  err {rate:.0%}  {types}": "{count}×  错误 {rate:.0%}  {types}",
     "err": "错误",
     "score": "得分",
+    "Weakness": "薄弱点",
     "Drill": "练习",
+    "Play": "播放",
+    "Re-drill": "再练",
     "No phoneme-level data yet. The phoneme engine provides this automatically.":
         "还没有音标级数据。音标引擎会自动提供。",
     "Issued phonemes (native: {native})": "易错音标（母语：{native}）",
@@ -310,7 +353,14 @@ _ZH: Dict[str, str] = {
     "Source:": "来源：",
     "{current} / {total}  ·  {passed} passed":
         "{current} / {total}  ·  通过 {passed}",
-    "🔊  Play": "🔊  播放",
+    "Play reference": "播放参考发音",
+    "Play reference slowly": "慢速播放参考发音",
+    "Hint": "提示",
+    "Show sentence": "显示例句",
+    "Check answer": "检查答案",
+    "💡": "💡",
+    "👁": "👁",
+    "✓": "✓",
     "🐢  Slow play": "🐢  慢速播放",
     "💡  Hint": "💡  提示",
     "👁  Show sentence": "👁  显示例句",
@@ -422,12 +472,16 @@ _ZH: Dict[str, str] = {
     "Pronunciation": "发音",
     "Scoring engine": "评分引擎",
     "Phoneme anchor mode": "音素锚定模式",
+    "Include fluency & stress in score": "将流利度与重音纳入评分",
+    "Fluency weight (%)": "流利度权重（%）",
+    "Target speaking rate (WPM)": "目标语速（词/分钟）",
     "Appearance": "外观",
     "Color theme": "颜色主题",
     "Show articulation face": "显示发音嘴型",
     "Auto-play phrase": "自动播放句子",
     "Auto-next phrase": "自动下一句",
     "Auto-next delay (seconds)": "自动下一句延迟（秒）",
+    "Require passing score for next phrase": "通过评分后才能进入下一句",
     "Show intonation & stress": "显示语调与重音",
     "Collapse practice text": "折叠练习文本",
     "LLM & phrase generation": "LLM 与句子生成",
@@ -469,6 +523,7 @@ _ZH: Dict[str, str] = {
     "{label}: must be at least {minimum:g}.": "{label}：必须至少为 {minimum:g}。",
     "{label}: must be at most {maximum:g}.": "{label}：必须至多为 {maximum:g}。",
     "Reset settings?": "重置设置？",
+    "Settings": "设置",
     "Reset all settings to their defaults?\n\nRestart-only settings apply after a restart; Cancel still restores the previous values.":
         "将所有设置重置为默认值？\n\n仅重启的设置将在重启后生效；取消仍会恢复之前的值。",
     "Reset failed - see the error in the main window.":
@@ -525,8 +580,16 @@ _ZH: Dict[str, str] = {
         "phoneme = 默认；acoustic = 音频对比；hybrid = 两者（需要参考音频，仅英语）；none = 关闭评分（快速启动）。只显示该语言可用的引擎。",
     "global = one calibrated anchor (default, faster); ceiling = a flawless read maps to 100 per phrase.":
         "global = 单一校准锚点（默认，更快）；ceiling = 完美朗读每句映射为 100。",
+    "Blend speaking rate (WPM) and intonation shape into the pronunciation score. Off keeps the engine score as-is.":
+        "将语速（词/分钟）与语调形状混入发音评分。关闭则保持引擎评分不变。",
+    "How much the fluency axis counts in the blended score. 0 = show but do not blend.":
+        "流利度轴在混合评分中的占比。0 = 显示但不混合。",
+    "Words per minute the tempo half scores against. 0 = no tempo penalty (shape only).":
+        "语速部分所对照的词/分钟数。0 = 不扣语速分（仅形状）。",
     "Delay before auto-generating the next phrase. Longer delay gives time to read error feedback.":
         "自动生成下一句前的延迟。更长的延迟留出时间阅读错误反馈。",
+    "When on, 'Next phrase' is disabled until the take passes the threshold (repeat until it passes). When off, you may move on at any time.":
+        "开启后，直到本次录音通过阈值才会解锁“下一句”（需反复练习直至通过）。关闭则可随时继续。",
     "Pitch and energy charts under the recording controls.": "录音控制下方的音高和能量图表。",
     "Hide the editable text box under its caption.": "在标题下隐藏可编辑文本框。",
     "llama-server starts the official llama.cpp binary for you and uses the GGUF model below; the binary is named by 'llama_server_path' in settings.json (empty = look in bin/llama and on PATH). install.py installs it, so does the app on its first start, and 'python -m mimora.llama_server_fetch' does it at any time. lm-studio requires LM Studio running separately. off = no LLM: phrases are the practice text's own sentences, taken as-is.":

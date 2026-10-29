@@ -39,7 +39,7 @@ class PracticePanel:
         self._on_collapsed_toggled = on_collapsed_toggled
 
         self.frame = tk.Frame(root, bg=THEME["bg_main"])
-        self.frame.pack(side=tk.TOP, fill=tk.X, padx=20, pady=(0, 8))
+        self.frame.pack(side=tk.TOP, fill=tk.X, padx=24, pady=(10, 8))
 
         # Header row above the practice text: the collapse caption on the left
         # with the Paste/Clear affordances. Translation, phrase length, voice,

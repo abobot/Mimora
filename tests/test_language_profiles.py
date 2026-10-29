@@ -693,5 +693,185 @@ class PhraseLevelTests(_ConfigTestBase):
         self.assertIn("phrase_gen_level", self.config.USER_SETTING_DEFAULTS)
 
 
+class MandarinSelectionTests(_ConfigTestBase):
+    """Stage 4: selecting Mandarin wires every derived constant from its profile."""
+
+    def setUp(self):
+        self.config = _build_config({"practice_language": "mandarin"})
+
+    def test_derived_constants_follow_mandarin_profile(self):
+        self.assertEqual(self.config.PRACTICE_LANGUAGE, "mandarin")
+        self.assertEqual(self.config.TARGET_LANGUAGE, "Mandarin")
+        self.assertEqual(self.config.ACCENT, "standard")
+        # Mandarin runs the Kokoro backend with lang_code "z" (Mandarin Chinese).
+        self.assertEqual(self.config.TTS_BACKEND, "kokoro")
+        self.assertEqual(self.config.TTS_LANG_CODE, "z")
+        # espeak-ng code is "cmn", NOT "zh" (zh is not a valid espeak language).
+        self.assertEqual(self.config.ESPEAK_LANGUAGE, "cmn")
+        self.assertEqual(self.config.TTS_VOICE, "zf_xiaoxiao")
+        self.assertEqual(len(self.config.TTS_VOICES), 8)
+        self.assertEqual(self.config.SOURCE_FLORES_CODE, "zho_Hans")
+        self.assertTrue(
+            self.config.PRACTICE_TEXT_FILE.endswith("practice_text_zh.txt"))
+        self.assertEqual(self.config.PHRASE_GEN_WORDFREQ_LANG, "cmn")
+
+    def test_mandarin_engines_omit_acoustic(self):
+        self.assertEqual(self.config.ENGINE, "phoneme")
+        self.assertEqual(self.config.available_engines("mandarin"),
+                         ("phoneme", "none"))
+
+    def test_mandarin_prompts_come_from_mandarin_profile(self):
+        pg = self.config.LANGUAGE_PROFILES["mandarin"]["phrase_gen"]
+        self.assertEqual(self.config.PHRASE_GEN_SYSTEM_PROMPT, pg["system"])
+        self.assertEqual(self.config.PHRASE_GEN_FRAGMENT_SYSTEM_PROMPT,
+                         pg["fragment_system"])
+        self.assertEqual(self.config.PHRASE_GEN_FULL_ASK, pg["full_ask"])
+        self.assertEqual(self.config.PHRASE_GEN_FRAGMENT_ASK, pg["fragment_ask"])
+
+    def test_mandarin_prompt_instructs_word_spacing(self):
+        # Chinese must be space-separated for word grouping and the level
+        # validator; the system prompt is the one place the model is told.
+        system = self.config.LANGUAGE_PROFILES["mandarin"]["phrase_gen"]["system"]
+        self.assertIn("空格", system)
+        self.assertIn("Separate every Chinese word", system)
+
+    def test_preview_and_warmup_are_mandarin(self):
+        profile = self.config.LANGUAGE_PROFILES["mandarin"]
+        self.assertEqual(self.config.PREVIEW_PHRASE, profile["preview_phrase"])
+        self.assertEqual(self.config.TRANSLATOR_WARMUP,
+                         profile["translator_warmup"])
+        self.assertEqual(self.config.TTS_WARMUP, profile["tts_warmup"])
+        self.assertEqual(self.config.TTS_WARMUP, "你好。")
+
+    def test_greeting_and_fallback_are_mandarin(self):
+        profile = self.config.LANGUAGE_PROFILES["mandarin"]
+        self.assertEqual(self.config.GREETING_NAMED, profile["greeting_named"])
+        self.assertEqual(self.config.GREETING_ANONYMOUS,
+                         profile["greeting_anonymous"])
+        self.assertEqual(self.config.PRACTICE_TEXT_FALLBACK,
+                         profile["practice_text_fallback"])
+
+    def test_mandarin_phoneme_is_experimental_without_calibration(self):
+        # Experimental exactly while cmn_model_calibration.json is absent.
+        expected = not (self.config._PHONEME_CALIBRATION_DIR
+                        / "cmn_model_calibration.json").is_file()
+        self.assertEqual(self.config.engine_experimental(
+            "phoneme", "mandarin", "standard"), expected)
+        self.assertTrue(self.config.PHONEME_EXPERIMENTAL)
+
+
+class MandarinTranslationTargetTests(_ConfigTestBase):
+    def setUp(self):
+        self.config = _build_config({"practice_language": "mandarin"})
+
+    def test_mandarin_practice_keeps_english_and_chinese(self):
+        # Mandarin practice keeps English as a base target. "Chinese" is a
+        # TRANSLATION_LANGUAGES member but NOT the Mandarin display name
+        # ("Mandarin"), so it stays selectable - an identity translation that
+        # the user can simply not choose. This mirrors how the translator
+        # maps the Chinese label to zho_Hans.
+        targets = self.config.translation_targets()
+        self.assertIn("English", targets)
+        self.assertIn("Chinese", targets)
+        self.assertIn("", targets)  # "translation off" always stays
+        self.assertNotIn("Mandarin", targets)
+
+
+class MandarinPhonemeExampleTests(_ConfigTestBase):
+    def setUp(self):
+        self.config = _build_config({"practice_language": "mandarin"})
+
+    def test_mandarin_symbols_resolve(self):
+        from mimora import phoneme_examples
+        self.assertEqual(phoneme_examples.example_for("ɕ", "mandarin"), "想")
+        self.assertEqual(phoneme_examples.example_for("ts", "mandarin"), "在")
+
+    def test_tone_digit_is_stripped(self):
+        # espeak cmn attaches a tone digit to vowel tokens; example_for must
+        # strip it so "i5" resolves like "i".
+        from mimora import phoneme_examples
+        self.assertEqual(phoneme_examples.example_for("i5", "mandarin"), "一")
+        self.assertEqual(phoneme_examples.example_for("ɑu2", "mandarin"), "好")
+
+    def test_active_language_default_is_mandarin(self):
+        from mimora import phoneme_examples
+        self.assertEqual(phoneme_examples.example_for("χ"), "好")
+
+    def test_unknown_symbol_returns_none(self):
+        from mimora import phoneme_examples
+        self.assertIsNone(phoneme_examples.example_for("zz9", "mandarin"))
+
+    def test_registry_has_mandarin_table(self):
+        from mimora import phoneme_examples
+        self.assertIn("mandarin",
+                      phoneme_examples.PHONEME_EXAMPLES_BY_LANGUAGE)
+
+
+class MandarinPracticeTextTests(_ConfigTestBase):
+    """Stage 4: the Mandarin practice-text file is space-separated and
+    newline-per-sentence (the sentence splitter only splits on English .!?
+    and newlines, so Chinese sentences MUST be one per line)."""
+
+    def setUp(self):
+        self.config = _build_config({"practice_language": "mandarin"})
+
+    def test_practice_text_file_exists_and_is_readable(self):
+        import os
+        from mimora import paths
+        profile = self.config.LANGUAGE_PROFILES["mandarin"]
+        text_path = paths.shipped_root() / profile["practice_text_file"]
+        self.assertTrue(text_path.is_file(), f"missing {text_path}")
+        with open(text_path, encoding="utf-8") as fh:
+            lines = [ln.strip() for ln in fh if ln.strip()]
+        self.assertGreater(len(lines), 1)
+
+    def test_sentences_are_one_per_line(self):
+        # No line may contain two Chinese sentences (the splitter would merge
+        # them into one window entry); a sentence-terminal full-width mark
+        # (。？！) may only appear at the very end of a line.
+        # Line 1 is the editable header note, which - like the English
+        # practice_text.txt - holds two short sentences and is exempt.
+        import os
+        from mimora import paths
+        profile = self.config.LANGUAGE_PROFILES["mandarin"]
+        text_path = paths.shipped_root() / profile["practice_text_file"]
+        with open(text_path, encoding="utf-8") as fh:
+            for index, line in enumerate(fh, 1):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if index == 1:
+                    continue
+                # Exactly one terminal mark, at the end, and none inside.
+                self.assertIn(stripped[-1], "。？！",
+                              f"line {index} has no terminal mark: {stripped!r}")
+                for ch in stripped[:-1]:
+                    self.assertNotIn(ch, "。？！",
+                                     f"mid-sentence mark in line {index}: {stripped!r}")
+
+    def test_sentences_are_word_spaced(self):
+        # The scorer groups words by whitespace and the level validator counts
+        # _WORD_RE matches; unspaced Chinese collapses to one giant word. The
+        # idiomatic lines (有志者，事竟成 etc.) are deliberately left as one
+        # 4-8 char token - a single word - so they are exempt; every other
+        # multi-word sentence must carry spaces.
+        import os
+        from mimora import paths
+        profile = self.config.LANGUAGE_PROFILES["mandarin"]
+        text_path = paths.shipped_root() / profile["practice_text_file"]
+        with open(text_path, encoding="utf-8") as fh:
+            for index, line in enumerate(fh, 1):
+                stripped = line.strip()
+                if not stripped or index == 1:
+                    continue
+                body = stripped[:-1]  # drop the final 。
+                if not body:
+                    continue
+                if " " not in body:
+                    # A short idiom is one word; a long unspaced sentence is not.
+                    self.assertLessEqual(len(body), 8,
+                                         f"unspaced sentence: line {index}: {stripped!r}")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,15 @@ and stay in the user data directory across upgrades.
 
 ### Added
 
+- Double-clicking any word in the hero phrase now starts a single-word drill on
+  that word: the word itself is the whole practice phrase (no surrounding
+  sentence), so you repeat just that word. The drill runs in its own window and
+  leaves the main sentence unchanged (scoring the drill take no longer re-renders
+  the main hero card with the drilled word). The mispronounced-word right-click
+  and the weakness panel still start the sentence-context word drill. A single
+  click still hears the word, now deferred briefly so a double-click does not
+  play it twice before the drill opens. The interactive hint now names the
+  double-click affordance.
 - **Dictation mode** (the ✍ button in the header): hear a spoken sentence, type
   what you heard, and get scored word by word. One word per input slot (the slot
   count matches the sentence's word count); Enter advances to the next slot and

@@ -42,7 +42,6 @@ import tkinter as tk
 from mimora.ui_theme import (  # noqa: F401  (re-exported for settings_window)
     BOOTSTRAP_THEME,
     FONT_FAMILY,
-    FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
     FONT_SIZE_EMOJI,
     FONT_SIZE_ICON,
@@ -51,7 +50,9 @@ from mimora.ui_theme import (  # noqa: F401  (re-exported for settings_window)
     THEME,
     WHEEL_EVENTS,
     FlatButton,
+    Tooltip,
     bind_hover,
+    make_icon_button,
     wheel_scroll_units,
 )
 
@@ -107,6 +108,9 @@ class ViewCallbacks:
     # Right-click on a mispronounced (underlined) word: starts a drill on that
     # word so the user can practice it in isolation.
     on_word_drill_clicked: Callable[[str], None]
+    # Double-click any word in the hero phrase: starts a drill that practices
+    # that single word on its own (no surrounding sentence).
+    on_word_single_drill_clicked: Callable[[str], None]
     # Click on a "WORK ON" phoneme badge: the controller synthesizes the
     # phoneme's example word (e.g. "put" for /ʊ/) and plays it at normal speed.
     on_sound_example: Callable[[str], None]
@@ -238,42 +242,20 @@ class TrainerView:
     # ------------------------------------------------------------------
     # UI construction (window chrome + control row; panels build themselves)
     # ------------------------------------------------------------------
-    def _make_button(self, parent, text, command, width=None, padx=12):
-        """Create a consistently styled themed button.
-
-        ``width`` (in text characters) is optional; pass it to give a group of
-        buttons a uniform width so they line up regardless of label length.
-        ``padx`` is the internal horizontal padding (default 12); the bottom
-        control row passes a smaller value so its four columns fit the 600px
-        window without clipping the last button.
-        """
-        button = FlatButton(parent, text=text, command=command,
-                           font=(FONT_FAMILY, FONT_SIZE_BODY, "bold"),
-                           bg=THEME["bg_button"], fg=THEME["text_button"],
-                           activebackground=THEME["bg_button_active"], activeforeground=THEME["text"],
-                           bd=0, padx=padx, pady=6, cursor="hand2",
-                           disabledforeground=THEME["text_disabled"])
-        if width is not None:
-            button.config(width=width)
-        return button
-
-    def _control_column(self, parent, caption):
-        """A vertical control cell: the control(s) on top, an 8pt caption below.
+    def _control_column(self, parent):
+        """A vertical control cell holding one control widget.
 
         Used by the bottom control panel so each action - Reference,
-        the mic, My recording, Next phrase - carries a one-line hint underneath.
-        The caption is packed at the bottom up-front, so callers can simply pack
-        their control widgets (default ``side=TOP``) into the returned frame
-        without worrying about ordering. Columns are top-aligned by the caller
-        (``anchor=N``) so short buttons and the taller mic each keep their caption
-        directly beneath them.
+        the mic, My recording, Next phrase - can be packed side by side and
+        vertically centered in the row (the mic column defines the row height,
+        so the short buttons line up with it).
         """
         col = tk.Frame(parent, bg=THEME["bg_main"])
         # padx=4 on each side yields a ~8px gap between columns, tight enough
-        # that all four columns fit the 600px window.
-        col.pack(side=tk.LEFT, anchor=tk.N, padx=4)
-        tk.Label(col, text=caption, font=(FONT_FAMILY, FONT_SIZE_CAPTION),
-                 fg=THEME["text_muted"], bg=THEME["bg_main"]).pack(side=tk.BOTTOM, pady=(5, 0))
+        # that all four columns fit the 600px window. anchor=CENTER vertically
+        # centers each column in the row, so the short buttons align with the
+        # taller mic (see build_ui; the mic column defines the row height).
+        col.pack(side=tk.LEFT, anchor=tk.CENTER, padx=4)
         return col
 
     def build_ui(self):
@@ -282,34 +264,40 @@ class TrainerView:
         self.root.configure(bg=THEME["bg_main"])
 
         # 1. Header
-        header_frame = tk.Frame(self.root, bg=THEME["bg_main"], height=60)
-        header_frame.pack(side=tk.TOP, fill=tk.X, padx=20, pady=10)
+        header_frame = tk.Frame(self.root, bg=THEME["bg_main"])
+        header_frame.pack(side=tk.TOP, fill=tk.X, padx=24, pady=(14, 10))
 
-        # Title carries the fixed training language (no dynamic language picker):
-        # brand + language shown prominently, with the descriptor as a smaller
-        # subtitle. The language reads from config.TARGET_LANGUAGE so the title
-        # stays the single source of truth for it.
-        tk.Label(header_frame, text=i18n.tr("MIMORA · {language}", language=config.TARGET_LANGUAGE),
-                 font=(FONT_FAMILY, FONT_SIZE_TITLE, "bold"), fg=THEME["accent"], bg=THEME["bg_main"]).pack(side=tk.LEFT)
-
-        tk.Label(header_frame, text=i18n.tr("- Pronunciation Trainer"),
-                 font=(FONT_FAMILY, FONT_SIZE_BODY, "bold"), fg=THEME["accent"], bg=THEME["bg_main"]).pack(
-                     side=tk.LEFT, padx=(0, 0), pady=(6, 0))
+        # Brand lockup on the left: a proper two-line title/subtitle stack
+        # (title on top, descriptor below) instead of an inline pair held
+        # together with a pady baseline hack. The language reads from
+        # config.TARGET_LANGUAGE so the title stays the single source of
+        # truth for it.
+        brand_col = tk.Frame(header_frame, bg=THEME["bg_main"])
+        brand_col.pack(side=tk.LEFT)
+        tk.Label(brand_col, text=i18n.tr("MIMORA · {language}", language=config.TARGET_LANGUAGE),
+                 font=(FONT_FAMILY, FONT_SIZE_TITLE, "bold"),
+                 fg=THEME["accent"], bg=THEME["bg_main"]).pack(anchor=tk.W)
+        tk.Label(brand_col, text=i18n.tr("Pronunciation Trainer"),
+                 font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                 fg=THEME["text_dim"], bg=THEME["bg_main"]).pack(anchor=tk.W)
 
         # Header buttons at the right edge. Pack order matters because
         # ``side=RIGHT`` fills left-to-right: the FIRST packed ends up
         # rightmost. Gear is packed last so it sits at the far right;
         # Drill is packed first of the four so it sits at the far left.
-        for glyph, handler in (
-            ("📚", self._cb.on_history_clicked),
-            ("📊", self._cb.on_stats_clicked),
-            ("🎯", self._cb.on_weakness_clicked),
-            ("▶", self._cb.on_drill_clicked),
-            ("✍", self._cb.on_dictation_clicked),
+        # Each glyph carries a hover tooltip naming the feature it opens,
+        # since the icon alone does not say what it does.
+        header_buttons = (
+            ("📚", self._cb.on_history_clicked, i18n.tr("Practice history")),
+            ("📊", self._cb.on_stats_clicked, i18n.tr("Practice stats")),
+            ("🎯", self._cb.on_weakness_clicked, i18n.tr("Weakness")),
+            ("▶", self._cb.on_drill_clicked, i18n.tr("Drill")),
+            ("✍", self._cb.on_dictation_clicked, i18n.tr("Dictation")),
         ) + (
             # Gear packed last so it ends up in the rightmost slot.
-            ("⚙", self._cb.on_settings_clicked),
-        ):
+            ("⚙", self._cb.on_settings_clicked, i18n.tr("Settings")),
+        )
+        for glyph, handler, tip in header_buttons:
             btn = FlatButton(header_frame, text=glyph,
                              command=handler,
                              font=(FONT_FAMILY, FONT_SIZE_ICON),
@@ -321,6 +309,11 @@ class TrainerView:
             bind_hover(btn,
                        enter={"bg": THEME["bg_panel"], "fg": THEME["text_bright"]},
                        leave={"bg": THEME["bg_main"], "fg": THEME["text_dim"]})
+            Tooltip(btn, tip)
+
+        # Hairline separator under the header anchors the top of the page and
+        # separates the chrome from the content region.
+        tk.Frame(self.root, height=1, bg=THEME["border"]).pack(side=tk.TOP, fill=tk.X)
 
         # 2. Status bar (absolute bottom)
         self.status_bar = tk.Frame(self.root, bg=THEME["bg_panel"], height=30)
@@ -342,10 +335,10 @@ class TrainerView:
         self.tip_label = tk.Label(
             self.root,
             text=i18n.tr('Tip: press SPACE or click the mic to record. '
-                         '"Reference ▶" replays the example.'),
+                         'Tap the 🔊 button to replay the example.'),
             font=(FONT_FAMILY, FONT_SIZE_CAPTION), fg=THEME["text_muted"],
             bg=THEME["bg_main"], anchor=tk.W)
-        self.tip_label.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=(0, 4))
+        self.tip_label.pack(side=tk.BOTTOM, fill=tk.X, padx=24, pady=(0, 5))
 
         # 3. Control panel: one row holding every phrase-level
         # action, each in its own column with an 8pt caption beneath. Left to
@@ -364,57 +357,61 @@ class TrainerView:
         # _set_actions; see is_test_enabled).
         self._test_enabled = False
 
-        # Equal-width buttons keep the row balanced regardless of label length;
-        # the longest label ("My recording ▶") is 14 chars, so it still sizes
-        # its button to fit rather than the requested 12. A tight internal
-        # padding keeps all four columns within the 600px window.
-        action_btn_width = 12
+        # Icon-only buttons let each control stay compact; a tight internal
+        # padding keeps all four columns within the 600px window. The tooltip
+        # on each button carries the action's full name since the icon alone
+        # does not say what it does.
         action_btn_padx = 4
 
         # Centered row of control columns (each built by _control_column, which
-        # top-aligns them and hangs the caption underneath).
+        # packs them side by side). Every control is vertically centered in the
+        # row so the short icon buttons line up with the taller mic.
         controls_row = tk.Frame(control_frame, bg=THEME["bg_main"])
         controls_row.pack()
 
         # -- Reference column: the replay button paired with the "Slow ▶"
         #    replay. Both are gated together by _set_actions(reference=...); the
         #    exact slow speed lives in Settings. --
-        ref_col = self._control_column(controls_row, i18n.tr("Listen to the example"))
+        ref_col = self._control_column(controls_row)
         ref_pair = tk.Frame(ref_col, bg=THEME["bg_main"])
         ref_pair.pack()
-        self.ref_btn = self._make_button(
-            ref_pair, i18n.tr("Reference ▶"), self._cb.play_reference,
-            width=action_btn_width, padx=action_btn_padx)
+        self.ref_btn = make_icon_button(
+            ref_pair, i18n.tr("🔊"), i18n.tr("Play reference"), self._cb.play_reference,
+            padx=action_btn_padx)
         self.ref_btn.pack(side=tk.LEFT, padx=(0, 4))
         self.ref_btn.config(state=tk.DISABLED)
-        self.slow_btn = self._make_button(ref_pair, i18n.tr("Slow ▶"), self._cb.play_reference_slow,
-                                          padx=action_btn_padx)
-        self.slow_btn.pack(side=tk.LEFT)
+        self.slow_btn = make_icon_button(
+            ref_pair, i18n.tr("🐢"), i18n.tr("Play reference slowly"),
+            self._cb.play_reference_slow, padx=action_btn_padx)
+        # The turtle glyph sits low in its emoji box (it has a deep descender);
+        # lift it with extra bottom padding so it lines up with the speaker.
+        self.slow_btn.pack(side=tk.LEFT, pady=(0, 10))
         self.slow_btn.config(state=tk.DISABLED)
 
         # -- Mic column: the press-to-toggle record button (canvas-drawn). --
-        mic_col = self._control_column(controls_row, i18n.tr("Press SPACE or click"))
+        mic_col = self._control_column(controls_row)
         self.btn_canvas = tk.Canvas(mic_col, width=100, height=100, bg=THEME["bg_main"],
                                     highlightthickness=0, cursor="hand2")
         self.btn_canvas.pack()
         self.btn_canvas.bind("<ButtonPress-1>", lambda e: self._cb.on_gui_btn_press())
         self.btn_canvas.bind("<ButtonRelease-1>", lambda e: self._cb.on_gui_btn_release())
+        Tooltip(self.btn_canvas, i18n.tr("Record (Click/Press SPACE)"))
         self.draw_mic_button("loading")
 
         # -- My recording column: always visible; enabled only once a take
         #    exists (_set_actions(user=...)). --
-        user_col = self._control_column(controls_row, i18n.tr("Record first to listen"))
-        self.user_btn = self._make_button(
-            user_col, i18n.tr("My recording ▶"), self._cb.play_user_recording,
-            width=action_btn_width, padx=action_btn_padx)
+        user_col = self._control_column(controls_row)
+        self.user_btn = make_icon_button(
+            user_col, i18n.tr("📼"), i18n.tr("Play my recording"),
+            self._cb.play_user_recording, padx=action_btn_padx)
         self.user_btn.pack()
         self.user_btn.config(state=tk.DISABLED)
 
         # -- Next phrase column: generate the next phrase. --
-        gen_col = self._control_column(controls_row, i18n.tr("Skip to the next phrase"))
-        self.generate_btn = self._make_button(
-            gen_col, i18n.tr("Next phrase ▶"), self._cb.on_generate_phrase,
-            width=action_btn_width, padx=action_btn_padx)
+        gen_col = self._control_column(controls_row)
+        self.generate_btn = make_icon_button(
+            gen_col, i18n.tr("⏭"), i18n.tr("Next phrase"),
+            self._cb.on_generate_phrase, padx=action_btn_padx)
         self.generate_btn.pack()
         self.generate_btn.config(state=tk.DISABLED)
 
@@ -428,12 +425,13 @@ class TrainerView:
             self.root,
             on_word_clicked=self._cb.on_word_clicked,
             on_sound_example=self._cb.on_sound_example,
-            on_word_drill_clicked=self._cb.on_word_drill_clicked)
+            on_word_drill_clicked=self._cb.on_word_drill_clicked,
+            on_word_single_drill_clicked=self._cb.on_word_single_drill_clicked)
 
         # 5a. Control panel, packed here so it sits directly under the hero card.
         # The frame and its buttons were built in section 3; only the placement
         # was deferred to this point in the packing order.
-        control_frame.pack(side=tk.TOP, fill=tk.X, padx=20, pady=(0, 8))
+        control_frame.pack(side=tk.TOP, fill=tk.X, padx=24, pady=(0, 10))
 
         # 5b. Prosody panel - pitch (F0) and energy sparklines under one
         # collapse header. Default collapsed for a calmer view.
@@ -885,13 +883,14 @@ class TrainerView:
     # Feedback rendering (orchestrates hero card, prosody and history)
     # ------------------------------------------------------------------
     def show_feedback(self, result: "PronunciationResult", current_phrase,
-                      has_recording: bool = True, is_self_test: bool = False):
+                      has_recording: bool = True, is_self_test: bool = False,
+                      update_hero: bool = True):
         # An unscored result (the "none" engine) has no verdict to present:
         # score/passed carry no meaning, so render the neutral read-out instead
         # of a quality label that would pretend the take was judged.
         if not getattr(result, "scored", True):
             self._show_unscored_feedback(result, current_phrase, has_recording,
-                                         is_self_test)
+                                         is_self_test, update_hero)
             return
         # One consistent presentation for the whole result, so the score read-out,
         # quality label, face and the passed/try-again line never contradict each
@@ -915,24 +914,46 @@ class TrainerView:
             display_text = f"{result.score:.0f}"
             tally_value = result.score
             quality, quality_color = self._quality_label(result.score)
-        # The face follows the same quality band, so a passed take always smiles.
-        self._hero.face.set_expression(self._quality_expression(quality_color))
-        # Hero card: the big score digit and its verdict share the resolved
-        # quality color (never green for a "needs work"), and the WORK ON row
-        # shows the top-3 problem sounds.
-        self._hero.set_score_row(display_text, quality.lower(), quality_color)
-        badges = [entry["phoneme"] for entry in result.weak_phonemes[:3]]
-        self._hero.set_badges(badges)
-        # Underline the mispronounced words directly in the phrase; show the
-        # how-to hint only when at least one interactive affordance exists (an
-        # underlined word or a sound badge), so a clean take stays uncluttered.
-        misses = self._hero.mark_miss_words(result.reference_words)
-        self._hero.set_hint(bool(misses) or bool(badges))
+        if update_hero:
+            # The face follows the same quality band, so a passed take always
+            # smiles. The whole hero-card + prosody block is skipped when a
+            # drill take is being scored (update_hero=False): the drill has its
+            # own window and progress display, and the main hero card must keep
+            # showing the saved sentence - not the drill's phrase (a single
+            # drilled word would otherwise replace the sentence in the main
+            # view, and mark_miss_words re-renders the phrase text from the
+            # result's reference words).
+            self._hero.face.set_expression(self._quality_expression(quality_color))
+            # Hero card: the big score digit and its verdict share the resolved
+            # quality color (never green for a "needs work"), and the WORK ON row
+            # shows the top-3 problem sounds.
+            self._hero.set_score_row(display_text, quality.lower(), quality_color)
+            # Fluency axis line: the host blends this into the score when
+            # config.FLUENCY_ENABLED; the label renders even when the weight is 0.
+            self._hero.set_fluency(
+                getattr(result, "fluency_axis", -1.0),
+                getattr(result, "speed_label", ""))
+            # Shadowing axis line: the host blends this into the score when
+            # config.SHADOWING_ENABLED; the label shows the alignment offset too.
+            self._hero.set_shadowing(
+                getattr(result, "shadowing_axis", -1.0),
+                getattr(result, "delay_sec", 0.0),
+                getattr(result, "overlap", 0.0))
+            badges = [entry["phoneme"] for entry in result.weak_phonemes[:3]]
+            self._hero.set_badges(badges)
+            # Underline the mispronounced words directly in the phrase; show the
+            # how-to hint only when at least one interactive affordance exists (an
+            # underlined word or a sound badge), so a clean take stays uncluttered.
+            misses = self._hero.mark_miss_words(result.reference_words)
+            self._hero.set_hint(bool(misses) or bool(badges))
+            # Word-feedback strip: one coloured cell per word (good/ok/bad) under
+            # the phrase, so the whole take's word-level quality reads at a glance.
+            self._hero.set_word_feedback(result.reference_words)
 
-        # Cache prosody and draw the sparklines (you vs reference).
-        self._prosody.set_prosody(result.prosody or {})
-        self.root.update_idletasks()  # ensure the canvases have a real width/height
-        self._prosody.redraw()
+            # Cache prosody and draw the sparklines (you vs reference).
+            self._prosody.set_prosody(result.prosody or {})
+            self.root.update_idletasks()  # ensure the canvases have a real width/height
+            self._prosody.redraw()
 
         # The number itself lives in the hero card (set above via
         # set_score_row); report the scored take to the controller so it can
@@ -969,13 +990,23 @@ class TrainerView:
         # the self-test and new-phrase generation. "My recording" is enabled only
         # when a user take actually exists - the reference self-test reaches here
         # without recording, so enabling it there would offer a dead button.
-        self._set_actions(generate=True, reference=True, user=has_recording, test=True)
+        # "Next phrase" is additionally gated by the pass gate: when the gate is
+        # on and the take did NOT pass, the user must repeat the phrase until it
+        # passes (the gate is off by default, so the loop stays ungated).
+        can_advance = (not config.PASS_GATING_ENABLED) or bool(getattr(result, "passed", True))
+        self._set_actions(generate=can_advance, reference=True, user=has_recording, test=True)
         self.draw_mic_button("idle")
 
-        self.update_status(quality, quality_color)
+        if not can_advance:
+            self.update_status(
+                i18n.tr("Keep trying - the next phrase unlocks when this take passes."),
+                THEME["warn"])
+        else:
+            self.update_status(quality, quality_color)
 
     def _show_unscored_feedback(self, result: "PronunciationResult", current_phrase,
-                                has_recording: bool, is_self_test: bool = False):
+                                has_recording: bool, is_self_test: bool = False,
+                                update_hero: bool = True):
         """Feedback for an unscored take (``result.scored`` is False; "none" engine).
 
         Keeps everything that does not depend on scoring - the prosody charts
@@ -983,12 +1014,16 @@ class TrainerView:
         read-out and re-enabling the controls - and adds a neutral "--" row to the
         attempt history, so this mode never pretends the take was judged.
         """
-        self._hero.face.set_expression("neutral")
-        # Hero card: neutral "scoring off" read-out - no number, no badges, no
-        # word underlines and no how-to hint (nothing was judged to act on).
-        self._hero.set_score_row("--", i18n.tr("scoring off"), THEME["text_dim"])
-        self._hero.set_badges([])
-        self._hero.set_hint(False)
+        if update_hero:
+            self._hero.face.set_expression("neutral")
+            # Hero card: neutral "scoring off" read-out - no number, no badges, no
+            # word underlines and no how-to hint (nothing was judged to act on).
+            self._hero.set_score_row("--", i18n.tr("scoring off"), THEME["text_dim"])
+            self._hero.set_badges([])
+            self._hero.set_hint(False)
+            self._hero.reset_word_feedback()
+            self._hero.set_fluency(-1.0, "")
+            self._hero.set_shadowing(-1.0, 0.0, 0.0)
         # A neutral history row (no score, no trend). The reference self-test is a
         # pipeline check, not a practice take, so it stays out of the history for
         # the same reason it stays out of the session tally.
@@ -999,9 +1034,10 @@ class TrainerView:
             })
 
         # Prosody still works without scoring; cache and draw it as usual.
-        self._prosody.set_prosody(result.prosody or {})
-        self.root.update_idletasks()  # ensure the canvases have a real width/height
-        self._prosody.redraw()
+        if update_hero:
+            self._prosody.set_prosody(result.prosody or {})
+            self.root.update_idletasks()  # ensure the canvases have a real width/height
+            self._prosody.redraw()
 
         # Unscored takes ("none" engine) do not contribute to the session tally,
         # so the hero card's progress ring is left untouched here.

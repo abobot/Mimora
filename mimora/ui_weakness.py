@@ -39,6 +39,7 @@ from mimora.analysis import (
     sorted_by_error_rate,
     sorted_by_weakness,
 )
+from mimora.phoneme_examples import example_for
 from mimora.ui_stats import _CanvasChart
 from mimora.ui_theme import (
     FONT_FAMILY,
@@ -57,6 +58,10 @@ class WeaknessCallbacks:
     load_takes: Callable[[], List[Any]]
     start_drill: Callable[[Dict[str, str]], None]
     open_practice: Callable[[], None]
+    # Speak a phoneme's example word (P2#8 interactive IPA chart): synthesizes
+    # the word and plays it at normal speed, like the WORK ON badge click. The
+    # word is looked up per-language by the view; the controller only plays it.
+    play_example: Callable[[str], None] = None
 
 
 def _status_color(status: str) -> str:
@@ -271,10 +276,24 @@ class WeaknessView:
                          font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                          bg=THEME["bg_panel"], fg=THEME["text_emph"]
                          ).pack(pady=(0, 4))
-            ttk.Button(card, text=i18n.tr("Drill"),
+            # P2#8 interactive IPA chart: clicking a phoneme speaks its example
+            # word. The example is looked up per-language (example_for) so the
+            # word matches what the user is practicing, with the ZH-interference
+            # table's English example as a fallback. The card's /ipa/ label and
+            # the whole card area are clickable, and a small Play button makes
+            # the affordance explicit.
+            play_word = example_for(ipa) or example_word_for(ipa)
+            button_row = tk.Frame(card, bg=THEME["bg_panel"])
+            button_row.pack(pady=(0, 6))
+            if play_word and self._cb.play_example is not None:
+                ttk.Button(
+                    button_row, text=i18n.tr("Play"),
+                    command=lambda w=play_word: self._cb.play_example(w),
+                ).pack(side=tk.LEFT, padx=(0, 4))
+            ttk.Button(button_row, text=i18n.tr("Drill"),
                        command=lambda i=ipa:
                        self._start_drill({"type": "phoneme", "value": i})
-                       ).pack(pady=(0, 6))
+                       ).pack(side=tk.LEFT)
             for c in range(5):
                 grid.columnconfigure(c, weight=1)
 

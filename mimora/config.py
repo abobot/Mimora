@@ -10,7 +10,7 @@ from pathlib import Path
 
 from mimora import (llama_server_fetch, loader, model_fetch, models_info,
                     paths, spacy_model_fetch)
-from mimora.languages import english, spanish
+from mimora.languages import english, mandarin, spanish
 
 # The three roots this module resolves paths against, frozen for the run and
 # absolute regardless of the launch directory. All three are computed in
@@ -80,6 +80,12 @@ _KNOWN_USER_KEYS = {
     "color_theme",
     "pronunciation_score_threshold",
     "phoneme_good_mode",
+    "fluency_enabled",
+    "fluency_weight",
+    "fluency_reference_wpm",
+    "pass_gating_enabled",
+    "shadowing_enabled",
+    "shadowing_weight",
     "max_record_seconds",
     "llm_backend",
     "lm_studio_host",
@@ -143,6 +149,12 @@ USER_SETTING_DEFAULTS = {
     "color_theme": "dark",
     "pronunciation_score_threshold": 70.0,
     "phoneme_good_mode": "global",
+    "fluency_enabled": False,
+    "fluency_weight": 30.0,
+    "fluency_reference_wpm": 150.0,
+    "pass_gating_enabled": False,
+    "shadowing_enabled": False,
+    "shadowing_weight": 30.0,
     "max_record_seconds": 20,
     "llm_backend": "llama-server",
     "lm_studio_host": "localhost:1234",
@@ -570,6 +582,7 @@ EXTERNAL_N_CTX = int(_num("external_n_ctx",
 LANGUAGE_PROFILES = {
     "english": english.PROFILE,
     "spanish": spanish.PROFILE,
+    "mandarin": mandarin.PROFILE,
 }
 
 
@@ -862,9 +875,9 @@ WAV2VEC2_PHONEME_MODEL_NAME = models_info.WAV2VEC2_PHONEME.repo_id
 # it to "cpu" to avoid VRAM contention with llama-server / Kokoro on a single
 # GPU. It can never be more than DEVICE - see _model_device.
 WAV2VEC2_DEVICE = _model_device("WAV2VEC2_DEVICE", DEVICE)
-# Target score (0-100): feeds each engine's result.passed. NOT used by the app
-# yet - computed and logged only, reserved for a future pass/repeat gate (see
-# the Pass-threshold note in AGENTS.md).
+# Target score (0-100): feeds each engine's result.passed. The pass/repeat gate
+# (config.PASS_GATING_ENABLED) wires this into the practice loop - see the
+# Pass-threshold note in AGENTS.md.
 PRONUNCIATION_SCORE_THRESHOLD = float(
     _num("pronunciation_score_threshold", 70.0, minimum=0, maximum=100)
 )
@@ -874,6 +887,55 @@ PRONUNCIATION_SCORE_THRESHOLD = float(
 # ``python pronunciation/acoustic/calibrate.py`` and the value it writes to
 # pronunciation/acoustic/calibration.json takes precedence (tuned to your voice and mic).
 PRONUNCIATION_ACOUSTIC_GOOD = 0.20
+
+# =====================================================================
+# Fluency axis & pass gating (host-side scoring extensions)
+# =====================================================================
+# Whether to compute and blend a fluency/stress axis into the pronunciation
+# score. The axis (mimora/fluency.py) combines the take's speaking rate (WPM)
+# against the language's target with the F0/energy contour similarity to the
+# reference, so rhythm and stress are scored alongside the segmental quality.
+# Off by default: the engines' scores are calibrated on their own, and adding an
+# axis changes what a "good" take means.
+FLUENCY_ENABLED = _bool("fluency_enabled", False)
+
+# Weight of the fluency axis in the blended final score, 0-100 (percent). The
+# engine's pronunciation score keeps the remainder. 30% is a meaningful but
+# subordinate component; 0 disables the blend (the axis is still computed and
+# logged when FLUENCY_ENABLED is on).
+FLUENCY_WEIGHT = float(
+    _num("fluency_weight", 30.0, minimum=0, maximum=100)
+)
+
+# The language's target speaking rate (words per minute) the tempo half scores
+# against. 0/negative disables the tempo penalty (prosody shape only). The
+# English default of ~150 wpm is a comfortable conversational pace for the
+# generated phrases.
+FLUENCY_REFERENCE_WPM = float(
+    _num("fluency_reference_wpm", 150.0, minimum=0, maximum=400)
+)
+
+# Whether the practice loop enforces result.passed: when on, a take that did not
+# pass the engine's threshold/calibrated bucket does NOT unlock "Next phrase" -
+# the user repeats the current phrase until it passes. Off keeps the historical
+# behaviour (result.passed is computed and logged but the loop never gates).
+PASS_GATING_ENABLED = _bool("pass_gating_enabled", False)
+
+# Whether shadowing (跟读) mode is active: the reference plays and the user
+# speaks along with it, then the take is scored not just on pronunciation but on
+# how well it *kept up* with the reference (delay/overlap alignment). The take
+# is recorded automatically right after the reference starts playing (no
+# prompt pause). The axis (mimora/shadowing.py) is blended into the final score.
+# Off by default: the normal prompt→listen→repeat flow is unchanged.
+SHADOWING_ENABLED = _bool("shadowing_enabled", False)
+
+# Weight of the shadowing axis in the blended final score, 0-100 (percent). The
+# engine's pronunciation score keeps the remainder. 30% is a meaningful but
+# subordinate component; 0 disables the blend (the axis is still computed and
+# logged when SHADOWING_ENABLED is on).
+SHADOWING_WEIGHT = float(
+    _num("shadowing_weight", 30.0, minimum=0, maximum=100)
+)
 
 # =====================================================================
 # Practice Text & Phrase Generation

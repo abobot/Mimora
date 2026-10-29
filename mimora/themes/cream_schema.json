@@ -1,0 +1,46 @@
+{
+  "_readme": "Mimora warm cream color scheme. Selected via 'color_theme': 'cream' in settings.json; restart to apply. Keys starting with '_' are ignored. A missing key falls back to the built-in dark palette in config.py.",
+
+  "_surfaces": "Backgrounds and borders. Three-level surface contrast bg_main < bg_panel < bg_card: bg_main = window, bg_panel = panels/inputs/status bar, bg_card = hero-card surface. Main and panel are tinted slightly warm so the card reads as raised on a cream page. bg_accent = accent-tinted controls (buttons, combobox).",
+  "bg_main": "#f6f1e7",
+  "bg_panel": "#fbf7ee",
+  "bg_card": "#fffdf7",
+  "bg_accent": "#f5e3cf",
+  "bg_accent_active": "#eccfa9",
+  "bg_button": "#c05a26",
+  "bg_button_active": "#b24f20",
+  "text_button": "#fffaf3",
+  "border": "#e3d9c8",
+  "accent": "#c2672e",
+
+  "_text": "text = body, text_emph = emphasized feedback, text_bright = selection fg / text cursor, text_dim = secondary labels, text_muted = tertiary/system, text_accent = text on accent-tinted controls, phrase = hero practice phrase (matched to the amber 'you' prosody curve).",
+  "text": "#3a332a",
+  "text_emph": "#241f18",
+  "text_bright": "#1c1712",
+  "text_dim": "#6f6555",
+  "text_muted": "#8a7c66",
+  "text_accent": "#9c4f1e",
+  "phrase": "#b5651d",
+  "text_disabled": "#b3a894",
+  "text_disabled_dim": "#d0c6b4",
+
+  "_face": "Articulation face beside the prosody charts: white disc, dark-blue eyes, red-brown mouth. Kept identical to the other themes on purpose.",
+  "face": "#fdf9f1",
+  "eyes": "#1e2a44",
+  "mouth": "#8a3a2c",
+
+  "_status": "Status and feedback colors, darkened to stay readable on warm light backgrounds. 'reference' marks everything related to the reference audio (status texts, prosody curve).",
+  "good": "#2e8b57",
+  "ready": "#00875a",
+  "bad": "#c0392b",
+  "warn": "#b8720a",
+  "info": "#b5651d",
+  "reference": "#c2185b",
+
+  "_mic": "Mic button per-state inner fill; outlines reuse accent/bad/warn/good.",
+  "mic_loading_bg": "#efe8da",
+  "mic_loading_outline": "#a89c86",
+  "mic_recording_bg": "#fbe4e0",
+  "mic_processing_bg": "#f9eeda",
+  "mic_speaking_bg": "#e3f2e6"
+}

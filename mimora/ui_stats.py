@@ -49,6 +49,10 @@ class StatsCallbacks:
     load_data: Callable[[], Dict[str, Any]]
     export_json: Callable[[], Optional[str]]
     export_csv: Callable[[], Optional[str]]
+    # P2#7: export a progress report image (PNG) or document (PDF) of the
+    # same statistics, rendered offline by mimora.report.
+    export_report_png: Callable[[], Optional[str]] = None
+    export_report_pdf: Callable[[], Optional[str]] = None
 
 
 def _fmt_seconds(seconds: int) -> str:
@@ -234,6 +238,12 @@ class StatsView:
                    command=self._on_export_json).pack(side=tk.LEFT, padx=2)
         ttk.Button(btns, text=i18n.tr("Export CSV"),
                    command=self._on_export_csv).pack(side=tk.LEFT, padx=2)
+        if self._cb.export_report_png is not None:
+            ttk.Button(btns, text=i18n.tr("Export PNG"),
+                       command=self._on_export_report_png).pack(side=tk.LEFT, padx=2)
+        if self._cb.export_report_pdf is not None:
+            ttk.Button(btns, text=i18n.tr("Export PDF"),
+                       command=self._on_export_report_pdf).pack(side=tk.LEFT, padx=2)
         ttk.Button(btns, text=i18n.tr("Close"),
                    command=self._window.destroy).pack(side=tk.LEFT, padx=2)
 
@@ -372,6 +382,24 @@ class StatsView:
         if path:
             messagebox.showinfo(i18n.tr("Export complete"),
                                 i18n.tr("CSV saved to:\n{path}", path=path),
+                                parent=self._window)
+
+    def _on_export_report_png(self) -> None:
+        if self._cb.export_report_png is None:
+            return
+        path = self._cb.export_report_png()
+        if path:
+            messagebox.showinfo(i18n.tr("Export complete"),
+                                i18n.tr("Report saved to:\n{path}", path=path),
+                                parent=self._window)
+
+    def _on_export_report_pdf(self) -> None:
+        if self._cb.export_report_pdf is None:
+            return
+        path = self._cb.export_report_pdf()
+        if path:
+            messagebox.showinfo(i18n.tr("Export complete"),
+                                i18n.tr("Report saved to:\n{path}", path=path),
                                 parent=self._window)
 
 
