@@ -290,6 +290,14 @@ class PronunciationTrainerGUI:
         self._original_on_take_scored: Optional[object] = None
         # The main window's phrase saved when a drill starts, restored on exit.
         self._saved_current_phrase: Optional[str] = None
+        # The main window's last user recording saved when a drill starts and
+        # restored on exit. Without this, a take recorded inside the drill stays
+        # in last_user_audio and the main view's "play my recording" would play
+        # the drill's recording instead of the main loop's own take. The boolean
+        # is the "a drill is active" marker, because the saved value itself may
+        # legitimately be None (no main take recorded before the drill).
+        self._saved_last_user_audio = None
+        self._drill_saved_last_user_audio: bool = False
         # Whether the drill view should auto-advance after each scored take.
         self._drill_auto_next: bool = False
         # The (session_id, take_id) pair of the recording written for the take
@@ -1045,6 +1053,12 @@ class PronunciationTrainerGUI:
         self._cancel_drill_if_active()
         self._saved_current_phrase = self.current_phrase
         logging.info("Drill: saved current_phrase=%r", self._saved_current_phrase)
+        # Remember the main loop's recording (if any) so a take recorded inside
+        # the drill cannot leak into the main view's "play my recording".
+        self._saved_last_user_audio = self.last_user_audio
+        self._drill_saved_last_user_audio = True
+        logging.info("Drill: saved last_user_audio=%s",
+                     "yes" if self._saved_last_user_audio is not None else "none")
         engine = DrillEngine(
             target=target,
             source_text=self._get_source_text(),
@@ -1197,6 +1211,18 @@ class PronunciationTrainerGUI:
         if self._saved_current_phrase is not None:
             self.current_phrase = self._saved_current_phrase
             self._saved_current_phrase = None
+        # Restore the main loop's recording so the drill's own take (which
+        # overwrote last_user_audio) is not what "play my recording" plays.
+        # Only when a drill was actually active: _cancel_drill_if_active also
+        # runs at the start of a new drill to close a prior one, and there the
+        # main loop's recording must be left alone.
+        if self._drill_saved_last_user_audio:
+            self.last_user_audio = self._saved_last_user_audio
+            self._drill_saved_last_user_audio = False
+            self._saved_last_user_audio = None
+            # The drill take also enabled the main view's "play my recording"
+            # button; re-sync the buttons to the restored recording state.
+            self._reset_to_retry()
         self._drill_engine = None
         self._drill_view = None
 

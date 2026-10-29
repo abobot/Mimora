@@ -40,6 +40,10 @@ and stay in the user data directory across upgrades.
 
 ### Fixed
 
+- Closing a word drill no longer leaves the drill's recording in the main
+  view's "play my recording": a take recorded inside the drill no longer
+  overwrites the main loop's own last take, and the button state is re-synced
+  when the drill closes.
 - Dictation mode buttons no longer take keyboard focus (`takefocus=0`), so a
   space press while typing never re-activates the last clicked control and
   cannot advance or check a sentence unintentionally.
