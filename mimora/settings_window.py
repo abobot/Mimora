@@ -202,6 +202,14 @@ def build_sections() -> tuple:
                   help=i18n.tr("full = whole sentence, fragment = 2-4 words. "
                                "Disabled while the LLM backend is off (source-text "
                                "sentences are never shortened).")),
+            Field("phrase_source", i18n.tr("Phrase source"), "choice",
+                  lambda: config.user_setting("phrase_source",
+                                              config.PHRASE_SOURCE),
+                  choices=lambda: config.PHRASE_SOURCE_CHOICES,
+                  help=i18n.tr("llm = generate phrases with the LLM, "
+                               "practice = cycle the practice text's own "
+                               "sentences in order. Also selectable by "
+                               "long-pressing the Next button.")),
             Field("reference_speed", i18n.tr("Reference speed"), "scale",
                   lambda: config.user_setting("reference_speed",
                                               config.REFERENCE_SPEED),

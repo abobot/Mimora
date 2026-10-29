@@ -10,6 +10,22 @@ and stay in the user data directory across upgrades.
 
 ### Added
 
+- **Playback speed and phrase source controls.** Long-pressing the 🔊 play
+  button opens a popup with a speed slider (0.7×–1.4×, 0.05 steps); choosing a
+  speed plays the reference at that rate immediately **and makes it the new
+  default speed** (saved to settings, so the next phrase is generated and
+  auto-played at it instead of reverting). Long-pressing the 🐢 slow button
+  opens a popup that adjusts the slow-playback multiplier in ±0.1 steps and
+  plays on confirm. Both use a **WSOLA** time-stretch (waveform-similarity
+  overlap-add): it keeps the pitch and, unlike the old lower-sample-rate
+  resample, preserves the natural timbre — a phase vocoder smears transients
+  into a "dragged"/reverby tail when slowed, which WSOLA avoids. Long-pressing
+  the ⏭ Next button opens a popup that switches the phrase source between the
+  LLM and the practice text (the text mode cycles the practice sentences in
+  order). The chosen source is saved to settings, so it survives a restart
+  (there is also a Phrase source setting in the Settings window). These popups
+  are non-modal: clicking anywhere outside one dismisses it, so they never
+  leave the interface stuck.
 - Double-clicking any word in the hero phrase now starts a single-word drill on
   that word: the word itself is the whole practice phrase (no surrounding
   sentence), so you repeat just that word. The drill runs in its own window and

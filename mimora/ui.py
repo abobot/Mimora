@@ -100,7 +100,15 @@ class ViewCallbacks:
     play_user_recording: Callable[[], None]
     play_reference: Callable[[], None]
     play_reference_slow: Callable[[], None]
+    # Long-press the Reference / Slow buttons: the controller opens a small
+    # popup near the button (positioned by its screen x/y) to pick a playback
+    # speed / slow multiplier and play the reference at it. Used for A and B.
+    on_ref_long_press: Callable[[int, int], None]
+    on_slow_long_press: Callable[[int, int], None]
     on_generate_phrase: Callable[[], None]
+    # Long-press ⏭ opens a popup to choose the phrase source (LLM / practice
+    # text); the controller flips the mode via on_phrase_source_changed.
+    on_next_long_press: Callable[[int, int], None]
     # Click on any word inside the hero phrase (mispronounced ones are
     # underlined): the controller synthesizes that single word and plays it
     # slowly.
@@ -377,12 +385,16 @@ class TrainerView:
         ref_pair.pack()
         self.ref_btn = make_icon_button(
             ref_pair, i18n.tr("🔊"), i18n.tr("Play reference"), self._cb.play_reference,
-            padx=action_btn_padx)
+            padx=action_btn_padx,
+            on_long_press=lambda: self._cb.on_ref_long_press(
+                self.ref_btn.winfo_rootx(), self.ref_btn.winfo_rooty()))
         self.ref_btn.pack(side=tk.LEFT, padx=(0, 4))
         self.ref_btn.config(state=tk.DISABLED)
         self.slow_btn = make_icon_button(
             ref_pair, i18n.tr("🐢"), i18n.tr("Play reference slowly"),
-            self._cb.play_reference_slow, padx=action_btn_padx)
+            self._cb.play_reference_slow, padx=action_btn_padx,
+            on_long_press=lambda: self._cb.on_slow_long_press(
+                self.slow_btn.winfo_rootx(), self.slow_btn.winfo_rooty()))
         # The turtle glyph sits low in its emoji box (it has a deep descender);
         # lift it with extra bottom padding so it lines up with the speaker.
         self.slow_btn.pack(side=tk.LEFT, pady=(0, 10))
@@ -411,9 +423,14 @@ class TrainerView:
         gen_col = self._control_column(controls_row)
         self.generate_btn = make_icon_button(
             gen_col, i18n.tr("⏭"), i18n.tr("Next phrase"),
-            self._cb.on_generate_phrase, padx=action_btn_padx)
+            self._cb.on_generate_phrase, padx=action_btn_padx,
+            on_long_press=lambda: self._cb.on_next_long_press(
+                self.generate_btn.winfo_rootx(), self.generate_btn.winfo_rooty()))
         self.generate_btn.pack()
         self.generate_btn.config(state=tk.DISABLED)
+        # Phrase source (D) is chosen by long-pressing ⏭: a popup offers "LLM"
+        # (fresh phrase through the active backend) and "Text" (walk the source
+        # text's own sentences verbatim). The controller owns the mode.
 
         # 4. Source text panel (editable, collapsible) - PracticePanel packs
         # itself here, so the on-screen order stays header -> practice text.

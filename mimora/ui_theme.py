@@ -87,6 +87,11 @@ FONT_SIZE_CAPTION = 9        # captions, help text, legends, sublabels
 # covers Windows and macOS; X11 (Linux) delivers Button-4/Button-5 instead.
 WHEEL_EVENTS = ("<MouseWheel>", "<Button-4>", "<Button-5>")
 
+# How long (ms) button 1 must be held before a FlatButton's optional
+# long-press action fires. Short enough to feel like a press-and-hold, long
+# enough that a deliberate click is never misread as one.
+LONG_PRESS_DELAY_MS = 450
+
 
 def wheel_scroll_units(event) -> int:
     """Mouse-wheel event -> ``yview_scroll`` units, cross-platform.
@@ -141,7 +146,7 @@ class FlatButton(tk.Label):
 
     def __init__(self, parent, command=None, activebackground=None,
                  activeforeground=None, disabledforeground=None,
-                 state=tk.NORMAL, **kwargs):
+                 state=tk.NORMAL, on_long_press=None, **kwargs):
         self._command = command
         self._normal_bg = kwargs.get("bg", kwargs.get("background"))
         self._normal_fg = kwargs.get("fg", kwargs.get("foreground"))
@@ -151,6 +156,13 @@ class FlatButton(tk.Label):
         self._state = state
         self._pressed = False
         self._focused = False
+        # Long-press: optional second action fired when button 1 is held for
+        # LONG_PRESS_DELAY_MS, consumed so the release does not also fire the
+        # click command. Used for the speed/slow popups (A and B) on the
+        # reference controls; None (default) keeps the button a plain click.
+        self._on_long_press = on_long_press
+        self._long_press_after = None
+        self._long_press_fired = False
         kwargs.setdefault("takefocus", 1)
         kwargs.setdefault("highlightthickness", 1)
         kwargs.setdefault("highlightcolor", THEME["accent"])
@@ -205,11 +217,35 @@ class FlatButton(tk.Label):
             return
         self._pressed = True
         self._paint(self._active_bg, self._active_fg)
+        # Start the long-press timer only for a pointer press (a real event
+        # with a position); keyboard activation is a click, never a long-press.
+        if (self._on_long_press is not None
+                and _event is not None and hasattr(_event, "x")):
+            self._long_press_fired = False
+            self._cancel_long_press()
+            self._long_press_after = self.after(
+                LONG_PRESS_DELAY_MS, self._fire_long_press)
+
+    def _fire_long_press(self):
+        self._long_press_after = None
+        self._long_press_fired = True
+        self._on_long_press()
+
+    def _cancel_long_press(self):
+        if self._long_press_after is not None:
+            self.after_cancel(self._long_press_after)
+            self._long_press_after = None
 
     def _on_release(self, event=None):
         was_pressed = self._pressed
+        self._cancel_long_press()
         self._apply_state()  # restore the resting look (also clears _pressed)
         if self._state == tk.DISABLED or not was_pressed:
+            return
+        # A long-press already fired its action; the release is consumed so it
+        # does not also fire the click command.
+        if self._long_press_fired:
+            self._long_press_fired = False
             return
         # tk.Button fires only when the release lands inside the widget.
         if event is not None and not (
@@ -221,7 +257,8 @@ class FlatButton(tk.Label):
 
     def _on_leave(self, _event=None):
         # Dragging off a pressed button drops the pressed look and cancels the
-        # click, matching tk.Button.
+        # click (and the pending long-press), matching tk.Button.
+        self._cancel_long_press()
         if self._pressed:
             self._apply_state()
 
@@ -324,7 +361,8 @@ class Tooltip:
             self._tip.destroy()
             self._tip = None
 
-def make_icon_button(parent, glyph, tip, command, padx=4, pady=8, font_size=None):
+def make_icon_button(parent, glyph, tip, command, padx=4, pady=8, font_size=None,
+                     on_long_press=None):
     """Build a flat, icon-only button with a hover tooltip.
 
     Shared by the main control row and the drill/dictation mode UIs so every
@@ -334,7 +372,8 @@ def make_icon_button(parent, glyph, tip, command, padx=4, pady=8, font_size=None
     caller packs it into its parent.
 
     ``font_size`` defaults to :data:`FONT_SIZE_CONTROL_ICON` so the glyph is
-    larger than body text; pass a smaller value for compact rows.
+    larger than body text; pass a smaller value for compact rows. ``on_long_press``
+    is forwarded to :class:`FlatButton` (None = no long-press action).
     """
     if font_size is None:
         font_size = FONT_SIZE_CONTROL_ICON
@@ -344,6 +383,7 @@ def make_icon_button(parent, glyph, tip, command, padx=4, pady=8, font_size=None
                      activebackground=THEME["bg_accent_active"],
                      activeforeground=THEME["text_bright"],
                      bd=0, padx=padx, pady=pady, cursor="hand2",
-                     disabledforeground=THEME["text_disabled"])
+                     disabledforeground=THEME["text_disabled"],
+                     on_long_press=on_long_press)
     Tooltip(btn, tip)
     return btn

@@ -77,6 +77,13 @@ from mimora.playback import PlaybackController
 from mimora.session import SessionState
 from mimora.settings_ctl import SettingsGlue
 from mimora.ui import TrainerView, ViewCallbacks, LENGTH_FEW_WORDS
+from mimora.ui_theme import (
+    FONT_FAMILY,
+    FONT_SIZE_BODY,
+    FONT_SIZE_SMALL,
+    THEME,
+    FlatButton,
+)
 from mimora.ui_history_browse import HistoryBrowseView, HistoryCallbacks
 from mimora.ui_stats import StatsView, StatsCallbacks
 from mimora.ui_weakness import WeaknessView, WeaknessCallbacks
@@ -87,6 +94,98 @@ from mimora.settings_window import (
     SettingsCallbacks,
     SettingsWindow,
 )
+
+
+def _time_stretch(audio: np.ndarray, speed: float) -> np.ndarray:
+    """Return ``audio`` time-stretched by ``speed`` (pitch preserved).
+
+    ``speed < 1.0`` plays slower (longer), ``speed > 1.0`` faster (shorter),
+    matching the reference-playback speed semantics. Unlike lowering the
+    effective sample rate (which slows playback by resampling and also shifts
+    the pitch down - the timbre change the user heard), this keeps the pitch,
+    so slowing a reference for practice does not make the voice sound deeper.
+    The output stays at ``audio``'s sample rate, so the caller plays it
+    unchanged.
+
+    This is a **WSOLA** (Waveform-Similarity Overlap-Add) stretch - a pure
+    time-domain method that picks each synthesis window from a short search
+    window to maximize correlation with the already-written output. It needs
+    no spectral transform, so it preserves transients and the natural timbre
+    (a phase vocoder - what librosa.effects.time_stretch uses - smears
+    transients into a "dragged" or reverby tail when slowed, which is exactly
+    the artifact the user heard). Pure NumPy, so it imports no librosa and
+    stays fast (tens of ms for a phrase).
+
+    The window/search geometry is tuned for speech: a 20 ms synthesis window
+    (transient scale), 50% overlap, and a 10 ms search window around the
+    analysis position.
+    """
+    if speed == 1.0 or audio is None or audio.size == 0:
+        return np.ascontiguousarray(audio, dtype=np.float32)
+    sample_rate = config.AUDIO_SAMPLE_RATE
+    frame = max(64, int(sample_rate * _WSOLA_FRAME_MS / 1000.0))
+    hop = max(32, int(frame * (1.0 - _WSOLA_OVERLAP)))
+    search = max(16, int(sample_rate * _WSOLA_SEARCH_MS / 1000.0))
+
+    src = np.asarray(audio, dtype=np.float64).ravel()
+    n = src.size
+    window = np.hanning(frame + 2)[1:-1]
+
+    # Precompute every candidate frame and its energy once (vectorized), then
+    # each synthesis step is a single correlation against the reference tail.
+    segs = np.lib.stride_tricks.sliding_window_view(src, frame)
+    seg_energy = np.einsum('ij,ij->i', segs, segs) + 1e-12
+    n_segs = segs.shape[0]
+
+    ana_step = speed * hop
+    out_len = int(round(n / speed))
+    out = np.zeros(out_len + frame, dtype=np.float64)
+    out_pos = 0
+    ana = 0.0
+
+    def best_offset(reference, lo, hi):
+        """Choose the source offset in [lo, hi] best matching ``reference``."""
+        if reference is None:
+            return min(int(round(ana)), n_segs - 1)
+        lo = max(0, lo)
+        hi = min(n_segs - 1, hi)
+        if hi < lo:
+            return min(int(round(ana)), n_segs - 1)
+        refn = reference - reference.mean()
+        re = np.dot(refn, refn) + 1e-12
+        corr = segs[lo:hi + 1] @ refn
+        denom = np.sqrt(re * seg_energy[lo:hi + 1])
+        return int(lo + int(np.argmax(corr / denom)))
+
+    while out_pos < out_len:
+        ideal = int(round(ana))
+        reference = out[out_pos - frame:out_pos] if out_pos >= frame else None
+        off = best_offset(reference, ideal - search, ideal + search)
+        seg = src[off:off + frame]
+        w = window[:seg.size]
+        base = out_pos
+        end = min(out.size, base + seg.size)
+        out[base:end] += seg[:end - base] * w[:end - base]
+        ana += ana_step
+        out_pos = base + hop
+
+    out = out[:out_len]
+    peak = np.abs(out).max()
+    inpeak = np.abs(src).max()
+    if peak > 1e-9 and inpeak > 1e-9:
+        out = out * (inpeak / peak)
+    return np.ascontiguousarray(out, dtype=np.float32)
+
+
+# WSOLA geometry, tuned for speech (see _time_stretch). The 0.6 overlap is
+# deliberate: at 0.5 the correlation match cannot keep the cross-faded windows
+# phase-aligned, so the harmonics partially cancel and the result sounds
+# metallic/"mechanical"; 0.6 keeps the harmonic ratio at the natural level while
+# the amplitude modulation stays low (both measured against the un-stretched
+# voice).
+_WSOLA_FRAME_MS = 20.0
+_WSOLA_OVERLAP = 0.6
+_WSOLA_SEARCH_MS = 10.0
 
 
 class PronunciationTrainerGUI:
@@ -265,6 +364,14 @@ class PronunciationTrainerGUI:
             logging.info("Using llama-server LLM backend (server subprocess).")
             self.llm_mgr = LLMManager()
 
+        # Phrase source for the main loop, chosen by the toggle near the Next
+        # phrase button: "llm" (default) generates a fresh phrase through the
+        # active backend; "practice" walks the source text's own sentences
+        # verbatim. A separate provider instance keeps its own walk so toggling
+        # does not share state with the "off"-backend fallback above.
+        self._phrase_source_mode: str = config.PHRASE_SOURCE
+        self._source_text_provider = SourceTextPhraseProvider()
+
         # Compose the view: it builds and owns the widgets, and forwards widget
         # callbacks back to this controller through an explicit ViewCallbacks
         # bundle (the view never holds the controller itself).
@@ -327,7 +434,10 @@ class PronunciationTrainerGUI:
             play_user_recording=self.play_user_recording,
             play_reference=self.play_reference,
             play_reference_slow=self.play_reference_slow,
+            on_ref_long_press=self._on_ref_long_press,
+            on_slow_long_press=self._on_slow_long_press,
             on_generate_phrase=self.on_generate_phrase,
+            on_next_long_press=self._on_next_long_press,
             on_word_clicked=self.on_word_clicked,
             on_word_drill_clicked=self._on_word_drill_clicked,
             on_word_single_drill_clicked=self._on_word_single_drill_clicked,
@@ -1522,6 +1632,11 @@ class PronunciationTrainerGUI:
         elif key == "phrase_length":
             config.PHRASE_LENGTH = value
             self.on_length_changed()
+        elif key == "phrase_source":
+            if value in config.PHRASE_SOURCE_CHOICES:
+                self._on_phrase_source_changed(value)
+            else:
+                self.settings_ctl.persist("phrase_source", config.PHRASE_SOURCE)
         elif key == "translation_language":
             config.TRANSLATION_LANGUAGE = value
             self.on_translation_language_changed()
@@ -1582,18 +1697,28 @@ class PronunciationTrainerGUI:
         try:
             audio = self.tts_mgr.synthesize(PREVIEW_PHRASE, voice=voice)
             if audio.size > 0:
-                # Honor the current Reference speed setting, same trick as
-                # _play_reference_at: play the backend-rate waveform at a
-                # lowered sample rate so the preview actually demonstrates the
-                # speed the user just picked, instead of always playing at 1.0x.
-                effective_sr = int(self.tts_mgr.sample_rate * self._selected_speed())
-                self.playback.play_with_face(audio, effective_sr, stop_event)
+                # Honor the current Reference speed setting, same as
+                # _play_reference_at: time-stretch the preview so it actually
+                # demonstrates the speed the user just picked (pitch preserved)
+                # instead of always playing at 1.0x.
+                audio = _time_stretch(audio, self._selected_speed())
+                self.playback.play_with_face(audio, self.tts_mgr.sample_rate,
+                                             stop_event)
         except Exception:
             logging.exception("Voice preview error:")
             self.root.after(0, self.view.append_error_msg,
                             i18n.tr("Could not preview voice {voice}.", voice=voice))
         finally:
             self.root.after(0, self.playback.finished, stop_event)
+
+    def _on_phrase_source_changed(self, mode: str):
+        """Switch the phrase source between "llm" and "practice" (D)."""
+        if mode not in ("llm", "practice"):
+            return
+        self._phrase_source_mode = mode
+        # Persist so the choice survives a restart (default is "llm").
+        config.PHRASE_SOURCE = mode
+        self.settings_ctl.persist("phrase_source", mode)
 
     def on_generate_phrase(self):
         if not self.app_ready or self.is_generating:
@@ -1627,22 +1752,28 @@ class PronunciationTrainerGUI:
         stop_event = self.playback.new_event()
 
         threading.Thread(target=self._generate_and_prompt,
-                         args=(source_text, length, language, voice, speed, stop_event),
+                         args=(source_text, length, language, voice, speed,
+                               self._phrase_source_mode, stop_event),
                          daemon=True).start()
 
     def _generate_and_prompt(self, source_text: str, length: str,
                              language: str, voice: str, speed: float,
+                             phrase_source: str,
                              stop_event: threading.Event):
         """Generate one phrase, synthesize the reference, and play it. (Background thread.)
 
-        All selector values (``length``, ``language``, ``voice``, ``speed``) are
-        captured by the caller on the Tk main thread and passed in as plain
-        values, and ``stop_event`` was installed there as well (see
-        PlaybackController.new_event): this worker must never read widgets or mutate the
-        shared playback state (Tk is not thread-safe).
+        All selector values (``length``, ``language``, ``voice``, ``speed``,
+        ``phrase_source``) are captured by the caller on the Tk main thread and
+        passed in as plain values, and ``stop_event`` was installed there as
+        well (see PlaybackController.new_event): this worker must never read
+        widgets or mutate the shared playback state (Tk is not thread-safe).
         """
         try:
-            phrase = self.llm_mgr.generate_phrase(source_text, length=length)
+            if phrase_source == "practice":
+                phrase = self._source_text_provider.generate_phrase(
+                    source_text, length=length)
+            else:
+                phrase = self.llm_mgr.generate_phrase(source_text, length=length)
             if not phrase:
                 self.root.after(0, self._phrase_generation_failed,
                                 i18n.tr("The model returned no phrase. Try again."))
@@ -1680,15 +1811,16 @@ class PronunciationTrainerGUI:
             # mode forces auto-play: there is nothing to shadow without the
             # reference being heard.
             if config.AUTO_PLAY_PHRASE or config.SHADOWING_ENABLED:
-                # Honor the selected reference speed (see play_reference for the
-                # lowered-sample-rate slowing approach) instead of always 1.0×.
-                effective_sr = int(self.tts_mgr.sample_rate * speed)
+                # Honor the selected reference speed (see _play_reference_at):
+                # time-stretch preserves pitch, so a slow replay does not shift
+                # the voice's timbre.
+                audio = _time_stretch(self.reference_audio, speed)
                 # Shadowing: start the take at the same moment the reference
                 # begins, so the user speaks *along with* it (no prompt pause).
                 # Scheduled first so the recorder is live before the speaker.
                 if config.SHADOWING_ENABLED:
                     self.root.after(0, self._start_shadowing_take)
-                self.playback.play_with_face(self.reference_audio, effective_sr,
+                self.playback.play_with_face(audio, self.tts_mgr.sample_rate,
                                              stop_event)
 
             # Re-enable the controls now, before translating: NLLB translation is
@@ -2325,6 +2457,191 @@ class PronunciationTrainerGUI:
         """Replay the reference one step slower than normal (the Slow ▶ button)."""
         self._play_reference_at(self._slow_speed())
 
+    # ------------------------------------------------------------------
+    # Long-press speed / slow popups (A and B)
+    # ------------------------------------------------------------------
+    def _on_ref_long_press(self, x: int, y: int):
+        """Long-press 🔊: open a speed slider, play the reference on confirm."""
+        if self.reference_audio is None or self.reference_audio.size == 0:
+            return
+        speed = float(config.REFERENCE_SPEED)
+        win, catcher = self._make_popup(x, y)
+        tk.Label(win, text=i18n.tr("Play at speed"),
+                 font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"),
+                 bg=THEME["bg_panel"], fg=THEME["text"]).pack(pady=(8, 2))
+        value_label = tk.Label(win, text=f"{speed:.2f}×",
+                               font=(FONT_FAMILY, FONT_SIZE_BODY),
+                               bg=THEME["bg_panel"], fg=THEME["accent"])
+        value_label.pack()
+
+        scale = tk.Scale(
+            win, from_=config.REFERENCE_SPEED_MIN, to=config.REFERENCE_SPEED_MAX,
+            resolution=config.REFERENCE_SPEED_STEP, orient=tk.HORIZONTAL,
+            length=220, variable=tk.DoubleVar(value=speed),
+            bg=THEME["bg_panel"], fg=THEME["text"],
+            highlightthickness=0, command=lambda _v: value_label.config(
+                text=f"{float(scale.get()):.2f}×"))
+        scale.pack(padx=10, pady=4)
+        self._popup_buttons(
+            win,
+            i18n.tr("Play"),
+            lambda: self._confirm_popup(win, catcher, scale.get(), persist=True),
+            i18n.tr("Cancel"),
+            lambda: self._dismiss_popup(win, catcher))
+
+    def _on_slow_long_press(self, x: int, y: int):
+        """Long-press 🐢: open a slow-multiplier stepper, play on confirm."""
+        if self.reference_audio is None or self.reference_audio.size == 0:
+            return
+        multiplier = float(self._slow_speed())
+        win, catcher = self._make_popup(x, y)
+        tk.Label(win, text=i18n.tr("Slow multiplier"),
+                 font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"),
+                 bg=THEME["bg_panel"], fg=THEME["text"]).pack(pady=(8, 2))
+        value_label = tk.Label(win, text=f"{multiplier:.2f}×",
+                               font=(FONT_FAMILY, FONT_SIZE_BODY),
+                               bg=THEME["bg_panel"], fg=THEME["accent"])
+        value_label.pack()
+
+        state = {"multiplier": multiplier}
+
+        def clamp_and_update():
+            state["multiplier"] = round(max(config.REFERENCE_SLOW_MIN,
+                                            min(config.REFERENCE_SPEED_MAX,
+                                                state["multiplier"])), 2)
+            value_label.config(text=f"{state['multiplier']:.2f}×")
+
+        def adjust(delta):
+            state["multiplier"] += delta
+            clamp_and_update()
+
+        step_row = tk.Frame(win, bg=THEME["bg_panel"])
+        step_row.pack(pady=4)
+        for glyph, delta in (("-0.1", -config.REFERENCE_SLOW_DELTA),
+                             ("+0.1", config.REFERENCE_SLOW_DELTA)):
+            FlatButton(step_row, text=glyph, font=(FONT_FAMILY, FONT_SIZE_SMALL),
+                       bg=THEME["bg_accent"], fg=THEME["text_accent"],
+                       activebackground=THEME["bg_accent_active"],
+                       activeforeground=THEME["text_bright"],
+                       bd=0, padx=10, pady=3, cursor="hand2",
+                       command=lambda d=delta: adjust(d)).pack(side=tk.LEFT, padx=4)
+        self._popup_buttons(
+            win,
+            i18n.tr("Play"),
+            lambda: self._confirm_popup(win, catcher, state["multiplier"]),
+            i18n.tr("Cancel"),
+            lambda: self._dismiss_popup(win, catcher))
+
+    def _on_next_long_press(self, x: int, y: int):
+        """Long-press ⏭: choose the phrase source (LLM or practice text).
+
+        The active mode is highlighted; choosing one flips the mode via
+        :meth:`_on_phrase_source_changed` and dismisses the popup. Replacing the
+        on-screen toggle, so the control column stays compact.
+        """
+        win, catcher = self._make_popup(x, y)
+        tk.Label(win, text=i18n.tr("Phrase source"),
+                 font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"),
+                 bg=THEME["bg_panel"], fg=THEME["text"]).pack(pady=(8, 2))
+        row = tk.Frame(win, bg=THEME["bg_panel"])
+        row.pack(padx=8, pady=(0, 4))
+        for mode, label in (("llm", "LLM"), ("practice", "Text")):
+            active = (mode == self._phrase_source_mode)
+            FlatButton(
+                row, text=label, font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"),
+                bg=THEME["accent"] if active else THEME["bg_accent"],
+                fg=THEME["text_bright"] if active else THEME["text_accent"],
+                activebackground=THEME["bg_accent_active"],
+                activeforeground=THEME["text_bright"],
+                bd=0, padx=10, pady=3, cursor="hand2",
+                command=lambda m=mode: self._choose_phrase_source(m, win, catcher),
+            ).pack(side=tk.LEFT, padx=3)
+        self._popup_buttons(
+            win,
+            i18n.tr("Cancel"),
+            lambda: self._dismiss_popup(win, catcher),
+            None, None, single=True)
+
+    def _choose_phrase_source(self, mode: str, win, catcher):
+        """Apply a phrase-source choice from the ⏭ popup and close it."""
+        self._on_phrase_source_changed(mode)
+        self._dismiss_popup(win, catcher)
+
+    def _make_popup(self, x: int, y: int):
+        """Create a small borderless popup near (x, y) plus a click-catcher.
+
+        Returns ``(win, catcher)``. The popup is intentionally **non-modal**:
+        a ``grab_set`` on a borderless (``overrideredirect``) window swallows
+        every pointer event meant for the main window on Windows, which looks
+        like a hard freeze. Instead a transparent full-screen catcher sits
+        behind the popup: a click anywhere outside it dismisses the popup
+        (:meth:`_dismiss_popup`), so the UI is never stuck.
+        """
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        win.configure(bg=THEME["bg_panel"],
+                      highlightthickness=1, highlightbackground=THEME["border"])
+        win.geometry(f"+{x}+{y}")
+        win.transient(self.root)
+        win.bind("<Escape>", lambda _e: self._dismiss_popup(win, catcher))
+        # Full-screen transparent catcher *behind* the popup. It is below in the
+        # stacking order, so clicks on the popup's own widgets still reach them;
+        # a click anywhere else lands on the catcher and dismisses.
+        catcher = tk.Toplevel(self.root)
+        catcher.overrideredirect(True)
+        catcher.attributes("-alpha", 0.01)
+        catcher.geometry(f"0x0+0+0")
+        catcher.transient(self.root)
+        catcher.bind("<ButtonPress-1>",
+                     lambda _e: self._dismiss_popup(win, catcher))
+        catcher.geometry(f"{self.root.winfo_screenwidth()}x"
+                         f"{self.root.winfo_screenheight()}+0+0")
+        catcher.lower()
+        win.lift()
+        return win, catcher
+
+    def _dismiss_popup(self, win, catcher):
+        """Close a popup and its click-catcher, tolerating a close twice."""
+        for widget in (win, catcher):
+            try:
+                if widget is not None and widget.winfo_exists():
+                    widget.destroy()
+            except tk.TclError:
+                pass
+
+    def _popup_buttons(self, win, ok_text, ok_cmd, cancel_text, cancel_cmd,
+                       single=False):
+        row = tk.Frame(win, bg=THEME["bg_panel"])
+        row.pack(pady=(6, 8))
+        FlatButton(row, text=ok_text, font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"),
+                   bg=THEME["accent"], fg=THEME["text_bright"],
+                   activebackground=THEME["bg_accent_active"],
+                   activeforeground=THEME["text_bright"],
+                   bd=0, padx=12, pady=3, cursor="hand2",
+                   command=ok_cmd).pack(side=tk.LEFT, padx=4)
+        if not single and cancel_text is not None:
+            FlatButton(row, text=cancel_text, font=(FONT_FAMILY, FONT_SIZE_SMALL),
+                       bg=THEME["bg_accent"], fg=THEME["text_accent"],
+                       activebackground=THEME["bg_accent_active"],
+                       activeforeground=THEME["text_bright"],
+                       bd=0, padx=12, pady=3, cursor="hand2",
+                       command=cancel_cmd).pack(side=tk.LEFT, padx=4)
+
+    def _confirm_popup(self, win, catcher, speed, persist=False):
+        """Dismiss the popup and play the reference at the chosen speed.
+
+        With ``persist=True`` (the 🔊 speed popup) the chosen speed becomes the
+        new default playback speed: ``config.REFERENCE_SPEED`` is updated and
+        saved to settings.json, so the next phrase is generated and auto-played
+        at this speed instead of reverting to the previous default.
+        """
+        self._dismiss_popup(win, catcher)
+        speed = float(speed)
+        if persist:
+            config.REFERENCE_SPEED = speed
+            self.settings_ctl.persist("reference_speed", speed)
+        self._play_reference_at(speed)
+
     def _speak_word_at(self, word: str, speed: float, status: str):
         """Synthesize a single word and play it at ``speed``.
 
@@ -2579,15 +2896,14 @@ class PronunciationTrainerGUI:
         """Play the current reference audio at *speed* (1.0 = normal)."""
         if self.reference_audio is None or self.reference_audio.size == 0:
             return
-        # Slowing is done by lowering the effective sample rate: playing e.g.
-        # 24 kHz audio at 12 kHz (0.5×) makes it twice as long. This is the
-        # simple resampling approach - it also shifts the pitch down, no extra
-        # deps - and it works with any backend rate (24 kHz Kokoro, 44.1 kHz
-        # Supertonic), so slow replay needs no backend-specific code.
-        effective_sr = int(self.tts_mgr.sample_rate * speed)
+        # Slowing is a time-stretch that preserves pitch (see _time_stretch):
+        # the voice keeps its natural timbre at any speed, instead of the old
+        # lowered-sample-rate approach that also dropped the pitch. The output
+        # is at the reference's native rate, so playback uses it unchanged.
+        audio = _time_stretch(self.reference_audio, speed)
         status = i18n.tr("Playing reference...") if speed == 1.0 \
             else i18n.tr("Playing reference ({speed}×)...", speed=f"{speed:g}")
-        self.playback.play_async(self.reference_audio, effective_sr, status)
+        self.playback.play_async(audio, self.tts_mgr.sample_rate, status)
 
     def play_user_recording(self):
         if self.last_user_audio is None or self.last_user_audio.size == 0:

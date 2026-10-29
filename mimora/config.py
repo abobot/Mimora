@@ -99,6 +99,7 @@ _KNOWN_USER_KEYS = {
     "phrase_gen_level",
     "user_name",
     "phrase_length",
+    "phrase_source",
     "reference_speed",
     "random_voice",
     "playback_own_recording",
@@ -170,6 +171,7 @@ USER_SETTING_DEFAULTS = {
     "phrase_gen_level": 3,
     "user_name": "",
     "phrase_length": "full",
+    "phrase_source": "llm",
     "reference_speed": 1.0,
     "random_voice": False,
     "playback_own_recording": True,
@@ -1044,6 +1046,17 @@ if PHRASE_LENGTH not in PHRASE_LENGTH_CHOICES:
     print(f"[config] settings.json: phrase_length must be 'full' or "
           f"'fragment', got {PHRASE_LENGTH!r}; using 'full'", file=sys.stderr)
     PHRASE_LENGTH = "full"
+
+# Phrase source selected by long-pressing the Next button ("phrase_source"),
+# persisted on change: "llm" → generate phrases with the LLM, "practice" →
+# cycle the practice text's own sentences in order (mimora/phrase_source.py).
+PHRASE_SOURCE_CHOICES = ("llm", "practice")
+PHRASE_SOURCE = _USER.get("phrase_source", "llm")
+if PHRASE_SOURCE not in PHRASE_SOURCE_CHOICES:
+    print(f"[config] settings.json: phrase_source must be 'llm' or "
+          f"'practice', got {PHRASE_SOURCE!r}; using 'llm'", file=sys.stderr)
+    PHRASE_SOURCE = "llm"
+    _USER["phrase_source"] = PHRASE_SOURCE
 
 # Offline translation engine: a dedicated NLLB-200 model (mimora/translator.py),
 # NOT the chat LLM - the local 3B LLM produced unusable translations (empty CJK,

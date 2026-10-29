@@ -78,6 +78,9 @@ _ZH: Dict[str, str] = {
     "⏭": "⏭",
     "Play reference": "播放参考发音",
     "Play reference slowly": "慢速播放参考发音",
+    "Play at speed": "以指定速度播放",
+    "Slow multiplier": "慢速倍率",
+    "Phrase source": "短语来源",
     "Reference ▶": "参考发音 ▶",
     "Slow ▶": "慢速 ▶",
     "Record (Click/Press SPACE)": "录音（点击/按空格键）",
@@ -355,6 +358,9 @@ _ZH: Dict[str, str] = {
         "{current} / {total}  ·  通过 {passed}",
     "Play reference": "播放参考发音",
     "Play reference slowly": "慢速播放参考发音",
+    "Play at speed": "以指定速度播放",
+    "Slow multiplier": "慢速倍率",
+    "Phrase source": "短语来源",
     "Hint": "提示",
     "Show sentence": "显示例句",
     "Check answer": "检查答案",
@@ -463,6 +469,9 @@ _ZH: Dict[str, str] = {
     "Phrase length": "句子长度",
     "full = whole sentence, fragment = 2-4 words. Disabled while the LLM backend is off (source-text sentences are never shortened).":
         "full = 完整句子，fragment = 2-4 个词。LLM 后端关闭时此项禁用（源文本句子从不缩短）。",
+    "Phrase source": "短语来源",
+    "llm = generate phrases with the LLM, practice = cycle the practice text's own sentences in order. Also selectable by long-pressing the Next button.":
+        "llm = 由 LLM 生成短语，practice = 按顺序循环练习文本自己的句子。也可通过长按“下一句”按钮选择。",
     "Reference speed": "参考语速",
     "Normal reference playback speed. The Slow ▶ button next to Reference plays 0.1 below this (e.g. 0.9 -> 0.8).":
         "正常参考播放语速。“参考发音”旁的“慢速 ▶”按钮以比此低 0.1 的速度播放（例如 0.9 → 0.8）。",
