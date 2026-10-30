@@ -28,6 +28,7 @@ import time
 import threading
 import uuid
 import wave
+import datetime as _datetime
 from typing import Dict, Optional
 import os
 
@@ -1137,6 +1138,25 @@ class PronunciationTrainerGUI:
         phrase = getattr(self, "current_phrase", None) or ""
         return {"type": "free_form", "value": phrase or "The thought is a thought."}
 
+    def _weak_words_for_drill(self) -> tuple:
+        """Return the weak words a drill should exercise first (pure, testable).
+
+        Reads the word leader board from the last 30 takes and returns the
+        ``need_practice``/``watch`` words as a tuple. Empty when the analysis
+        is unavailable or the stats store is empty, so the drill falls back
+        to the plain source order.
+        """
+        try:
+            from mimora.analysis import aggregate_error_words, top_words
+            store = getattr(self, "stats_store", None)
+            if store is None:
+                return ()
+            word_agg = aggregate_error_words(store.all_takes())
+            return tuple(top_words(word_agg))
+        except Exception:
+            logging.exception("Could not compute weak words for drill:")
+            return ()
+
     def _drill_take_from_history(self, take: dict) -> None:
         """P2#6: start a Drill on one past take's weakest word.
 
@@ -1183,6 +1203,7 @@ class PronunciationTrainerGUI:
             source_text=self._get_source_text(),
             pass_threshold=config.DRILL_PASS_THRESHOLD,
             max_attempts=config.DRILL_MAX_ATTEMPTS,
+            priority_words=self._weak_words_for_drill(),
         )
         self._drill_engine = engine
 
@@ -1247,6 +1268,12 @@ class PronunciationTrainerGUI:
             result = details.get("result")
             if result is not None:
                 raw_score = float(getattr(result, "score", raw_score))
+        # A 0-score take is a failed/empty recording: it must not count as a
+        # drill attempt (it would advance the attempt counter and drag the
+        # average down for a take that never really happened).
+        if raw_score <= 0.0:
+            logging.info("Drill take scored 0 - discarding (not recorded).")
+            return
         engine.record_take(phrase, raw_score)
         # Attach the recording written for this take, so the drill session
         # record (and the history browser) can replay it later. The audio was
@@ -1387,7 +1414,25 @@ class PronunciationTrainerGUI:
                 on_cancel=lambda: self._cancel_dictation_if_active(),
                 get_practice_text=self._get_source_text,
                 on_source_changed=lambda text: engine.set_source_text(text),
+                on_max_attempts_changed=self._dictation_max_attempts_changed,
             ), engine=engine))
+
+    def _dictation_max_attempts_changed(self, limit: int) -> None:
+        """Persist a new per-session sentence limit and apply it live.
+
+        The long-press popup in the dictation view offers -1/+1 around the
+        current limit; this writes the choice to settings.json (so the next
+        dictation session starts with it) and updates the running engine's
+        limit in place, then refreshes the counter.
+        """
+        limit = max(1, min(100, int(limit)))
+        self.settings_ctl.persist("dictation_max_attempts", limit)
+        config.DICTATION_MAX_ATTEMPTS = limit
+        engine = self._dictation_engine
+        if engine is not None:
+            engine.max_attempts = limit
+        if self._dictation_view is not None:
+            self._dictation_view._refresh_progress_label()
 
     def _dictation_play(self, slow: bool = False) -> None:
         """Synthesize and play the current dictation sentence (TTS).
@@ -2828,13 +2873,27 @@ class PronunciationTrainerGUI:
         transcript (``details["transcript"]``). When present and stats
         persistence is on, we persist the take with error words, phoneme
         scores and the audio length pulled off the just-recorded waveform.
+
+        A take that scored zero is a failed/empty recording, not a practice
+        attempt: it is discarded here (no session tally, no review advance,
+        no persistence) so a 0 never pollutes the stats or the streak.
         """
+        # Raw 0-100 engine score decides the discard, not the tally value
+        # (which is on the 0-5 grade axis for the phoneme engine).
+        result = details.get("result") if details is not None else None
+        raw_score = float(getattr(result, "score", score) or 0.0)
+        if raw_score <= 0.0:
+            logging.info("Take scored 0 - discarding (not recorded, not saved).")
+            # Still re-enable the loop controls so the user can retry.
+            self.view._set_actions(generate=True, reference=True,
+                                   user=self._has_user_recording(), test=True)
+            return
+
         stats = self.session.record_take(phrase, score, graded)
         if stats is not None:
             self.view.update_session_stats(*stats)
         # Advance the phrase's Ebbinghaus review schedule, best-effort: a
         # review-persistence failure must never surface into the practice loop.
-        result = details.get("result") if details is not None else None
         passed = bool(getattr(result, "passed", False)) if result is not None else False
         self._record_review_result(phrase, passed)
         # Persistence path: only when the store is enabled and we have
@@ -3100,7 +3159,7 @@ class PronunciationTrainerGUI:
 
 def _date_stamp() -> str:
     """Compact date stamp for export file names (2026-10-26)."""
-    return datetime.now().strftime("%Y-%m-%d")
+    return _datetime.datetime.now().strftime("%Y-%m-%d")
 
 
 def _log_spacy_model_location() -> None:

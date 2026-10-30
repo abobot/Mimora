@@ -87,6 +87,12 @@ class ExportReportButtonsTest(unittest.TestCase):
         self.assertIn("Export JSON", texts)
         self.assertIn("Export CSV", texts)
 
+    def test_activity_and_duration_sections_rendered(self):
+        # The heatmap frame and the per-day duration table both exist after a
+        # refresh with no sessions (they render an empty state gracefully).
+        self.assertTrue(hasattr(self.view, "_activity"))
+        self.assertTrue(hasattr(self.view, "_duration"))
+
 
 class NoReportButtonsWithoutHandlersTest(unittest.TestCase):
     @classmethod

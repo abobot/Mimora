@@ -109,6 +109,10 @@ class DrillEngine:
     max_attempts: int = 10
     # How many consecutive passes are needed to declare "mastered".
     mastered_streak_required: int = 3
+    # Words the learner is weakest at (from the weakness analysis). When
+    # set, candidate phrases containing any of these words are put first,
+    # so the drill exercises the weak spots before the rest of the source.
+    priority_words: Tuple[str, ...] = ()
 
     # Populated by the controller.
     phrases: List[str] = field(default_factory=list)
@@ -217,6 +221,21 @@ class DrillEngine:
         # Fall back to the synthetic pool when the source had no hits.
         if not phrases:
             phrases = list(_SYNTHETIC_PHRASES)
+        # Weak words first (feature: "exercises prioritize weak words, then
+        # the rest of the source"). A stable partition keeps the source
+        # order inside each group, so phrases containing a priority word
+        # lead the drill without shuffling the rest.
+        if self.priority_words:
+            priority = set(w.lower() for w in self.priority_words)
+            # Match on word boundaries, not substrings: a priority word like
+            # "i" (a real weak word for many learners) would otherwise match
+            # inside "this", "think", "with" ... and pull nearly every phrase
+            # into the ahead group, defeating the priority ordering.
+            ahead = [p for p in phrases
+                     if any(re.search(rf"\b{re.escape(w)}\b", p.lower())
+                            for w in priority)]
+            if ahead:
+                phrases = ahead + [p for p in phrases if p not in ahead]
         # Deduplicate while preserving order.
         seen = set()
         unique: List[str] = []

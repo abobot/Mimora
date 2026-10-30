@@ -22,11 +22,12 @@ suggestion to the Drill engine.
 
 from __future__ import annotations
 
+import datetime
 import logging
 import tkinter as tk
 from dataclasses import dataclass
 from tkinter import messagebox
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mimora import config, i18n, window_icon
 from mimora.analysis import (
@@ -80,6 +81,57 @@ def _status_label(status: str) -> str:
     }.get(status, "  ")
 
 
+# Statistics range choices shown in the weakness panel. Each is either a
+# time window in days (``days``) or a fixed count of recent takes (``count``),
+# and the label is localized at render time. The order here is the dropdown
+# order: time windows first (newest data most relevant), then take counts.
+RANGE_OPTIONS = (
+    ("last_7d", "Last 7 days", {"days": 7}),
+    ("last_14d", "Last 14 days", {"days": 14}),
+    ("last_30d", "Last 30 days", {"days": 30}),
+    ("last_60d", "Last 60 days", {"days": 60}),
+    ("last_30", "Last 30 takes", {"count": 30}),
+    ("last_100", "Last 100 takes", {"count": 100}),
+    ("last_300", "Last 300 takes", {"count": 300}),
+)
+DEFAULT_RANGE = "last_30d"
+
+
+def _filter_takes_by_range(raw_takes: List[Any], range_key: str
+                           ) -> List[Any]:
+    """Slice the raw ``[(session, take), ...]`` list to the chosen range.
+
+    ``days`` windows are applied by the take's ISO timestamp (newer than
+    ``now - days``); ``count`` windows take the last N takes. An unknown or
+    empty range key returns the list unchanged.
+    """
+    spec = next((s for k, _l, s in RANGE_OPTIONS if k == range_key), None)
+    if not spec:
+        return raw_takes
+    days = spec.get("days")
+    if days is not None:
+        cutoff = datetime.datetime.now().astimezone() - datetime.timedelta(days=days)
+        out = []
+        for item in raw_takes:
+            take = item[1] if isinstance(item, tuple) and len(item) == 2 else item
+            ts = take.get("timestamp")
+            try:
+                if ts:
+                    parsed = datetime.datetime.fromisoformat(ts)
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(
+                            tzinfo=datetime.datetime.now().astimezone().tzinfo)
+                    if parsed >= cutoff:
+                        out.append(item)
+            except (TypeError, ValueError):
+                continue
+        return out
+    count = spec.get("count")
+    if count is not None:
+        return raw_takes[-count:]
+    return raw_takes
+
+
 class WeaknessView:
     """Toplevel with tabs for overview / words / phonemes."""
 
@@ -88,6 +140,7 @@ class WeaknessView:
         self.root = root
         self._cb = callbacks
         self._native = native_language or "zh"
+        self._range_key = DEFAULT_RANGE
         self._window = tk.Toplevel(root)
         self._window.title(i18n.tr("Pronunciation weakness"))
         self._window.geometry("900x640")
@@ -116,6 +169,30 @@ class WeaknessView:
         ttk.Button(header, text=i18n.tr("Close"),
                    command=self._window.destroy).pack(side=tk.RIGHT)
 
+        # Statistics range selector (near 7d/14d/30d/60d, or last 30/100/300
+        # takes). Changing it re-runs refresh() so every tab re-aggregates
+        # over the chosen window. It sits left of Refresh in the header.
+        tk.Label(header, text=i18n.tr("Range:"),
+                 font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                 bg=THEME["bg_main"], fg=THEME["text_dim"]
+                 ).pack(side=tk.LEFT, padx=(8, 2))
+        labels = {key: i18n.tr(label) for key, label, _spec in RANGE_OPTIONS}
+        # The StringVar MUST be bound to the combobox as textvariable, or it
+        # keeps its initial value and _on_range_selected always reads the
+        # default range - the title then never changes when the user picks
+        # another window. It starts at the *label* of the default key, since
+        # what the user selects is the localized label, not the key.
+        self._range_var = tk.StringVar(value=labels[self._range_key])
+        self._range_combo = ttk.Combobox(
+            header, state="readonly", width=16,
+            textvariable=self._range_var,
+            values=[labels[key] for key, _l, _s in RANGE_OPTIONS],
+        )
+        self._range_combo.pack(side=tk.LEFT)
+        self._range_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda e: self._on_range_selected(labels))
+
         self._nb = ttk.Notebook(self._window)
         self._nb.pack(fill=tk.BOTH, expand=True, padx=16, pady=(4, 12))
         self._tab_overview = tk.Frame(self._nb, bg=THEME["bg_main"])
@@ -141,8 +218,20 @@ class WeaknessView:
     # Data + rendering
     # ------------------------------------------------------------------
 
+    def _on_range_selected(self, labels: Dict[str, str]) -> None:
+        """Apply the chosen statistics range and re-render every tab."""
+        selected = self._range_var.get()
+        # Map the localized label back to its key.
+        for key, label in labels.items():
+            if label == selected:
+                self._range_key = key
+                break
+        self.refresh()
+
     def refresh(self) -> None:
         (sessions, raw_takes) = self._cb.load_takes()
+        # Slice to the chosen statistics window before aggregating.
+        raw_takes = _filter_takes_by_range(raw_takes, self._range_key)
         # raw_takes is [(session, take), ...] - pass tuples directly to
         # the aggregation functions, which expect that format.
         word_agg = aggregate_error_words(raw_takes)
@@ -162,8 +251,14 @@ class WeaknessView:
     def _render_overview(self, suggestions: List[Dict[str, Any]]) -> None:
         for child in self._tab_overview.winfo_children():
             child.destroy()
+        # The title names the active statistics window so the user can see
+        # the range dropdown did change the data they are looking at.
+        range_label = next(
+            (i18n.tr(l) for k, l, _s in RANGE_OPTIONS if k == self._range_key),
+            i18n.tr("your last 30 takes"))
         tk.Label(self._tab_overview,
-                 text=i18n.tr("Suggested next steps (based on your last 30 takes)"),
+                 text=i18n.tr("Suggested next steps (based on {range})",
+                              range=range_label),
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                  bg=THEME["bg_main"], fg=THEME["text_dim"]
                  ).pack(anchor="w", pady=(4, 8))
@@ -179,17 +274,34 @@ class WeaknessView:
                             highlightbackground=THEME["border"],
                             highlightthickness=1)
             card.pack(fill=tk.X, pady=4)
-            tk.Label(card, text=s["title"],
+            tk.Label(card, text=i18n.tr(s["title"],
+                                        **s.get("title_params", {})),
                      font=(FONT_FAMILY, FONT_SIZE_BODY, "bold"),
                      bg=THEME["bg_panel"], fg=THEME["text_emph"]
                      ).pack(anchor="w", padx=10, pady=(8, 0))
-            tk.Label(card, text=s["body"], justify=tk.LEFT,
+            tk.Label(card, text=i18n.tr(s["body"],
+                                        **s.get("body_params", {})),
+                     justify=tk.LEFT,
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                      bg=THEME["bg_panel"], fg=THEME["text"]
                      ).pack(anchor="w", padx=10, pady=(0, 8))
-            ttk.Button(card, text=i18n.tr("Start drill →"),
-                       command=lambda t=s["target"]: self._start_drill(t)
-                       ).pack(anchor="e", padx=10, pady=(0, 6))
+            extra = s.get("body_extra")
+            if extra:
+                tk.Label(card, text=i18n.tr(extra["template"],
+                                            **extra.get("params", {})),
+                         justify=tk.LEFT,
+                         font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                         bg=THEME["bg_panel"], fg=THEME["text"]
+                         ).pack(anchor="w", padx=10, pady=(0, 8))
+            tgt = s["target"]
+            # Left-click drills the sentence context (word → word drill pulls
+            # sentences; phoneme → phoneme drill). Right-click drills the word
+            # alone when the suggestion names a word, else falls back to left.
+            word_t = (self._word_only_target(tgt["value"])
+                      if tgt.get("type") == "word" else None)
+            self._make_drill_button(
+                card, i18n.tr("Start drill →"), tgt, word_t
+            ).pack(anchor="e", padx=10, pady=(0, 6))
 
     def _render_words(self, word_agg: Dict[str, Dict[str, Any]]) -> None:
         for child in self._tab_words.winfo_children():
@@ -220,10 +332,13 @@ class WeaknessView:
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                      bg=THEME["bg_panel"], fg=THEME["text_dim"]
                      ).pack(side=tk.LEFT, fill=tk.X, expand=True)
-            ttk.Button(row, text=i18n.tr("Drill"),
-                       command=lambda w=word:
-                       self._start_drill({"type": "word", "value": w})
-                       ).pack(side=tk.RIGHT, padx=6)
+            # Left-click drills sentences containing the word; right-click
+            # drills the word in isolation.
+            self._make_drill_button(
+                row, i18n.tr("Drill"),
+                {"type": "word", "value": word},
+                self._word_only_target(word),
+            ).pack(side=tk.RIGHT, padx=6)
 
     def _render_phonemes(self, phoneme_agg: Dict[str, Dict[str, Any]]) -> None:
         for child in self._tab_phonemes.winfo_children():
@@ -269,6 +384,10 @@ class WeaknessView:
             example = example_word_for(ipa)
             tip_text = i18n.tr("Example word: {example}", example=example) if example else ""
             if hint:
+                # The hint is a Chinese source string (ZH_INTERFERENCE.hint_zh);
+                # pass it through i18n so the English UI renders an English hint
+                # and the Chinese UI keeps the original.
+                hint = i18n.tr(hint)
                 tip_text = (f"{tip_text}  {hint}"
                             if tip_text else hint)
             if tip_text:
@@ -290,16 +409,42 @@ class WeaknessView:
                     button_row, text=i18n.tr("Play"),
                     command=lambda w=play_word: self._cb.play_example(w),
                 ).pack(side=tk.LEFT, padx=(0, 4))
-            ttk.Button(button_row, text=i18n.tr("Drill"),
-                       command=lambda i=ipa:
-                       self._start_drill({"type": "phoneme", "value": i})
-                       ).pack(side=tk.LEFT)
+            # Left-click drills words with this phoneme (sentence context);
+            # right-click drills the example word alone when one exists.
+            self._make_drill_button(
+                button_row, i18n.tr("Drill"),
+                {"type": "phoneme", "value": ipa},
+                self._word_only_target(play_word) if play_word else None,
+            ).pack(side=tk.LEFT)
             for c in range(5):
                 grid.columnconfigure(c, weight=1)
 
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
+
+    def _make_drill_button(self, parent, text: str,
+                           sentence_target: Dict[str, str],
+                           word_target: Optional[Dict[str, str]] = None
+                           ) -> ttk.Button:
+        """Create a drill button with left-click = sentence, right-click = word.
+
+        Left-click drills the sentence (the target in context, e.g. a word
+        drill pulls sentences containing it); right-click drills the word
+        alone (``single_word``). When ``word_target`` is None the right-click
+        falls back to the same target as left-click.
+        """
+        btn = ttk.Button(parent, text=text,
+                         command=lambda t=sentence_target: self._start_drill(t))
+        if word_target is not None:
+            btn.bind("<Button-3>",
+                     lambda e, t=word_target: self._start_drill(t))
+        return btn
+
+    @staticmethod
+    def _word_only_target(word: str) -> Dict[str, str]:
+        """Drill target for practicing one word in isolation."""
+        return {"type": "single_word", "value": word}
 
     def _start_drill(self, target: Dict[str, str]) -> None:
         logging.info("Weakness: _start_drill target=%r", target)

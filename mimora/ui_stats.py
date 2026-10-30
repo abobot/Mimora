@@ -204,6 +204,56 @@ class _CanvasChart:
                           fill=THEME["text_emph"],
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
 
+    def draw_heatmap(self, values: List[float], n_cols: int = 7,
+                     cell: int = 18, label: str = "") -> None:
+        """Draw a calendar-style heatmap: ``values`` one cell per value,
+        laid out left-to-right, top-to-bottom in ``n_cols`` columns.
+
+        Each cell is coloured by intensity: empty (0) stays neutral, low
+        values a light accent, high values the good colour. Useful for
+        the daily-activity calendar and per-day duration view.
+        """
+        c = self.canvas
+        c.delete("all")
+        pad = 8
+        if not values:
+            c.create_text(self._width / 2, self._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        max_v = max(values) or 1.0
+        for i, v in enumerate(values):
+            col = i % n_cols
+            row = i // n_cols
+            x = pad + col * (cell + 2)
+            y = pad + row * (cell + 2)
+            if v <= 0:
+                fill = THEME["border"]
+            else:
+                ratio = min(v / max_v, 1.0)
+                # Blend neutral → good by intensity.
+                fill = _blend_color(THEME["border"], THEME["good"], ratio)
+            c.create_rectangle(x, y, x + cell, y + cell,
+                               fill=fill, outline=THEME["border"])
+        if label:
+            c.create_text(self._width / 2, self._height - 6,
+                          text=label, anchor="s",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+
+def _blend_color(c1: str, c2: str, ratio: float) -> str:
+    """Blend two '#rrggbb' colours toward c2 by ``ratio`` (0..1)."""
+    try:
+        r1, g1, b1 = (int(c1[i:i + 2], 16) for i in (1, 3, 5))
+        r2, g2, b2 = (int(c2[i:i + 2], 16) for i in (1, 3, 5))
+        r = int(r1 + (r2 - r1) * ratio)
+        g = int(g1 + (g2 - g1) * ratio)
+        b = int(b1 + (b2 - b1) * ratio)
+        return f"#{r:02x}{g:02x}{b:02x}"
+    except (ValueError, TypeError):
+        return c1
+
 
 class StatsView:
     """Toplevel showing the practice stats dashboard."""
@@ -255,6 +305,14 @@ class StatsView:
         self._charts = tk.Frame(self._window, bg=THEME["bg_main"])
         self._charts.pack(fill=tk.BOTH, expand=True, padx=16, pady=8)
 
+        # Activity heatmap (calendar of practice minutes) - second chart row.
+        self._activity = tk.Frame(self._window, bg=THEME["bg_main"])
+        self._activity.pack(fill=tk.X, padx=16, pady=4)
+
+        # Practice-duration table (per day).
+        self._duration = tk.Frame(self._window, bg=THEME["bg_main"])
+        self._duration.pack(fill=tk.X, padx=16, pady=4)
+
         # Recent sessions list.
         self._recent = tk.Frame(self._window, bg=THEME["bg_main"])
         self._recent.pack(fill=tk.X, padx=16, pady=(0, 12))
@@ -267,6 +325,8 @@ class StatsView:
         takes = [t for _, t in raw_takes] if raw_takes and isinstance(raw_takes[0], tuple) else raw_takes
         self._render_cards(sessions, takes)
         self._render_charts(sessions, takes)
+        self._render_activity(sessions)
+        self._render_duration_table(sessions)
         self._render_recent(sessions)
 
     # ------------------------------------------------------------------
@@ -337,6 +397,69 @@ class StatsView:
         dist = _CanvasChart(self._charts, width=430, height=180)
         dist.canvas.pack(side=tk.RIGHT, padx=8, pady=8)
         dist.draw_bars(buckets, labels, title=i18n.tr("Score distribution"))
+
+    def _render_activity(self, sessions: List[Dict]) -> None:
+        """Render the practice-activity heatmap (calendar) into the charts area.
+
+        Each day in the last 28 days is a cell, coloured by the total practice
+        seconds that day (empty days stay neutral). Drawn as a second row
+        beneath the trend and distribution charts.
+        """
+        for child in self._activity.winfo_children():
+            child.destroy()
+        # Daily total practice seconds, last 28 days ending today.
+        day_sec: Dict[str, int] = defaultdict(int)
+        for s in sessions:
+            key = _session_date_key(s)
+            if key:
+                day_sec[key] += int(s.get("duration_sec") or 0)
+        today = datetime.now().date()
+        values = []
+        days = []
+        for offset in range(27, -1, -1):
+            d = today - timedelta(days=offset)
+            key = d.strftime("%Y-%m-%d")
+            values.append(day_sec.get(key, 0))
+            days.append(key)
+        heat = _CanvasChart(self._activity, width=430, height=110)
+        heat.canvas.pack(side=tk.LEFT, padx=8, pady=8)
+        heat.draw_heatmap(values, n_cols=7, label=i18n.tr("Practice minutes (last 28 days)"))
+
+    def _render_duration_table(self, sessions: List[Dict]) -> None:
+        """Render the per-session and per-day practice-duration table."""
+        for child in self._duration.winfo_children():
+            child.destroy()
+        tk.Label(self._duration,
+                 text=i18n.tr("Practice duration"),
+                 font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"),
+                 bg=THEME["bg_main"], fg=THEME["text_emph"]
+                 ).pack(anchor="w", pady=(6, 2))
+        if not sessions:
+            tk.Label(self._duration, text=i18n.tr("No sessions yet."),
+                     font=(FONT_FAMILY, FONT_SIZE_BODY, "italic"),
+                     fg=THEME["text_dim"], bg=THEME["bg_main"]
+                     ).pack(anchor="w")
+            return
+        # Per-day totals (newest first), for the last 14 days with practice.
+        day_sec: Dict[str, int] = defaultdict(int)
+        day_takes: Dict[str, int] = defaultdict(int)
+        for s in sessions:
+            key = _session_date_key(s)
+            if key:
+                day_sec[key] += int(s.get("duration_sec") or 0)
+                day_takes[key] += int((s.get("totals") or {}).get("takes") or 0)
+        rows = sorted(day_sec.items(), key=lambda kv: kv[0], reverse=True)[:14]
+        for day, secs in rows:
+            row = tk.Frame(self._duration, bg=THEME["bg_panel"], bd=0)
+            row.pack(fill=tk.X, pady=1)
+            tk.Label(row, text=day, anchor="w",
+                     font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                     fg=THEME["text_emph"], bg=THEME["bg_panel"]
+                     ).pack(side=tk.LEFT, padx=6)
+            tk.Label(row, text=f"{_fmt_seconds(int(secs))}",
+                     font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                     fg=THEME["text_dim"], bg=THEME["bg_panel"]
+                     ).pack(side=tk.RIGHT, padx=6)
 
     def _render_recent(self, sessions: List[Dict]) -> None:
         for child in self._recent.winfo_children():

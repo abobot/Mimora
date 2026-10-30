@@ -54,6 +54,20 @@ _EN: Dict[str, str] = {
     # Pluralized labels (see the "{plural}" convention above).
     "{count} phrase{plural}": "{count} phrase{plural}",
     "{count} phrases": "{count} phrases",
+    # Phoneme interference hints (ZH_INTERFERENCE.hint_zh): the source string
+    # is Chinese, so the English catalog must map each Chinese hint to an
+    # English rendering. Without these the English UI shows Chinese hints.
+    "咬舌音，中文无对应": "interdental, no Chinese equivalent",
+    "咬舌浊音，中文无对应": "voiced interdental, no Chinese equivalent",
+    "唇齿摩擦，中文常读成 w": "labiodental fricative, often read as w",
+    "卷舌，中文 r 不卷": "retroflex, Chinese r is not retroflex",
+    "中元音，中文无对应": "central vowel, no Chinese equivalent",
+    "美 /æ/，中文常读成 e": "American /æ/, often read as e",
+    "sh 音，中文 s/sh 易混": "sh sound, Chinese s/sh easily confused",
+    "j 音，中文易读成 tʃ": "j sound, often read as tʃ",
+    "后鼻音，中文易丢 n": "velar nasal, n often dropped",
+    "亮 l / 暗 l 区分不清": "clear/dark l distinction unclear",
+    "轻辅音，中文 h 常过重": "light consonant, h often too heavy",
 }
 
 _ZH: Dict[str, str] = {
@@ -281,6 +295,8 @@ _ZH: Dict[str, str] = {
     # Stats dashboard (ui_stats.py)
     # ------------------------------------------------------------------
     "Practice stats": "练习统计",
+    "Practice minutes (last 28 days)": "练习分钟数（最近 28 天）",
+    "Practice duration": "练习时长明细",
     "Export JSON": "导出 JSON",
     "Export CSV": "导出 CSV",
     "Export PNG": "导出 PNG",
@@ -321,8 +337,19 @@ _ZH: Dict[str, str] = {
     "Words": "单词",
     "Phonemes": "音标",
     "Refresh": "刷新",
+    "Range:": "范围：",
+    "Last 7 days": "近 7 天",
+    "Last 14 days": "近 2 周",
+    "Last 30 days": "近 1 月",
+    "Last 60 days": "近 2 月",
+    "Last 30 takes": "近 30 次",
+    "Last 100 takes": "近 100 次",
+    "Last 300 takes": "近 300 次",
     "Suggested next steps (based on your last 30 takes)":
         "建议的下一步（基于你最近 30 次尝试）",
+    "Suggested next steps (based on {range})":
+        "建议的下一步（基于{range}）",
+    "your last 30 takes": "你最近 30 次尝试",
     "No obvious weaknesses. Keep practicing!":
         "没有明显的薄弱项。继续练习！",
     "Start drill →": "开始练习 →",
@@ -344,6 +371,26 @@ _ZH: Dict[str, str] = {
     "{count}×  score {avg:.0%}": "{count}×  得分 {avg:.0%}",
     "Example word: {example}": "例词：{example}",
     "Example word: {example}  {hint}": "例词：{example}  {hint}",
+    # Suggestion cards (suggestions.py templates, rendered in ui_weakness.py).
+    "Practice phoneme /{ipa}/": "练音素 /{ipa}/",
+    "Average score {avg:.0%}, {count} occurrences. Example: {example}. {hint}":
+        "平均得分 {avg:.0%}，出现 {count} 次。例词：{example}。{hint}",
+    "Average score {avg:.0%}, {count} occurrences. Example: {example}.":
+        "平均得分 {avg:.0%}，出现 {count} 次。例词：{example}。",
+    "Average score {avg:.0%}, {count} occurrences. {hint}":
+        "平均得分 {avg:.0%}，出现 {count} 次。{hint}",
+    "Average score {avg:.0%}, {count} occurrences.":
+        "平均得分 {avg:.0%}，出现 {count} 次。",
+    "Practice word \"{word}\"": "练单词 \"{word}\"",
+    "{count} occurrences, {rate:.0%} error rate.":
+        "出现 {count} 次，错误率 {rate:.0%}。",
+    "Main problem: {label} ({pct:.0f}%).": "主要问题：{label}（{pct:.0f}%）。",
+    "Reading speed too fast": "朗读语速偏快",
+    "Average {wpm:.0f} WPM, above the target band {low:.0f}-{high:.0f}. Practice slowly (~90 WPM) for 3 days, then speed up.":
+        "平均 WPM {wpm:.0f}，超过目标区间 {low:.0f}-{high:.0f}。建议先按慢速（约 90 WPM）练 3 天，再逐步提速。",
+    "Reading speed too slow": "朗读语速偏慢",
+    "Average {wpm:.0f} WPM, below the target band {low:.0f}-{high:.0f}. Practice long connected phrases and reduce pauses.":
+        "平均 WPM {wpm:.0f}，低于目标区间 {low:.0f}-{high:.0f}。建议做长句连贯训练，减少停顿。",
 
     # ------------------------------------------------------------------
     # Dictation mode (ui_dictation.py)
@@ -400,6 +447,8 @@ _ZH: Dict[str, str] = {
     "✅ Mastered": "✅ 已掌握",
     "🔁 Try again next time": "🔁 下次再试",
     "Dictation report": "听写报告",
+    "Sentences per session": "每回句子数",
+    "Apply": "应用",
     "✅ ": "✅ ",
     "❌ Missed: ": "❌ 遗漏：",
     "✏️ Spelling: ": "✏️ 拼写：",

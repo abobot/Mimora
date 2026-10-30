@@ -78,11 +78,17 @@ def generate_suggestions(word_agg: Dict[str, Dict[str, Any]],
         out.append({
             "id": key,
             "kind": "phoneme",
-            "title": f"练音素 /{ipa}/",
-            "body": (f"平均得分 {entry['avg_score']:.0%}，出现 "
-                     f"{entry['count']} 次。" +
-                     (f" 例词：{example}。" if example else "") +
-                     (f" {hint}" if hint else "")),
+            "title": "Practice phoneme /{ipa}/",
+            "title_params": {"ipa": ipa},
+            "body": ("Average score {avg:.0%}, {count} occurrences."
+                     + (" Example: {example}." if example else "")
+                     + (" {hint}" if hint else "")),
+            "body_params": {
+                "avg": entry["avg_score"],
+                "count": entry["count"],
+                "example": example,
+                "hint": hint,
+            },
             "target": {"type": "phoneme", "value": ipa},
             "tags": ["phoneme", ipa],
             "metric": round(entry["severity_avg"], 3),
@@ -102,9 +108,14 @@ def generate_suggestions(word_agg: Dict[str, Dict[str, Any]],
         out.append({
             "id": key,
             "kind": "word",
-            "title": f"练单词 \"{word}\"",
-            "body": (f"出现 {entry['count']} 次，错误率 "
-                     f"{entry['error_rate']:.0%}。{etype_hint}"),
+            "title": "Practice word \"{word}\"",
+            "title_params": {"word": word},
+            "body": "{count} occurrences, {rate:.0%} error rate.",
+            "body_params": {
+                "count": entry["count"],
+                "rate": entry["error_rate"],
+            },
+            "body_extra": etype_hint,
             "target": {"type": "word", "value": word},
             "tags": ["word", word],
             "metric": round(entry["error_rate"], 3),
@@ -117,11 +128,16 @@ def generate_suggestions(word_agg: Dict[str, Dict[str, Any]],
         out.append({
             "id": "wpm:fast",
             "kind": "speed",
-            "title": "朗读语速偏快",
-            "body": (f"平均 WPM {recent_wpm:.0f}，超过目标区间 "
-                     f"{WPM_TARGET_LOW:.0f}-{WPM_TARGET_HIGH:.0f}。"
-                     "建议先按慢速（WPM ~90）练 3 天，再逐步提速。"),
-            "target": {"type": "free_form", "value": "慢速朗读训练"},
+            "title": "Reading speed too fast",
+            "body": ("Average {wpm:.0f} WPM, above the target band "
+                     "{low:.0f}-{high:.0f}. Practice slowly (~90 WPM) "
+                     "for 3 days, then speed up."),
+            "body_params": {
+                "wpm": recent_wpm,
+                "low": WPM_TARGET_LOW,
+                "high": WPM_TARGET_HIGH,
+            },
+            "target": {"type": "free_form", "value": "slow reading practice"},
             "tags": ["speed", "fast"],
             "metric": round(recent_wpm, 2),
         })
@@ -129,11 +145,16 @@ def generate_suggestions(word_agg: Dict[str, Dict[str, Any]],
         out.append({
             "id": "wpm:slow",
             "kind": "speed",
-            "title": "朗读语速偏慢",
-            "body": (f"平均 WPM {recent_wpm:.0f}，低于目标区间 "
-                     f"{WPM_TARGET_LOW:.0f}-{WPM_TARGET_HIGH:.0f}。"
-                     "建议做长句连贯训练，减少停顿。"),
-            "target": {"type": "free_form", "value": "流畅度训练"},
+            "title": "Reading speed too slow",
+            "body": ("Average {wpm:.0f} WPM, below the target band "
+                     "{low:.0f}-{high:.0f}. Practice long connected "
+                     "phrases and reduce pauses."),
+            "body_params": {
+                "wpm": recent_wpm,
+                "low": WPM_TARGET_LOW,
+                "high": WPM_TARGET_HIGH,
+            },
+            "target": {"type": "free_form", "value": "fluency practice"},
             "tags": ["speed", "slow"],
             "metric": round(recent_wpm, 2),
         })
@@ -141,21 +162,33 @@ def generate_suggestions(word_agg: Dict[str, Dict[str, Any]],
     return out
 
 
-def _error_type_hint(error_types: Dict[str, int]) -> str:
-    """One-line summary of the main error type for a word."""
+def _error_type_hint(error_types: Dict[str, int]) -> Optional[Dict[str, Any]]:
+    """One-line summary of the main error type for a word.
+
+    Returns ``None`` when there is nothing to report, otherwise a
+    ``{"template": ..., "params": {...}}`` dict the UI localizes: the
+    template is a translatable string with a ``{label}`` placeholder and
+    ``params`` supplies the label (a technical engine term shown verbatim)
+    and the share. Kept GUI- and i18n-free like the rest of this module.
+    """
     if not error_types:
-        return ""
+        return None
     total = sum(error_types.values())
     if total == 0:
-        return ""
+        return None
     worst_type, worst_count = max(error_types.items(), key=lambda kv: kv[1])
-    zh_names = {
-        "pronunciation": "发音不标准",
-        "missing": "漏读",
-        "extra": "多读",
-        "substitution": "读成了别的词",
-        "fluency": "断续 / 停顿",
-    }
-    label = zh_names.get(worst_type, worst_type)
+    label = _ERROR_TYPE_NAMES.get(worst_type, worst_type)
     pct = worst_count * 100.0 / total
-    return f"主要问题：{label}（{pct:.0f}%）。"
+    return {
+        "template": " Main problem: {label} ({pct:.0f}%).",
+        "params": {"label": label, "pct": pct},
+    }
+
+
+_ERROR_TYPE_NAMES = {
+    "pronunciation": "pronunciation",
+    "missing": "missing",
+    "extra": "extra",
+    "substitution": "substitution",
+    "fluency": "fluency",
+}

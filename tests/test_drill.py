@@ -43,6 +43,60 @@ class PhraseCyclingTest(unittest.TestCase):
         phrases = engine.candidate_phrases
         self.assertEqual(phrases, ["Custom phrase here."])
 
+    def test_priority_words_move_those_phrases_first(self):
+        # The cat sentence contains a priority word, so it leads even though
+        # the thought-only sentence comes first in the source. Trailing
+        # periods are dropped by the sentence split, so normalize before
+        # comparing.
+        source = ("The thought is deep. "
+                  "The cat thinks about the thought.")
+        engine = DrillEngine(target={"type": "word", "value": "thought"},
+                             source_text=source,
+                             priority_words=("cat",))
+        phrases = [p.rstrip(".").lower() for p in engine.candidate_phrases]
+        self.assertEqual(phrases[0], "the cat thinks about the thought")
+
+    def test_priority_words_stable_within_groups(self):
+        # Every sentence contains the target "thought"; the two sentences
+        # with the priority word "cat" lead (source order preserved), then
+        # the rest follow in source order.
+        source = ("The thought is deep. The cat ponders the thought. "
+                  "Another thought. The cat knows the thought.")
+        engine = DrillEngine(target={"type": "word", "value": "thought"},
+                             source_text=source,
+                             priority_words=("cat",))
+        phrases = [p.rstrip(".").lower() for p in engine.candidate_phrases]
+        self.assertEqual(phrases[:2], ["the cat ponders the thought",
+                                       "the cat knows the thought"])
+        self.assertEqual(phrases[2:], ["the thought is deep",
+                                       "another thought"])
+
+    def test_no_priority_words_keeps_source_order(self):
+        source = "Alpha one. Beta two. Alpha three."
+        engine = DrillEngine(target={"type": "word", "value": "Alpha"},
+                             source_text=source)
+        self.assertEqual([p.rstrip(".") for p in engine.candidate_phrases],
+                         ["Alpha one", "Alpha three"])
+
+    def test_priority_word_matches_on_word_boundary_only(self):
+        # A single-letter priority word like "i" must match only the standalone
+        # word "i", not substrings inside "sits"/"thick". With substring
+        # matching the "i" would pull every sentence ahead and the priority
+        # ordering silently does nothing; with word-boundary matching only the
+        # sentence containing the standalone "i" leads.
+        source = ("The cat sits here. "
+                  "I am the best. "
+                  "The thick fog.")
+        engine = DrillEngine(target={"type": "word", "value": "the"},
+                             source_text=source,
+                             priority_words=("i",))
+        phrases = [p.rstrip(".").lower() for p in engine.candidate_phrases]
+        # The sentence with the standalone word "i" leads; the two sentences
+        # that only contain "i" as a substring follow in source order.
+        self.assertEqual(phrases[0], "i am the best")
+        self.assertEqual(phrases[1], "the cat sits here")
+        self.assertEqual(phrases[2], "the thick fog")
+
     def test_single_word_drill_returns_word_verbatim(self):
         # A single-word drill (double-click a phrase word) practices the word
         # alone: the value IS the whole practice phrase, no sentence around it.

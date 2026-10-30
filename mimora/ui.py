@@ -972,12 +972,20 @@ class TrainerView:
             self.root.update_idletasks()  # ensure the canvases have a real width/height
             self._prosody.redraw()
 
+        # A take that scored zero is a failed/empty recording, not a real
+        # practice attempt: it is not reported to the controller (so it never
+        # enters the session tally, the review schedule or the stats store)
+        # and no history row is added. The hero card still shows the 0 so the
+        # user understands what happened, but the take is discarded.
+        raw_score = float(getattr(result, "score", tally_value) or 0.0)
+        skip_take = raw_score <= 0.0
+
         # The number itself lives in the hero card (set above via
         # set_score_row); report the scored take to the controller so it can
         # update the session tally shown in the status bar. The reference
         # self-test reaches here without a real recording - it is a pipeline
         # sanity check, not a practice attempt, so it must not touch the tally.
-        if not is_self_test:
+        if not is_self_test and not skip_take:
             # The details dict carries the fields the persistence layer needs
             # beyond the tally value: error words, phoneme breakdown and the
             # ASR transcript. Kept small on purpose - the raw result itself

@@ -936,6 +936,9 @@ class SettingsWindow:
         # so it stands apart from the light Cancel button beside it instead of
         # blending into it. A warn/orange fill was avoided: it fails contrast in
         # the dark theme (light orange fill under white text).
+        # Always visible to the left of Cancel: it is disabled (greyed) until a
+        # restart-only field is actually touched, so the user always knows the
+        # way back is there but it is not offered when there is nothing to apply.
         self._restart_btn = FlatButton(
             button_row, text=i18n.tr("Restart now"), command=self._restart_now,
             font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"), bg=THEME["bg_button"],
@@ -943,7 +946,7 @@ class SettingsWindow:
             activebackground=THEME["bg_button_active"],
             activeforeground=THEME["text"],
             bd=0, padx=14, pady=4, cursor="hand2")
-        # Packed on demand by _update_restart_hint().
+        self._restart_btn.pack(side=tk.RIGHT, padx=(0, 8), pady=6)
 
     # ------------------------------------------------------------------
     # Change handling
@@ -1455,15 +1458,16 @@ class SettingsWindow:
         """Show, refresh, or clear the pending-restart hint and its button."""
         if not self._restart_pending:
             self._restart_label.config(text="")
-            if self._restart_btn.winfo_manager():
-                self._restart_btn.pack_forget()
+            # Always clickable: the user asked for the button to be visible
+            # AND responsive at all times, not only after a restart-only field
+            # changes. A restart with no pending changes is harmless, so the
+            # button stays enabled instead of being greyed out.
+            self._restart_btn.config(state=tk.NORMAL)
             return
         labels = ", ".join(self._restart_pending.values())
         self._restart_label.config(
             text=i18n.tr("Applies after restart: {labels}", labels=labels))
-        if not self._restart_btn.winfo_manager():
-            # padx keeps a gap from the Cancel button on its right.
-            self._restart_btn.pack(side=tk.RIGHT, padx=(0, 8), pady=6)
+        self._restart_btn.config(state=tk.NORMAL)
 
     def _restart_now(self):
         """Footer button: an explicit click needs no extra confirmation."""

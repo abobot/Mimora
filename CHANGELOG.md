@@ -21,6 +21,56 @@ and stay in the user data directory across upgrades.
   **Random order from practice text** (pick a random sentence instead of
   cycling in order, when the phrase source is practice) and **Spaced repetition
   (Ebbinghaus)**. Both need a restart to take effect.
+- **Drill prioritises weak words.** A drill session now puts sentences
+  containing your weakest words (from the per-word error leader board) first,
+  so the phrases you need most come before the rest of the practice text.
+- **Stats dashboard: practice-activity heatmap and duration table.** The stats
+  window now shows a calendar heatmap of your practice minutes over the last 28
+  days (colour intensity = minutes that day) and a per-day practice-duration
+  table (newest first). Exporting stats as JSON / CSV / PNG / PDF now works:
+  the export file-name stamp was broken by a missing `datetime` import.
+- **Weakness panel statistics range.** The pronunciation-weakness window has a
+  **Range** selector (last 7 days / 2 weeks / 1 month / 2 months / last 30 / 100
+  / 300 takes) that re-filters the word and phoneme weakness tables. The
+  overview suggestion cards and the phoneme example words are translated for
+  non-English UI languages, and the phoneme cards' Play / Drill buttons sit
+  side by side.
+- **Weakness panel drill left/right.** In the Overview, Words and Phonemes
+  tabs, **left-clicking** a drill button starts a sentence drill, while
+  **right-clicking** starts a single-word drill on that word (or example word).
+- **Settings: Restart button always visible.** The Restart-now button in the
+  Settings window is now always shown (greyed out when nothing needs a restart)
+  to the left of Cancel, instead of appearing only when a restart-only setting
+  changed.
+- **Zero-score takes are not recorded.** A take that scores 0 (no recognisable
+  audio, or a completely wrong attempt) is no longer saved to the session
+  history or the stats — it is discarded with an informational log instead, so
+  a silent recording does not pollute your statistics.
+- **Drill prioritises weak words.** A drill session now puts sentences
+  containing your weakest words (from the per-word error leader board) first,
+  so the phrases you need most come before the rest of the practice text.
+- **Stats dashboard: practice-activity heatmap and duration table.** The stats
+  window now shows a calendar heatmap of your practice minutes over the last 28
+  days (colour intensity = minutes that day) and a per-day practice-duration
+  table (newest first). Exporting stats as JSON / CSV / PNG / PDF now works:
+  the export file-name stamp was broken by a missing datetime import.
+- **Weakness panel statistics range.** The pronunciation-weakness window has a
+  **Range** selector (last 7 days / 2 weeks / 1 month / 2 months / last 30 / 100
+  / 300 takes) that re-filters the word and phoneme weakness tables. The
+  overview suggestion cards and the phoneme example words are translated for
+  non-English UI languages, and the phoneme cards' Play / Drill buttons sit
+  side by side.
+- **Weakness panel drill left/right.** In the Overview, Words and Phonemes
+  tabs, **left-clicking** a drill button starts a sentence drill, while
+  **right-clicking** starts a single-word drill on that word (or example word).
+- **Settings: Restart button always visible.** The Restart-now button in the
+  Settings window is now always shown (greyed out when nothing needs a restart)
+  to the left of Cancel, instead of appearing only when a restart-only setting
+  changed.
+- **Zero-score takes are not recorded.** A take that scores 0 (no recognisable
+  audio, or a completely wrong attempt) is no longer saved to the session
+  history or the stats — it is discarded with an informational log instead, so
+  a silent recording does not pollute your statistics.
 - **Playback speed and phrase source controls.** Long-pressing the 🔊 play
   button opens a popup with a speed slider (0.7×–1.4×, 0.05 steps); choosing a
   speed plays the reference at that rate immediately **and makes it the new
@@ -80,6 +130,23 @@ and stay in the user data directory across upgrades.
 - The session counter now tracks the current sentence position, so **Previous**
   moves it down by one and **Next** up by one (clamped at the first sentence),
   instead of only changing when a sentence is scored.
+- The phoneme-card hints in the weakness panel now follow the UI language: in
+  the English UI they render in English instead of the hardcoded Chinese
+  interference note, so the panel no longer shows mixed-language text.
+- The weak-word priority in a drill now matches whole words, not substrings: a
+  single-letter weak word such as "i" no longer drags every sentence containing
+  "this"/"think"/"with" to the front of the drill, which silently defeated the
+  "weak words first" ordering.
+- The Settings window's Restart button is now always clickable (not greyed out
+  when nothing needs a restart), matching the user's expectation that a visible
+  button should respond to a click.
+- The Overview tab of the weakness panel now names the active statistics range
+  in its heading ("Suggested next steps (based on ...)"), so choosing a range
+  in the dropdown visibly updates the suggestions it summarises.
+- The weakness-panel range dropdown is now bound to its variable, so selecting
+  a range actually takes effect: previously the dropdown never updated the
+  variable it read on selection, so the Overview heading stayed on the default
+  range no matter what was picked.
 
 ## [1.1.0] - 2026-08-23
 

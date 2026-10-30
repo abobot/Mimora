@@ -44,6 +44,7 @@ from mimora.ui_theme import (
     FONT_SIZE_CAPTION,
     FONT_SIZE_SUBTITLE,
     THEME,
+    FlatButton,
     make_icon_button,
 )
 import ttkbootstrap as ttk
@@ -88,6 +89,8 @@ class DictationCallbacks:
     get_practice_text: Callable[[], str]
     # Apply a new source text ("" means fall back to the built-in pool).
     on_source_changed: Callable[[str], None]
+    # Change the per-session sentence limit (persisted by the controller).
+    on_max_attempts_changed: Callable[[int], None]
 
 
 class DictationView:
@@ -167,10 +170,18 @@ class DictationView:
         self._progress_var = tk.StringVar(
             value=i18n.tr("{current} / {total}  ·  {passed} passed",
                           current=0, total=10, passed=0))
-        tk.Label(progress, textvariable=self._progress_var,
-                 font=(FONT_FAMILY, FONT_SIZE_CAPTION),
-                 bg=THEME["bg_main"], fg=THEME["text_dim"]
-                 ).pack(side=tk.LEFT)
+        # The "current / total" counter is also the long-press handle that
+        # changes the per-session sentence limit (max_attempts). Cursor hints
+        # at the affordance; the tooltip text is set after the label exists.
+        progress_label = tk.Label(progress, textvariable=self._progress_var,
+                                  font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                                  bg=THEME["bg_main"], fg=THEME["text_dim"],
+                                  cursor="hand2")
+        progress_label.pack(side=tk.LEFT)
+        self._progress_label = progress_label
+        self._progress_popup: Optional[tk.Toplevel] = None
+        self._progress_popup_catcher: Optional[tk.Toplevel] = None
+        self._bind_progress_long_press(progress_label)
         self._streak_var = tk.StringVar(value="")
         tk.Label(progress, textvariable=self._streak_var,
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION),
@@ -282,6 +293,11 @@ class DictationView:
             # Enter moves to the next slot, or submits on the last one.
             entry.bind("<Return>", self._make_slot_return(i, len(words)))
             entry.bind("<KP_Enter>", self._make_slot_return(i, len(words)))
+            # Space also advances to the next slot (but never submits on the
+            # last one, so an accidental trailing space cannot finish the
+            # sentence early). A space within a word is impossible in dictation
+            # (one word per slot), so space is free to mean "next".
+            entry.bind("<space>", self._make_slot_space(i, len(words)))
             self._slot_entries.append(entry)
         if self._slot_entries:
             self._slot_entries[0].focus_set()
@@ -297,6 +313,15 @@ class DictationView:
                 self._slot_entries[index + 1].focus_set()
             else:
                 self._on_submit()
+            return "break"
+        return handler
+
+    def _make_slot_space(self, index: int, total: int):
+        def handler(event):
+            # Space advances to the next slot, but never submits on the last
+            # one: a trailing space is a typing habit, not an intent to submit.
+            if not self._submitted and index + 1 < total:
+                self._slot_entries[index + 1].focus_set()
             return "break"
         return handler
 
@@ -321,6 +346,137 @@ class DictationView:
             i18n.tr("{current} / {total}  ·  {passed} passed",
                     current=p['current'], total=p['total'], passed=p['passed']))
 
+    # ------------------------------------------------------------------
+    # Long-press on the progress counter: change the session sentence limit
+    # ------------------------------------------------------------------
+
+    def _bind_progress_long_press(self, widget) -> None:
+        """Long-press the counter to open the sentence-limit popup."""
+        self._long_press_after = None
+        self._long_press_fired = False
+        widget.bind("<ButtonPress-1>", self._on_progress_press, add="+")
+        widget.bind("<ButtonRelease-1>", self._on_progress_release, add="+")
+        widget.bind("<Leave>", self._on_progress_leave, add="+")
+
+    def _on_progress_press(self, event):
+        self._long_press_fired = False
+        if self._long_press_after is not None:
+            try:
+                self._window.after_cancel(self._long_press_after)
+            except tk.TclError:
+                pass
+            self._long_press_after = None
+        self._long_press_after = self._window.after(
+            450, self._fire_progress_long_press)
+        return None
+
+    def _on_progress_release(self, event):
+        if self._long_press_after is not None:
+            try:
+                self._window.after_cancel(self._long_press_after)
+            except tk.TclError:
+                pass
+            self._long_press_after = None
+        self._long_press_fired = False
+        return None
+
+    def _on_progress_leave(self, event):
+        if self._long_press_after is not None:
+            try:
+                self._window.after_cancel(self._long_press_after)
+            except tk.TclError:
+                pass
+            self._long_press_after = None
+        return None
+
+    def _fire_progress_long_press(self):
+        self._long_press_after = None
+        if self._long_press_fired:
+            return
+        self._long_press_fired = True
+        self._open_progress_popup()
+
+    def _open_progress_popup(self) -> None:
+        """Non-modal popup to adjust the per-session sentence limit."""
+        self._dismiss_progress_popup()
+        x = self._progress_label.winfo_rootx()
+        y = self._progress_label.winfo_rooty() + self._progress_label.winfo_height()
+        popup = tk.Toplevel(self._window)
+        catcher = tk.Toplevel(self._window)
+        popup.overrideredirect(True)
+        catcher.overrideredirect(True)
+        catcher.attributes("-alpha", 0.01)
+        catcher.geometry(f"{self._window.winfo_screenwidth()}x"
+                         f"{self._window.winfo_screenheight()}+0+0")
+        catcher.lower()
+        popup.configure(bg=THEME["bg_panel"], highlightthickness=1,
+                        highlightbackground=THEME["border"])
+        popup.geometry(f"+{x}+{y}")
+        popup.transient(self._window)
+        catcher.bind("<ButtonPress-1>", lambda e: self._dismiss_progress_popup())
+        popup.bind("<Escape>", lambda e: self._dismiss_progress_popup())
+
+        limit = int(self.engine.max_attempts)
+        tk.Label(popup, text=i18n.tr("Sentences per session"),
+                 font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                 bg=THEME["bg_panel"], fg=THEME["text_dim"]).pack(
+            side=tk.TOP, anchor=tk.W, padx=12, pady=(8, 2))
+        state = {"limit": limit}
+
+        def _set_limit(value: int) -> None:
+            state["limit"] = max(1, min(100, value))
+
+        def _rebuild_label() -> None:
+            value_label.config(text=f"{state['limit']}")
+
+        value_label = tk.Label(popup, text=f"{state['limit']}",
+                               font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                               bg=THEME["bg_panel"], fg=THEME["text_emph"])
+        value_label.pack(side=tk.TOP, pady=(0, 4))
+
+        row = tk.Frame(popup, bg=THEME["bg_panel"])
+        row.pack(side=tk.TOP, padx=12, pady=(0, 4))
+        FlatButton(row, text="-1", command=lambda: (_set_limit(state["limit"] - 1),
+                                                    _rebuild_label()),
+                   font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_button"],
+                   fg=THEME["text_button"],
+                   activebackground=THEME["bg_button_active"],
+                   activeforeground=THEME["text"],
+                   bd=0, padx=10, pady=2, cursor="hand2").pack(side=tk.LEFT, padx=2)
+        FlatButton(row, text="+1", command=lambda: (_set_limit(state["limit"] + 1),
+                                                    _rebuild_label()),
+                   font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_button"],
+                   fg=THEME["text_button"],
+                   activebackground=THEME["bg_button_active"],
+                   activeforeground=THEME["text"],
+                   bd=0, padx=10, pady=2, cursor="hand2").pack(side=tk.LEFT, padx=2)
+
+        def _apply() -> None:
+            self._dismiss_progress_popup()
+            self._cb.on_max_attempts_changed(state["limit"])
+
+        FlatButton(popup, text=i18n.tr("Apply"), command=_apply,
+                   font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"), bg=THEME["bg_accent"],
+                   fg=THEME["text_accent"],
+                   activebackground=THEME["bg_accent_active"],
+                   activeforeground=THEME["text_bright"],
+                   bd=0, padx=14, pady=3, cursor="hand2").pack(
+            side=tk.TOP, pady=(0, 8))
+
+        self._progress_popup = popup
+        self._progress_popup_catcher = catcher
+        popup.lift()
+
+    def _dismiss_progress_popup(self) -> None:
+        for w in (self._progress_popup_catcher, self._progress_popup):
+            if w is not None:
+                try:
+                    w.destroy()
+                except tk.TclError:
+                    pass
+        self._progress_popup = None
+        self._progress_popup_catcher = None
+
     def _advance_phrase(self) -> None:
         """Advance to the next sentence, clearing input and hiding the answer."""
         phrase = self._cb.next_phrase()
@@ -334,6 +490,11 @@ class DictationView:
         self._check_btn.configure(state=tk.NORMAL)
         self._build_slots(phrase)
         self._refresh_progress_label()
+        # Dictation is listen-and-repeat: hearing the new sentence is the whole
+        # point, so switching sentences auto-plays it (the 🔊 button remains
+        # for manual replays). The controller resolves the phrase first (via
+        # next_phrase), so this always plays the just-loaded sentence.
+        self._cb.on_play_clicked()
 
     def _on_play(self) -> None:
         self._cb.on_play_clicked()
@@ -375,6 +536,8 @@ class DictationView:
         self._listen_label.configure(text=i18n.tr("Previous sentence - type what you hear."))
         self._build_slots(phrase)
         self._refresh_progress_label()
+        # Switching sentences auto-plays the loaded one (same as Next).
+        self._cb.on_play_clicked()
 
     def _on_source_selected(self, event=None) -> None:
         """Apply the chosen sentence source to the engine."""
