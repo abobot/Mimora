@@ -53,8 +53,8 @@ class HeroCardWordFeedbackTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.root = tk.Tk()
-        cls.root.withdraw()
+        from tests._tk import make_root
+        cls.root = make_root()
         cls.clicked = []
         cls.card = HeroCard(
             cls.root,
@@ -63,7 +63,8 @@ class HeroCardWordFeedbackTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.root.destroy()
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
 
     def setUp(self):
         HeroCardWordFeedbackTests.clicked = []
@@ -123,8 +124,8 @@ class HeroCardWordDrillTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.root = tk.Tk()
-        cls.root.withdraw()
+        from tests._tk import make_root
+        cls.root = make_root()
         cls.played = []
         cls.drilled = []
         cls.single_drilled = []
@@ -138,7 +139,8 @@ class HeroCardWordDrillTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.root.destroy()
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
 
     def setUp(self):
         HeroCardWordDrillTests.played = []

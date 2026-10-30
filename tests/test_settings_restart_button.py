@@ -21,39 +21,21 @@ from mimora import config
 class RestartButtonTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import tkinter as tk
         from mimora.settings_window import SettingsWindow, SettingsCallbacks
-        try:
-            cls.root = tk.Tk()
-            cls.root.withdraw()
-            callbacks = SettingsCallbacks(
-                on_setting_changed=lambda k, v: None,
-                on_preview_voice=lambda v: None,
-                on_restart_requested=lambda: None,
-                on_reset_settings=lambda: True,
-            )
-            cls.win = SettingsWindow(cls.root, callbacks)
-        except tk.TclError:
-            # Test isolation: another Tk-root test class may have torn the
-            # interpreter down (a destroyed root makes new Tk() fail). Retry
-            # once with a fresh interpreter is not reliable, so just mark the
-            # class skipped rather than failing the whole suite.
-            cls.root = None
-            cls.win = None
-            raise unittest.SkipTest("Tk interpreter unavailable after prior test")
+        from tests._tk import make_root
+        cls.root = make_root()
+        callbacks = SettingsCallbacks(
+            on_setting_changed=lambda k, v: None,
+            on_preview_voice=lambda v: None,
+            on_restart_requested=lambda: None,
+            on_reset_settings=lambda: True,
+        )
+        cls.win = SettingsWindow(cls.root, callbacks)
 
     @classmethod
     def tearDownClass(cls):
-        try:
-            if getattr(cls, "win", None) is not None:
-                cls.win.top.destroy()
-        except Exception:
-            pass
-        try:
-            if getattr(cls, "root", None) is not None:
-                cls.root.destroy()
-        except Exception:
-            pass
+        from tests._tk import destroy_root
+        destroy_root(getattr(cls, "root", None))
 
     def test_restart_button_is_always_packed(self):
         # Always visible: it must be managed (packed) even with no pending

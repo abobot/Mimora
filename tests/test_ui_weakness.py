@@ -109,10 +109,9 @@ class DrillButtonLeftRightTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import tkinter as tk
         from mimora.ui_weakness import WeaknessView, WeaknessCallbacks
-        cls.root = tk.Tk()
-        cls.root.withdraw()
+        from tests._tk import make_root
+        cls.root = make_root()
         cls.drills = []
         cls.cb = WeaknessCallbacks(
             load_takes=lambda: ([], []),
@@ -124,7 +123,8 @@ class DrillButtonLeftRightTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.root.destroy()
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
 
     def test_make_drill_button_left_sentence_right_word(self):
         btn = self.view._make_drill_button(
@@ -157,9 +157,8 @@ class InteractiveIpaChartTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import tkinter as tk
-        cls.root = tk.Tk()
-        cls.root.withdraw()
+        from tests._tk import make_root
+        cls.root = make_root()
         cls.plays = []
         cls.drills = []
         from mimora.ui_weakness import WeaknessView, WeaknessCallbacks
@@ -173,7 +172,8 @@ class InteractiveIpaChartTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.root.destroy()
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
 
     def _takes(self):
         return [(_session(), _take(phoneme_scores=[
@@ -258,10 +258,9 @@ class RangeTitleUpdatesTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import tkinter as tk
         from mimora.ui_weakness import WeaknessView, WeaknessCallbacks
-        cls.root = tk.Tk()
-        cls.root.withdraw()
+        from tests._tk import make_root
+        cls.root = make_root()
         cls.cb = WeaknessCallbacks(
             load_takes=lambda: ([], []),
             start_drill=lambda t: None,
@@ -272,7 +271,8 @@ class RangeTitleUpdatesTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.root.destroy()
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
 
     def _overview_title(self):
         from mimora import i18n

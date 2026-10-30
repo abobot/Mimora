@@ -41,10 +41,9 @@ class StatsCallbacksTest(unittest.TestCase):
 class ExportReportButtonsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import tkinter as tk
         from mimora.ui_stats import StatsView, StatsCallbacks
-        cls.root = tk.Tk()
-        cls.root.withdraw()
+        from tests._tk import make_root
+        cls.root = make_root()
         cls.cb = StatsCallbacks(
             load_data=lambda: {"sessions": [], "all_takes": []},
             export_json=lambda: None,
@@ -56,7 +55,8 @@ class ExportReportButtonsTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.root.destroy()
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
 
     def _buttons(self):
         import tkinter as tk
@@ -97,10 +97,9 @@ class ExportReportButtonsTest(unittest.TestCase):
 class NoReportButtonsWithoutHandlersTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import tkinter as tk
         from mimora.ui_stats import StatsView, StatsCallbacks
-        cls.root = tk.Tk()
-        cls.root.withdraw()
+        from tests._tk import make_root
+        cls.root = make_root()
         cls.cb = StatsCallbacks(
             load_data=lambda: {"sessions": [], "all_takes": []},
             export_json=lambda: None,
@@ -110,7 +109,8 @@ class NoReportButtonsWithoutHandlersTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.root.destroy()
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
 
     def test_no_report_buttons_without_handlers(self):
         import tkinter as tk

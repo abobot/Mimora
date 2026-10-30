@@ -118,11 +118,10 @@ class ReDrillRowButtonTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import tkinter as tk
         from mimora.ui_history_browse import HistoryBrowseView, HistoryCallbacks
+        from tests._tk import make_root
         cls.drills = []
-        cls.root = tk.Tk()
-        cls.root.withdraw()
+        cls.root = make_root()
         cls.cb = HistoryCallbacks(
             load_sessions=lambda: [{
                 "id": "s-1",
@@ -148,7 +147,8 @@ class ReDrillRowButtonTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.root.destroy()
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
 
     def _collect(self, widget, text):
         import tkinter as tk

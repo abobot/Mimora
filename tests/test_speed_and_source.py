@@ -182,6 +182,13 @@ class LongPressTests(unittest.TestCase):
         btn._on_release(ev)
 
     def test_short_click_fires_command_not_long(self):
+        # This test drives a real press/release at a pixel position, so the
+        # button must be mapped with a real size; a withdrawn root gives a
+        # 1x1 button and the release position check rejects the click. Keep
+        # the root visible (as before) but still tear it down via destroy_root
+        # so the ttkbootstrap Style is reset for the next Tk-root class.
+        import tkinter as tk
+        from tests._tk import destroy_root
         root = tk.Tk()
         try:
             btn, calls = self._button(root)
@@ -191,11 +198,12 @@ class LongPressTests(unittest.TestCase):
             self.assertEqual(calls["long"], 0)
             self.assertEqual(calls["click"], 1)
         finally:
-            root.destroy()
+            destroy_root(root)
 
     def test_long_press_fires_action_and_suppresses_click(self):
         from mimora.ui_theme import LONG_PRESS_DELAY_MS
-        root = tk.Tk(); root.withdraw()
+        from tests._tk import make_root, destroy_root
+        root = make_root()
         try:
             btn, calls = self._button(root)
             root.update()
@@ -206,10 +214,11 @@ class LongPressTests(unittest.TestCase):
             self.assertEqual(calls["long"], 1)
             self.assertEqual(calls["click"], 0)
         finally:
-            root.destroy()
+            destroy_root(root)
 
     def test_no_long_press_when_disabled(self):
-        root = tk.Tk(); root.withdraw()
+        from tests._tk import make_root, destroy_root
+        root = make_root()
         try:
             btn, calls = self._button(root)
             btn.config(state=tk.DISABLED)
@@ -217,7 +226,7 @@ class LongPressTests(unittest.TestCase):
             self._press(btn)
             self.assertEqual(calls["long"], 0)
         finally:
-            root.destroy()
+            destroy_root(root)
 
 
 class PopupTests(unittest.TestCase):
@@ -236,7 +245,8 @@ class PopupTests(unittest.TestCase):
         return c
 
     def test_ref_long_press_opens_popup_and_plays_on_confirm(self):
-        root = tk.Tk(); root.withdraw()
+        from tests._tk import make_root, destroy_root
+        root = make_root()
         try:
             c = self._controller()
             c.root.winfo_children = mock.MagicMock(return_value=[])
@@ -249,7 +259,7 @@ class PopupTests(unittest.TestCase):
             PronunciationTrainerGUI._on_ref_long_press(c, 100, 100)
             self.assertTrue(c._play_reference_at.called is False)  # not yet
         finally:
-            root.destroy()
+            destroy_root(root)
 
     def test_confirm_popup_plays_at_speed(self):
         c = self._controller()
@@ -301,7 +311,8 @@ class PopupTests(unittest.TestCase):
         PronunciationTrainerGUI._dismiss_popup(c, gone, None)
 
     def test_next_long_press_builds_source_popup(self):
-        root = tk.Tk(); root.withdraw()
+        from tests._tk import make_root, destroy_root
+        root = make_root()
         try:
             c = self._controller()
             c._phrase_source_mode = "llm"
@@ -312,7 +323,7 @@ class PopupTests(unittest.TestCase):
             # Should not raise; builds the LLM/Text popup.
             PronunciationTrainerGUI._on_next_long_press(c, 100, 100)
         finally:
-            root.destroy()
+            destroy_root(root)
 
     def test_choose_phrase_source_applies_and_dismisses(self):
         c = self._controller()

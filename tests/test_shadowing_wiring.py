@@ -123,16 +123,16 @@ class HeroShadowingTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import tkinter as tk
         from mimora.ui_hero import HeroCard
-        cls.root = tk.Tk()
-        cls.root.withdraw()
+        from tests._tk import make_root
+        cls.root = make_root()
         cls.hero = HeroCard(cls.root, on_word_clicked=lambda w: None,
                             on_sound_example=lambda w: None)
 
     @classmethod
     def tearDownClass(cls):
-        cls.root.destroy()
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
 
     def test_hidden_when_not_computed(self):
         self.hero.set_shadowing(-1.0, 0.0, 0.0)

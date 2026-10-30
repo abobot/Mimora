@@ -126,10 +126,9 @@ class ZeroScoreViewTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import tkinter as tk
         from mimora.ui import TrainerView, ViewCallbacks
-        cls.root = tk.Tk()
-        cls.root.withdraw()
+        from tests._tk import make_root
+        cls.root = make_root()
         callbacks = ViewCallbacks(
             on_gui_btn_press=lambda: None, on_gui_btn_release=lambda: None,
             on_generate_phrase=lambda: None, play_reference=lambda: None,
@@ -152,7 +151,8 @@ class ZeroScoreViewTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.root.destroy()
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
 
     def test_zero_score_skips_history_entry(self):
         fired = []

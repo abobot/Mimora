@@ -150,6 +150,12 @@ and stay in the user data directory across upgrades.
 - Long-pressing the dictation progress counter (e.g. "1 / 10") now opens the
   per-session limit popup again: the popup used a font size constant that was
   never imported, so the Tk callback raised and no popup appeared.
+- The fast test suite no longer depends on the order in which Tk-root test
+  classes run. A real ``tk.Tk()`` root is torn down at the end of each class and
+  rebuilt fresh, dropping ttkbootstrap's process-wide Style singleton and its
+  stale theme subscribers first; previously a class after the first Tk-root
+  class could fail to build its root (``application has been destroyed``) and
+  the whole suite reported spurious errors.
 
 ## [1.1.0] - 2026-08-23
 
