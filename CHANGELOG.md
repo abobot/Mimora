@@ -177,6 +177,10 @@ and stay in the user data directory across upgrades.
   card: after a check, one cell per reference word (green = correct, red =
   missed or spelling error, grey = extra words the user typed) appears under
   the summary line, centred and wrapping like the main view's strip.
+- The drill window now shows the same colour-coded word feedback as the hero
+  card: after a scored take, one cell per phrase word (green = good, grey =
+  acceptable, red = needs work) appears under the "words to fix / practice"
+  summary line, centred and wrapping like the main view's strip.
 
 ## [1.1.0] - 2026-08-23
 

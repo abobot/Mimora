@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List
 
 from mimora import config, i18n, window_icon
 from mimora.drill.engine import DrillEngine
+from mimora.ui_hero import layout_cells_centered, parse_word_levels
 from mimora.ui_stats import _CanvasChart
 from mimora.ui_theme import (
     FONT_FAMILY,
@@ -37,6 +38,16 @@ from mimora.ui_theme import (
 import logging
 import tkinter as tk
 import ttkbootstrap as ttk
+
+
+# Cell colour per word quality level - the same traffic light the hero card's
+# word feedback uses, so a drill take reads the same way as the main view:
+# green = right, grey = acceptable, red = needs work.
+_LEVEL_COLORS = {
+    "good": THEME["good"],
+    "ok": THEME["text_dim"],
+    "bad": THEME["bad"],
+}
 
 
 @dataclass(frozen=True)
@@ -153,6 +164,14 @@ class DrillView:
             bg=THEME["bg_main"], fg=THEME["text_dim"],
             wraplength=600, justify=tk.LEFT)
         self._feedback_label.pack(anchor=tk.W)
+        # Colored per-word cells (one per phrase word, coloured by quality
+        # level), laid out centered/wrapping like the hero card's word strip.
+        # Hidden until a take is scored; rebuilt on every take.
+        self._feedback_cells_frame = tk.Frame(self._window, bg=THEME["bg_main"])
+        self._feedback_cells: List[tk.Label] = []
+        self._feedback_cells_layout_in_progress = False
+        self._feedback_cells_frame.bind(
+            "<Configure>", self._layout_feedback_cells)
 
         # Last score + mini chart.
         bottom = tk.Frame(self._window, bg=THEME["bg_main"])
@@ -232,6 +251,7 @@ class DrillView:
         """Skip to the next phrase without recording (manual advance)."""
         self._advance_phrase()
         self._feedback_label.configure(text="")
+        self._clear_feedback_cells()
 
     def _on_previous(self) -> None:
         """Go back to the previous phrase."""
@@ -239,6 +259,7 @@ class DrillView:
         self._phrase_label.configure(text=phrase)
         self._phrase_hint.configure(text=i18n.tr("Previous phrase — press Record to retry."))
         self._feedback_label.configure(text="")
+        self._clear_feedback_cells()
 
     def _on_cancel(self) -> None:
         self._cb.on_cancel()
@@ -286,7 +307,18 @@ class DrillView:
             self._play_rec_btn.configure(state=tk.NORMAL)
 
     def _update_feedback(self, details: Dict[str, Any]) -> None:
-        """Render missed words and weak phonemes from the analysis result."""
+        """Render missed words and weak phonemes from the analysis result.
+
+        The text line keeps the "❌ Words to fix ... | 🔊 Practice ..."
+        summary; beneath it a strip of colored cells (one per phrase word,
+        coloured by quality level) gives the same at-a-glance traffic light
+        the hero card's word feedback shows.
+        """
+        # Clear any previous cells first (the strip is rebuilt every take).
+        for child in self._feedback_cells:
+            child.destroy()
+        self._feedback_cells = []
+        self._feedback_cells_frame.pack_forget()
         if not details:
             self._feedback_label.configure(text="")
             return
@@ -323,6 +355,41 @@ class DrillView:
             parts.append(i18n.tr("🔊 Practice: ") + ", ".join(phonemes))
 
         self._feedback_label.configure(text="  |  ".join(parts))
+
+        # Build the colored cells: one per reference word, coloured by level.
+        resolved = parse_word_levels(ref_words)
+        if not resolved:
+            return
+        self._feedback_cells_frame.pack(fill=tk.X, padx=16, pady=(2, 4))
+        for word, level in resolved:
+            color = _LEVEL_COLORS.get(level, THEME["text_dim"])
+            cell = tk.Label(
+                self._feedback_cells_frame, text=word, fg=color,
+                bg=THEME["bg_main"], font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                padx=6, pady=2, highlightthickness=1, highlightbackground=color)
+            cell.place_forget()
+            self._feedback_cells.append(cell)
+        self._layout_feedback_cells()
+
+    def _layout_feedback_cells(self, event=None) -> None:
+        """Center/wrap the feedback cells (same layout as the hero strip)."""
+        if self._feedback_cells_layout_in_progress:
+            return
+        self._feedback_cells_layout_in_progress = True
+        try:
+            height = layout_cells_centered(self._feedback_cells_frame,
+                                           self._feedback_cells)
+            if height:
+                self._feedback_cells_frame.configure(height=height)
+        finally:
+            self._feedback_cells_layout_in_progress = False
+
+    def _clear_feedback_cells(self) -> None:
+        """Destroy the feedback cells and hide the strip (new phrase)."""
+        for child in self._feedback_cells:
+            child.destroy()
+        self._feedback_cells = []
+        self._feedback_cells_frame.pack_forget()
 
     def _show_report(self, outcome) -> None:
         text = (i18n.tr("Drill finished") + "\n\n"
