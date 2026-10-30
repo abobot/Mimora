@@ -289,6 +289,23 @@ class HeroCardPhraseHeightCapTests(unittest.TestCase):
         self.root.update()
         self.assertEqual(self.card.phrase_text.yview()[0], 0.0)
 
+    def test_word_feedback_renders_below_phrase_frame(self):
+        # The phrase Text moved into phrase_frame (its own scrollable sub-frame);
+        # the word-feedback strip and the translation are siblings of that frame,
+        # so they must pack after the *frame*, not after the Text. A strip that
+        # packs after the non-sibling Text lands with wrong geometry and is never
+        # mapped (regression: the strip silently disappeared).
+        self.card.set_phrase("The quick brown fox jumps over the lazy dog")
+        self.root.update()
+        words = [{"word": w, "level": "good"} for w in "The quick brown fox".split()]
+        self.card.set_word_feedback(words)
+        self.root.update()
+        self.assertTrue(self.card.word_feedback.winfo_ismapped())
+        self.assertEqual(len(self.card._word_feedback_cells), 4)
+        # The strip sits directly under the phrase frame, not overlapping it.
+        self.assertGreaterEqual(self.card.word_feedback.winfo_rooty(),
+                                self.card.phrase_frame.winfo_rooty())
+
 
 if __name__ == "__main__":
     unittest.main()

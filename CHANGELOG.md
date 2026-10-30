@@ -161,6 +161,11 @@ and stay in the user data directory across upgrades.
   wrapped lines and scrolls with the mousewheel beyond that (a scrollbar
   appears beside it), so the score row with the badges stays visible no matter
   how long the generated phrase is.
+- The per-word feedback strip under the hero phrase is visible again. Moving
+  the phrase Text into its own scrollable sub-frame broke the "pack after the
+  phrase" placement of the strip and the translation (they are siblings of the
+  frame, not of the Text), so both collapsed to zero height and disappeared;
+  they now pack after the frame and render below the phrase as before.
 
 ## [1.1.0] - 2026-08-23
 

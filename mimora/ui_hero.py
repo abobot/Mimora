@@ -475,12 +475,15 @@ class HeroCard:
             return
         # Packed between the phrase and the translation (translation, when
         # visible, packs itself under the phrase via refresh_translation_ui's
-        # after=self.phrase_text, so the strip must come first in the stacking
+        # after=self.phrase_frame, so the strip must come first in the stacking
         # order - pack it before the translation would move it above the phrase).
-        # after=self.phrase_text keeps it directly under the phrase regardless
-        # of whether the translation is currently packed.
+        # after=self.phrase_frame keeps it directly under the phrase regardless
+        # of whether the translation is currently packed. (The phrase Text now
+        # lives in phrase_frame, its own sub-frame for the scrollbar - the strip
+        # and translation are siblings of that frame, so "after" must name the
+        # frame, not the Text.)
         self.word_feedback.pack(fill=tk.X, padx=26, pady=(6, 0),
-                                after=self.phrase_text)
+                                after=self.phrase_frame)
         for word, level in resolved:
             color = self._LEVEL_COLORS.get(level, THEME["text_dim"])
             cell = tk.Label(
@@ -658,9 +661,11 @@ class HeroCard:
         packed = self.translation_label.winfo_manager() == "pack"
         if show and not packed:
             # Inside the hero card, right under the phrase (no separator - the
-            # dimmer, smaller type is the whole distinction).
+            # dimmer, smaller type is the whole distinction). Packed after
+            # phrase_frame (the strip's and translation's sibling) - the phrase
+            # Text itself lives in that frame, so "after" must name the frame.
             self.translation_label.pack(fill=tk.X, padx=26, pady=(10, 0),
-                                        after=self.phrase_text)
+                                        after=self.phrase_frame)
         elif not show and packed:
             self.translation_label.pack_forget()
 
