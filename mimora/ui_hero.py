@@ -190,6 +190,11 @@ class HeroCard:
         # before set_phrase("-") below, which clears it via reset_word_feedback.
         self.word_feedback = tk.Frame(self.frame, bg=THEME["bg_card"])
         self._word_feedback_cells = []
+        # Re-lay the cells out when the card resizes (a narrow card wraps the
+        # cells onto more centered rows instead of clipping them - see
+        # _layout_word_feedback). Guarded against re-entry by the flag.
+        self._word_feedback_layout_in_progress = False
+        self.word_feedback.bind("<Configure>", self._layout_word_feedback)
 
         # Placeholder until the first phrase arrives.
         self.set_phrase("-")
@@ -491,7 +496,10 @@ class HeroCard:
                 font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
                 cursor="hand2", padx=6, pady=2,
                 highlightthickness=1, highlightbackground=color)
-            cell.pack(side=tk.LEFT, padx=(0, 6))
+            # Laid out by _layout_word_feedback (centered, wrapping rows), not
+            # packed side=LEFT: a fixed single row would overflow a narrow card
+            # and clip the trailing cells.
+            cell.place_forget()
             # Click to hear this word slowly; bind via a default argument so
             # each cell keeps its own word (not the loop's last one).
             cell.bind("<Button-1>", lambda e, w=word: self._on_feedback_cell_clicked(w))
@@ -499,6 +507,59 @@ class HeroCard:
                 i18n.tr("acceptable") if level == "ok" else i18n.tr("needs work"))
             Tooltip(cell, f"{word} - {quality}")
             self._word_feedback_cells.append(cell)
+        # Lay the cells out once now (the <Configure> below fires on the first
+        # resize anyway, but the strip may already be at its final width).
+        self._layout_word_feedback()
+
+    def _layout_word_feedback(self, event=None):
+        """Lay the feedback cells out centered, wrapping onto more rows when the
+        card is too narrow for one row.
+
+        The cells are children of ``word_feedback`` (a ``fill=X`` frame), which
+        would normally pack them side=LEFT into one fixed row - a narrow card
+        then clips every cell past the right edge. Here they are placed by hand
+        in centered rows (each row centered as a whole), wrapping to the next
+        row when the running width would exceed the frame. This keeps every cell
+        visible and centred no matter how wide the card is.
+        """
+        if self._word_feedback_layout_in_progress:
+            return
+        self._word_feedback_layout_in_progress = True
+        try:
+            width = self.word_feedback.winfo_width()
+            if width <= 1 or not self._word_feedback_cells:
+                return
+            cells = self._word_feedback_cells
+            row = []          # cells in the current row
+            row_width = 0     # running width of the current row (incl. padding)
+            rows = []
+            # First pass: measure and split into rows. Each cell's requested
+            # width includes its internal padding; the 6px right pad is added
+            # per cell (the last in a row gets it too, which the centering
+            # absorbs).
+            for cell in cells:
+                cw = cell.winfo_reqwidth() + 6
+                if row and row_width + cw > width:
+                    rows.append((row, row_width - 6))  # unwind last cell's pad
+                    row, row_width = [], 0
+                row.append(cell)
+                row_width += cw
+            if row:
+                rows.append((row, row_width - 6))
+            # Second pass: place each row centered on its own line.
+            y = 0
+            for row_cells, rw in rows:
+                x = max(0, (width - rw) // 2)
+                for cell in row_cells:
+                    cell.place(x=x, y=y, anchor=tk.NW)
+                    x += cell.winfo_reqwidth() + 6
+                y += max(cell.winfo_reqheight() for cell in row_cells)
+            # The frame is packed fill=X, which uses the widget's requested
+            # height - but placed children do not contribute to it, so set it
+            # explicitly to the total laid-out height.
+            self.word_feedback.configure(height=y)
+        finally:
+            self._word_feedback_layout_in_progress = False
 
     def _on_feedback_cell_clicked(self, word: str):
         """Hear the word behind a feedback cell slowly (same as the phrase words).

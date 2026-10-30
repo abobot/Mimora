@@ -81,6 +81,22 @@ class HeroCardWordFeedbackTests(unittest.TestCase):
         self.assertEqual(cells[0].cget("text"), "she")
         self.assertEqual(cells[1].cget("text"), "helping")
 
+    def test_cells_are_centered_not_left_stacked(self):
+        # The cells wrap onto centered rows instead of a fixed side=LEFT row,
+        # so a narrow card does not clip the trailing cells. A visible root is
+        # needed (the withdrawn helper root stays 1px wide and never lays out).
+        self.root.deiconify()
+        self.root.geometry("240x852")
+        self.root.update()
+        words = [{"word": w, "level": "good"} for w in "a b c".split()]
+        self.card.set_word_feedback(words)
+        self.root.update()
+        first = self.card._word_feedback_cells[0]
+        # Cells are placed (centered, wrapping), not packed side=LEFT (which
+        # would overflow the narrow card and clip the trailing cells).
+        self.assertEqual(first.winfo_manager(), "place")
+        self.assertGreater(first.winfo_x(), 0)
+
     def test_bad_word_uses_bad_colour(self):
         from mimora.ui_theme import THEME
         words = [{"word": "helping", "level": "bad"}]

@@ -166,6 +166,9 @@ and stay in the user data directory across upgrades.
   phrase" placement of the strip and the translation (they are siblings of the
   frame, not of the Text), so both collapsed to zero height and disappeared;
   they now pack after the frame and render below the phrase as before.
+- The word-feedback cells now wrap onto centred rows instead of a single
+  side-packed row, so a narrow card no longer clips the trailing words; every
+  cell stays visible and centred no matter how wide the card is.
 
 ## [1.1.0] - 2026-08-23
 
