@@ -428,6 +428,37 @@ key next to its default. Copy it to `config/settings.json` to start, or edit tha
 file directly. The file and every key in it are optional, and anything missing
 falls back to the built-in default.
 
+### Web companion (experimental)
+
+Mimora also ships an optional web frontend that reuses the same engine, TTS, LLM
+and stats modules over a small FastAPI server. The browser records your voice
+(with `getUserMedia`) and the backend scores it, so the practice loop
+(Prompt → Record → Analyze → Feedback) runs without the desktop window.
+
+Install the extra and launch it:
+
+```bash
+pip install "mimora[web]"
+mimora-web
+```
+
+From a clone, in the same virtual environment you installed into:
+
+```bash
+pip install -e ".[web]"
+python -m mimora.web.server
+```
+
+Then open <http://127.0.0.1:8788> in a browser. The page waits for the models to
+load, generates a phrase, plays the reference, and scores each recording you
+submit. The server is local-only (`127.0.0.1`) by default; pass `--host` /
+`--port` to change it, or set `MIMORA_WEB_HOST` / `MIMORA_WEB_PORT`.
+
+The web server uses the **same** engine, TTS voice, LLM backend and stats store
+as the desktop app (same `config/settings.json`). Do not run both at once: the
+models and the llama-server subprocess are per-machine resources, and two live
+processes compete for them.
+
 ---
 
 ## GPU / CPU notes
