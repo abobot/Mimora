@@ -629,6 +629,8 @@ _ZH: Dict[str, str] = {
     "Daily target, minutes": "每日目标，分钟",
     "Drill takes per session": "每次练习的尝试数",
     "Dictation sentences per session": "每次听写的句子数",
+    "Random order for dictation sentences": "听写句子随机顺序",
+    "Spaced repetition for dictation (Ebbinghaus)": "听写间隔复习（艾宾浩斯）",
     "Warm up models at startup": "启动时预热模型",
     "Max recording, seconds": "最长录音，秒",
     "Silence timeout, seconds": "静音超时，秒",
@@ -678,6 +680,10 @@ _ZH: Dict[str, str] = {
         "当最近 3 次尝试得分均不低于此值时，听写会话标记为“已掌握”。",
     "How many sentences one dictation session runs before it reports done.":
         "一次听写会话在报告完成前运行多少句子。",
+    "Pick a random dictation sentence instead of cycling in order. Takes effect on the next dictation session.":
+        "随机选择听写句子而非按顺序循环。下次听写会话生效。",
+    "Re-present dictation sentences you have scored on the Ebbinghaus forgetting-curve schedule (1, 2, 4, 7, 15, 30, 60 days), so one you wrote correctly appears less often. Takes effect on the next dictation session.":
+        "按艾宾浩斯遗忘曲线（1、2、4、7、15、30、60 天）重新呈现已评分的听写句子，使写对的句子出现更少。下次听写会话生效。",
     "Writes each take's WAVs and phrase to logs/records/.":
         "将每次尝试的 WAV 和句子写入 logs/records/。",
     "Faster first take, slower startup.": "首次尝试更快，启动更慢。",

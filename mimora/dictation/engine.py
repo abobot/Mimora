@@ -31,7 +31,7 @@ import logging
 import random
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from mimora import config
 
@@ -63,6 +63,11 @@ class DictationAttempt:
     # comparison ``details`` when the controller passes them in.
     wrong_words: List[str] = field(default_factory=list)
     extra_words: List[str] = field(default_factory=list)
+    # Misspelled (not merely omitted) reference words - the subset of
+    # ``wrong_words`` that were typed but wrong, so the record can focus on
+    # spelling errors the user should review (they got the word wrong, not
+    # just skipped it).
+    spelling_errors: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -79,6 +84,8 @@ class DictationOutcome:
     # session, for the "review these later" view and statistics.
     wrong_words: List[str] = field(default_factory=list)
     extra_words: List[str] = field(default_factory=list)
+    # Distinct misspelled-only words, for the spelling-error focus list.
+    spelling_errors: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -99,6 +106,13 @@ class DictationEngine:
         default_factory=lambda: config.DICTATION_MAX_ATTEMPTS)
     # Consecutive passes needed to declare the session "mastered".
     mastered_streak_required: int = 3
+    # Pick a random sentence instead of cycling in order (no immediate
+    # repeat). Mirrors ``SourceTextPhraseProvider(random_order=...)``.
+    random_order: bool = False
+    # Optional Ebbinghaus review store (mimora/review.py). When set, due
+    # phrases are re-presented first and each scored attempt advances the
+    # phrase's schedule, so an all-correct sentence reappears less often.
+    review_store: Optional[Any] = None
 
     # Populated by the controller.
     phrases: List[str] = field(default_factory=list)
@@ -166,21 +180,60 @@ class DictationEngine:
     def next_phrase(self) -> str:
         """Return the sentence for the next attempt.
 
-        Cycles through the candidate list, reshuffling when we reach the
-        end, so a long session does not drill the same sentence repeatedly.
+        With a ``review_store`` set, phrases that are due on the Ebbinghaus
+        forgetting curve are re-presented first (most overdue first), so a
+        sentence you scored well reappears after its scheduled interval
+        instead of cycling straight back into rotation. Otherwise:
+        ``random_order`` picks a random sentence (avoiding an immediate
+        repeat), the default cycles in order, reshuffling at the end so a
+        long session does not drill the same sentence repeatedly.
         """
         if not self._candidate_phrases:
             phrase = "The quick brown fox jumps over the lazy dog."
         else:
-            phrase = self._candidate_phrases[self._phrase_index % len(
-                self._candidate_phrases)]
-            if self._phrase_index >= len(self._candidate_phrases):
-                random.shuffle(self._candidate_phrases)
-                self._phrase_index = 0
-            else:
-                self._phrase_index += 1
+            phrase = self._review_due_phrase()
+            if phrase is None and self.random_order:
+                phrase = self._random_phrase()
+            if phrase is None:
+                phrase = self._candidate_phrases[self._phrase_index % len(
+                    self._candidate_phrases)]
+                if self._phrase_index >= len(self._candidate_phrases):
+                    random.shuffle(self._candidate_phrases)
+                    self._phrase_index = 0
+                else:
+                    self._phrase_index += 1
         self._phrase_history.append(phrase)
         return phrase
+
+    def _review_due_phrase(self) -> Optional[str]:
+        """Most-overdue candidate phrase, or None when review is off/none due."""
+        store = self.review_store
+        if store is None:
+            return None
+        try:
+            due = store.due_phrases(source="practice")
+        except Exception:  # noqa: BLE001 - review is best-effort
+            logging.exception("Dictation review lookup failed; skipping:")
+            return None
+        if not due:
+            return None
+        current = {p.lower().strip() for p in self._candidate_phrases}
+        for phrase in due:
+            if phrase.lower().strip() in current:
+                return phrase
+        return None
+
+    def _random_phrase(self) -> Optional[str]:
+        """A random candidate, avoiding an immediate repeat (None if one)."""
+        if len(self._candidate_phrases) == 1:
+            return self._candidate_phrases[0]
+        last = self._phrase_history[-1].lower().strip() \
+            if self._phrase_history else None
+        pool = [p for p in self._candidate_phrases
+                if p.lower().strip() != last]
+        if not pool:
+            pool = list(self._candidate_phrases)
+        return random.choice(pool)
 
     def previous_phrase(self) -> str:
         """Return the previous sentence, popping from history.
@@ -203,13 +256,15 @@ class DictationEngine:
     def record_attempt(self, user_text: str, reference_text: str,
                        score: float,
                        wrong_words: List[str] | None = None,
-                       extra_words: List[str] | None = None) -> DictationAttempt:
+                       extra_words: List[str] | None = None,
+                       spelling_errors: List[str] | None = None) -> DictationAttempt:
         """Record one scored attempt and return the record with pass/fail.
 
         ``wrong_words`` / ``extra_words`` are optional diagnostic lists from
         the comparison (missed or misspelled reference words, and surplus user
-        words). They are stored per attempt so the report can surface which
-        words the user should review.
+        words). ``spelling_errors`` is the misspelled-only subset of
+        ``wrong_words``. They are stored per attempt so the report can surface
+        which words the user should review.
         """
         if self.attempts:
             attempt = self.attempts[-1].attempt + 1
@@ -223,9 +278,26 @@ class DictationEngine:
             passed=float(score) >= self.pass_threshold,
             wrong_words=list(wrong_words or []),
             extra_words=list(extra_words or []),
+            spelling_errors=list(spelling_errors or []),
         )
         self.attempts.append(rec)
+        self._advance_review(reference_text, rec.passed)
         return rec
+
+    def _advance_review(self, phrase: str, passed: bool) -> None:
+        """Advance the phrase's Ebbinghaus schedule after a scored attempt.
+
+        Best-effort: review persistence must never surface into the dictation
+        loop. A pass lengthens the interval (the all-correct sentence appears
+        less often), a fail resets it to the soonest step.
+        """
+        store = self.review_store
+        if store is None:
+            return
+        try:
+            store.record_result(phrase, passed)
+        except Exception:  # noqa: BLE001 - never break the dictation loop
+            logging.exception("Failed to record dictation review result:")
 
     def mastered_streak(self) -> int:
         """Length of the current consecutive-pass streak."""
@@ -291,6 +363,7 @@ class DictationEngine:
             attempts=list(self.attempts),
             wrong_words=self._aggregate_words("wrong_words"),
             extra_words=self._aggregate_words("extra_words"),
+            spelling_errors=self._aggregate_words("spelling_errors"),
         )
 
     def _aggregate_words(self, attr: str) -> List[str]:
@@ -314,6 +387,7 @@ class DictationEngine:
             "outcome": "mastered" if outcome.mastered else "unfinished",
             "wrong_words": outcome.wrong_words,
             "extra_words": outcome.extra_words,
+            "spelling_errors": outcome.spelling_errors,
             "takes": [
                 {
                     "user_text": a.user_text,
@@ -323,6 +397,7 @@ class DictationEngine:
                     "passed": a.passed,
                     "wrong_words": a.wrong_words,
                     "extra_words": a.extra_words,
+                    "spelling_errors": a.spelling_errors,
                 }
                 for a in self.attempts
             ],

@@ -445,6 +445,22 @@ def build_sections() -> tuple:
                   minimum=1, maximum=100,
                   help=i18n.tr("How many sentences one dictation session runs before "
                                "it reports done.")),
+            Field("dictation_random_order",
+                  i18n.tr("Random order for dictation sentences"), "bool",
+                  lambda: config.user_setting("dictation_random_order",
+                                              config.DICTATION_RANDOM_ORDER),
+                  help=i18n.tr("Pick a random dictation sentence instead of "
+                               "cycling in order. Takes effect on the next "
+                               "dictation session.")),
+            Field("dictation_review_enabled",
+                  i18n.tr("Spaced repetition for dictation (Ebbinghaus)"), "bool",
+                  lambda: config.user_setting("dictation_review_enabled",
+                                              config.DICTATION_REVIEW_ENABLED),
+                  help=i18n.tr("Re-present dictation sentences you have scored "
+                               "on the Ebbinghaus forgetting-curve schedule (1, "
+                               "2, 4, 7, 15, 30, 60 days), so one you wrote "
+                               "correctly appears less often. Takes effect on "
+                               "the next dictation session.")),
         )),
         Section(i18n.tr("Technical"), (
             Field("save_recordings", i18n.tr("Save recordings (debug)"), "bool",

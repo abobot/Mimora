@@ -251,6 +251,130 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(data["extra_words"], ["zzz"])
         self.assertEqual(data["takes"][0]["wrong_words"], ["a"])
 
+    def test_spelling_errors_are_stored_per_attempt(self):
+        engine = DictationEngine(source_text="The quick brown fox.")
+        engine.record_attempt("The quik fox.", "The quick brown fox.", 66.7,
+                              wrong_words=["quick", "brown"],
+                              extra_words=["extra"],
+                              spelling_errors=["quick"])
+        rec = engine.attempts[-1]
+        self.assertEqual(rec.spelling_errors, ["quick"])
+
+    def test_finish_aggregates_distinct_spelling_errors(self):
+        engine = DictationEngine(pass_threshold=80.0, source_text="A. B. C.")
+        engine.record_attempt("x", "A B", 50, wrong_words=["a", "b"],
+                              spelling_errors=["a"])
+        engine.record_attempt("y", "A C", 50, wrong_words=["a", "c"],
+                              spelling_errors=["a", "c"])
+        outcome = engine.finish()
+        self.assertEqual(outcome.spelling_errors, ["a", "c"])
+
+    def test_storage_dict_includes_spelling_errors(self):
+        engine = DictationEngine(source_text="A. B. C.")
+        engine.record_attempt("x", "A B", 50, wrong_words=["a"],
+                              spelling_errors=["a"])
+        data = engine.to_storage_dict()
+        self.assertEqual(data["spelling_errors"], ["a"])
+        self.assertEqual(data["takes"][0]["spelling_errors"], ["a"])
+
+
+class _FakeReviewStore:
+    """Minimal Ebbinghaus store double: records results, answers due set."""
+
+    def __init__(self, due=()):
+        self.due = list(due)
+        self.results = []
+        self.last_source = None
+
+    def due_phrases(self, source=None):
+        self.last_source = source
+        return list(self.due)
+
+    def record_result(self, phrase, passed):
+        self.results.append((phrase, passed))
+
+
+class RandomOrderTest(unittest.TestCase):
+    """random_order=True picks random candidates without immediate repeat."""
+
+    def test_random_order_avoids_immediate_repeat(self):
+        engine = DictationEngine(source_text="A one. B two. C three.",
+                                 random_order=True)
+        seen = [engine.next_phrase() for _ in range(6)]
+        for a, b in zip(seen, seen[1:]):
+            self.assertNotEqual(a.lower().strip(), b.lower().strip())
+
+    def test_random_order_uses_only_candidates(self):
+        engine = DictationEngine(source_text="A one. B two.", random_order=True)
+        candidates = {p.lower().strip() for p in engine.candidate_phrases}
+        for _ in range(10):
+            self.assertIn(engine.next_phrase().lower().strip(), candidates)
+
+    def test_sequential_by_default(self):
+        engine = DictationEngine(source_text="A one. B two.")
+        # The split consumes punctuation only when a sentence is followed by
+        # whitespace, so the last candidate keeps its period.
+        self.assertEqual(engine.next_phrase(), "A one")
+        self.assertEqual(engine.next_phrase(), "B two.")
+
+
+class ReviewIntegrationTest(unittest.TestCase):
+    """review_store re-presents due phrases first and advances on attempt."""
+
+    def test_due_phrase_is_preferred_and_sourced_practice(self):
+        store = _FakeReviewStore(due=["The dog ran."])
+        engine = DictationEngine(
+            source_text="The cat sat. The dog ran.", max_attempts=5,
+            review_store=store)
+        self.assertEqual(engine.next_phrase(), "The dog ran.")
+        self.assertEqual(store.last_source, "practice")
+
+    def test_no_due_falls_back_to_sequence(self):
+        store = _FakeReviewStore(due=[])
+        engine = DictationEngine(
+            source_text="The cat sat. The dog ran.", max_attempts=5,
+            review_store=store)
+        self.assertEqual(engine.next_phrase(), "The cat sat")
+
+    def test_pass_advances_review(self):
+        store = _FakeReviewStore()
+        engine = DictationEngine(
+            source_text="The cat sat.", max_attempts=5, review_store=store)
+        engine.record_attempt("The cat sat", "The cat sat", 100.0,
+                              spelling_errors=[])
+        self.assertEqual(store.results, [("The cat sat", True)])
+
+    def test_fail_resets_review(self):
+        store = _FakeReviewStore()
+        engine = DictationEngine(
+            source_text="The dog ran.", max_attempts=5, review_store=store)
+        engine.record_attempt("The dog rna", "The dog ran", 50.0,
+                              wrong_words=["dog"], spelling_errors=["dog"])
+        self.assertEqual(store.results, [("The dog ran", False)])
+
+    def test_review_store_error_is_best_effort(self):
+        class Boom:
+            def due_phrases(self, source=None):
+                raise RuntimeError("store down")
+
+            def record_result(self, phrase, passed):
+                raise RuntimeError("store down")
+
+        engine = DictationEngine(
+            source_text="The cat sat. The dog ran.", max_attempts=5,
+            review_store=Boom())
+        # Neither lookup nor record may raise into the caller.
+        self.assertEqual(engine.next_phrase(), "The cat sat")
+        engine.record_attempt("The cat sat", "The cat sat", 100.0)
+        self.assertEqual(len(engine.attempts), 1)
+
+    def test_due_phrase_not_in_candidates_is_skipped(self):
+        store = _FakeReviewStore(due=["Not in source."])
+        engine = DictationEngine(
+            source_text="The cat sat. The dog ran.", max_attempts=5,
+            review_store=store)
+        self.assertEqual(engine.next_phrase(), "The cat sat")
+
 
 if __name__ == "__main__":
     unittest.main()

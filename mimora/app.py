@@ -1386,6 +1386,8 @@ class PronunciationTrainerGUI:
             source_text=self._get_source_text(),
             pass_threshold=config.DICTATION_PASS_THRESHOLD,
             max_attempts=config.DICTATION_MAX_ATTEMPTS,
+            random_order=config.DICTATION_RANDOM_ORDER,
+            review_store=self._dictation_review_store(),
         )
         self._dictation_engine = engine
 
@@ -1433,6 +1435,24 @@ class PronunciationTrainerGUI:
             engine.max_attempts = limit
         if self._dictation_view is not None:
             self._dictation_view._refresh_progress_label()
+
+    def _dictation_review_store(self):
+        """The Ebbinghaus store for dictation, or None when disabled.
+
+        Built lazily per dictation session and only when the setting is on, so
+        a run that never enabled dictation review does not touch disk. Best-
+        effort: a store failure disables review for this session rather than
+        blocking the dictation view from opening.
+        """
+        if not config.DICTATION_REVIEW_ENABLED:
+            return None
+        try:
+            store = ReviewStore()
+            store.load()
+            return store
+        except Exception:  # noqa: BLE001 - never break opening dictation
+            logging.exception("Could not open dictation review store; review off:")
+            return None
 
     def _dictation_play(self, slow: bool = False) -> None:
         """Synthesize and play the current dictation sentence (TTS).
@@ -1484,10 +1504,15 @@ class PronunciationTrainerGUI:
         # Wrong words = missed or misspelled reference words; extra = surplus.
         wrong_words = [s["word"] for s in details.get("status", [])
                        if s["state"] in ("missed", "wrong")]
+        # Spelling errors = reference words that were present but written wrong
+        # (a misspelling, not an omission) - the focus of dictation review.
+        spelling_errors = [s["word"] for s in details.get("status", [])
+                           if s["state"] == "wrong"]
         extra_words = details.get("extra_words", [])
         engine.record_attempt(user_text, reference, score,
                               wrong_words=wrong_words,
-                              extra_words=extra_words)
+                              extra_words=extra_words,
+                              spelling_errors=spelling_errors)
         view.reveal_answer(reference)
         view.refresh_progress(last_score=score, details=details)
         if engine.done:

@@ -114,6 +114,17 @@ and stay in the user data directory across upgrades.
 - Wrong words (missed or misspelled) and extra words are collected per attempt
   and aggregated per session, so a finished report and the history browser can
   list the words to review.
+- **Dictation sentence order and Ebbinghaus review.** Two new Settings toggles
+  under History & Stats shape a dictation session: **Random order for dictation
+  sentences** (pick a random sentence instead of cycling in order, never
+  repeating the previous one) and **Spaced repetition for dictation
+  (Ebbinghaus)** (re-present sentences due on the 1/2/4/7/15/30/60-day
+  forgetting curve first, and advance a sentence's schedule after each scored
+  attempt, so one you wrote correctly appears less often). Both take effect on
+  the next dictation session. Each take also records the **misspelled-only**
+  subset of the wrong words (`spelling_errors`), so the finished report and the
+  history browser can focus on the words the user actually wrote wrong rather
+  than the ones they omitted.
 
 ### Fixed
 

@@ -125,6 +125,8 @@ _KNOWN_USER_KEYS = {
     "drill_max_attempts",
     "dictation_pass_threshold",
     "dictation_max_attempts",
+    "dictation_random_order",
+    "dictation_review_enabled",
     # UI localization: the interface language (independent of the practice
     # language). Values are i18n.SUPPORTED_LANGUAGES codes.
     "ui_language",
@@ -203,6 +205,8 @@ USER_SETTING_DEFAULTS = {
     "drill_max_attempts": 10,
     "dictation_pass_threshold": 80.0,
     "dictation_max_attempts": 10,
+    "dictation_random_order": False,
+    "dictation_review_enabled": False,
     # UI language. English is the default; Chinese ("zh") is the first
     # localization. Validated against i18n.SUPPORTED_LANGUAGES below.
     "ui_language": "en",
@@ -1438,6 +1442,18 @@ DICTATION_PASS_THRESHOLD = _num("dictation_pass_threshold", 80.0,
 # How many attempts a dictation session runs before it reports done.
 DICTATION_MAX_ATTEMPTS = _num("dictation_max_attempts", 10,
                               minimum=1, maximum=100)
+
+# Pick dictation sentences at random instead of cycling in order
+# ("dictation_random_order"). False (the default) keeps the historical
+# sequential walk; True picks a random sentence, avoiding an immediate repeat.
+DICTATION_RANDOM_ORDER = bool(_USER.get("dictation_random_order", False))
+
+# Ebbinghaus spaced-repetition review for dictation ("dictation_review_enabled").
+# When on, dictation prefers sentences that are due on the forgetting curve
+# (see mimora/review.py) and a scored attempt advances the sentence's schedule,
+# so one you wrote correctly appears less often. Off (the default) keeps the
+# historical behaviour.
+DICTATION_REVIEW_ENABLED = bool(_USER.get("dictation_review_enabled", False))
 
 # UI language (the interface, not the practice language). English is the
 # default and the first localization is Chinese. The code list lives in
