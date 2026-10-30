@@ -156,6 +156,11 @@ and stay in the user data directory across upgrades.
   stale theme subscribers first; previously a class after the first Tk-root
   class could fail to build its root (``application has been destroyed``) and
   the whole suite reported spurious errors.
+- A very long hero phrase no longer clips the WORK ON phoneme badges off the
+  bottom of the card. The phrase Text now grows only up to a fixed number of
+  wrapped lines and scrolls with the mousewheel beyond that (a scrollbar
+  appears beside it), so the score row with the badges stays visible no matter
+  how long the generated phrase is.
 
 ## [1.1.0] - 2026-08-23
 

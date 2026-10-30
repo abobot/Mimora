@@ -13,6 +13,7 @@ two plain callables passed in at construction (``on_word_clicked``,
 ``on_sound_example``); the facade drives it through the public methods.
 """
 import tkinter as tk
+import tkinter.ttk as ttk
 from typing import Callable, Optional
 
 from mimora import config, i18n
@@ -36,6 +37,14 @@ from mimora.ui_theme import (
 # double-click to cancel it and start a drill instead - without this the word
 # would play twice before the drill window opened.
 _DOUBLE_CLICK_DELAY_MS = 250
+
+# Maximum wrapped lines the phrase Text grows to before it becomes scrollable.
+# A very long generated phrase would otherwise push the score row (and the WORK
+# ON badges) out of the card's visible height, clipping them off the bottom of
+# the fixed-height window. Capping the Text and letting the user scroll it (the
+# Text is disabled, but yview/mousewheel still work - see _on_phrase_wheel)
+# keeps the badge row always visible no matter how long the phrase is.
+_PHRASE_MAX_LINES = 8
 
 
 def parse_word_levels(reference_words: list) -> list:
@@ -101,12 +110,22 @@ class HeroCard:
         # the mispronounced ones also get the "miss" underline. Disabled +
         # takefocus=0 keeps it from swallowing the spacebar record toggle
         # (app.py gates hotkeys on a focused Text widget).
+        # The phrase sits in a sub-frame so a scrollbar can appear beside it when
+        # the wrapped content exceeds _PHRASE_MAX_LINES (see _fit_phrase_height).
+        self.phrase_frame = tk.Frame(self.frame, bg=THEME["bg_card"])
+        self.phrase_frame.pack(fill=tk.X, padx=14, pady=(22, 0))
         self.phrase_text = tk.Text(
-            self.frame, font=(FONT_FAMILY, FONT_SIZE_PHRASE, "bold"),
+            self.phrase_frame, font=(FONT_FAMILY, FONT_SIZE_PHRASE, "bold"),
             fg=THEME["phrase"], bg=THEME["bg_card"], wrap=tk.WORD, bd=0,
             highlightthickness=0, height=1, cursor="arrow", takefocus=0,
-            padx=16, pady=0)
-        self.phrase_text.pack(fill=tk.X, padx=14, pady=(22, 0))
+            padx=16, pady=0, yscrollcommand=self._on_phrase_yscroll)
+        self.phrase_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Shown only while the phrase is scrollable (over the cap); packing it
+        # keeps the card's width stable either way.
+        self.phrase_scrollbar = ttk.Scrollbar(
+            self.phrase_frame, orient=tk.VERTICAL,
+            command=self.phrase_text.yview)
+        self.phrase_scrollbar.pack_forget()
         # All content is inserted with the "center" tag: tk.Text has no
         # widget-level justify, only per-tag.
         self.phrase_text.tag_configure("center", justify=tk.CENTER)
@@ -148,9 +167,15 @@ class HeroCard:
         #     for seq in ("<B1-Motion>", "<Double-Button-1>", "<Triple-Button-1>"):
         #         self.phrase_text.bind(seq, lambda e: "break")
         # The Text is disabled between set_phrase calls; its height follows the
-        # wrapped content (recomputed on every set_phrase and on resize).
+        # wrapped content (recomputed on every set_phrase and on resize), capped
+        # at _PHRASE_MAX_LINES (see _fit_phrase_height). The mousewheel scrolls a
+        # capped phrase: the disabled Text still honours yview, so the user can
+        # read the rest of a long phrase without the score row moving. (Keyboard
+        # Up/Down are deliberately not bound - the disabled, takefocus=0 Text can
+        # never receive keyboard focus, so they would be dead code.)
         self.phrase_text.configure(state=tk.DISABLED)
         self.phrase_text.bind("<Configure>", lambda e: self._fit_phrase_height())
+        self.phrase_text.bind("<MouseWheel>", self._on_phrase_wheel)
         # Right-click the phrase to copy it (whole phrase - a tk.Text has no
         # single "text" option like a Label).
         self._bind_copy_menu(self.phrase_text,
@@ -321,11 +346,15 @@ class HeroCard:
         self._fit_phrase_height()
 
     def _fit_phrase_height(self):
-        """Size the phrase Text (in lines) to its wrapped content.
+        """Size the phrase Text (in lines) to its wrapped content, capped.
 
         A tk.Text does not auto-grow like a Label: its height is a fixed line
         count, so it is recomputed after every set_phrase and on width changes
-        (the <Configure> binding). No-op before the widget is laid out.
+        (the <Configure> binding). The height is capped at _PHRASE_MAX_LINES: a
+        long phrase would otherwise push the score row (with the WORK ON badges)
+        out of the card's visible height and get clipped by the fixed window.
+        Over the cap the scrollbar is packed and the Text scrolls (see
+        _on_phrase_wheel). No-op before the widget is laid out.
         """
         if self.phrase_text.winfo_width() <= 1:
             return
@@ -336,7 +365,54 @@ class HeroCard:
         # Tkinter's Text.count may return the value tuple-wrapped.
         if isinstance(lines, tuple):
             lines = lines[0]
-        self.phrase_text.configure(height=max(1, int(lines or 1)))
+        lines = max(1, int(lines or 1))
+        scrollable = lines > _PHRASE_MAX_LINES
+        self.phrase_text.configure(height=min(lines, _PHRASE_MAX_LINES))
+        if scrollable:
+            if not self.phrase_scrollbar.winfo_ismapped():
+                # Packed BEFORE the Text so the Text's expand=True cannot steal
+                # the vertical space the scrollbar needs (pack allocates in
+                # order; an expand=True fill=BOTH Text packed first leaves the
+                # later-packed scrollbar 1px tall).
+                self.phrase_scrollbar.pack(side=tk.RIGHT, fill=tk.Y,
+                                           before=self.phrase_text)
+        elif self.phrase_scrollbar.winfo_ismapped():
+            self.phrase_scrollbar.pack_forget()
+            # Restore the top of the phrase when it shrinks back under the cap,
+            # so the next short phrase is not left scrolled down.
+            self.phrase_text.yview_moveto(0.0)
+
+    def _on_phrase_yscroll(self, first, last):
+        """Text.yscrollcommand callback: drive the scrollbar's position.
+
+        The Scrollbar needs an explicit set (instead of the default
+        yscrollcommand=scrollbar.set pair) so it appears only when the phrase
+        actually overflows the cap; while under the cap the fraction is always
+        (0.0, 1.0) and the bar is hidden by _fit_phrase_height.
+        """
+        if self.phrase_scrollbar.winfo_exists():
+            self.phrase_scrollbar.set(first, last)
+
+    def _on_phrase_wheel(self, event):
+        """Scroll the capped phrase with the mousewheel.
+
+        The Text is disabled (it must never swallow the spacebar), but a
+        disabled Text still honours yview, so scrolling works. Returns "break"
+        so the event does not fall through to the window (and so a wheel over
+        the phrase never moves a scrollable panel behind it).
+        """
+        # Only scroll when there is something to scroll (over the cap).
+        if self.phrase_text.count("1.0", "end", "displaylines")[0] <= _PHRASE_MAX_LINES:
+            return "break"
+        delta = getattr(event, "delta", 0)
+        if delta:
+            # Windows/macOS: delta is ±120 per notch; Linux gives ±1 per line.
+            direction = -1 if delta > 0 else 1
+            if abs(delta) >= 120:
+                # One mousewheel notch on Windows/macOS scrolls ~3 lines.
+                direction *= 3
+            self.phrase_text.yview_scroll(direction, "units")
+        return "break"
 
     def mark_miss_words(self, reference_words: list) -> int:
         """Re-render the hero phrase, underlining the mispronounced words.

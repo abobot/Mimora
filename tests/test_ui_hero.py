@@ -200,5 +200,95 @@ class HeroCardWordDrillTests(unittest.TestCase):
         self.assertEqual(HeroCardWordDrillTests.played, [])
 
 
+class HeroCardPhraseHeightCapTests(unittest.TestCase):
+    """A long phrase is capped and scrollable instead of clipping the score row.
+
+    The phrase Text grows with its wrapped content, but only up to
+    ``_PHRASE_MAX_LINES``: a very long generated phrase would otherwise push the
+    score row (and the WORK ON badges) off the card and out of the fixed-height
+    window. Over the cap the phrase scrolls (mousewheel / Up / Down).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from tests._tk import make_root
+        cls.root = make_root()
+        # A real, sized and *visible* root so the phrase Text wraps and the
+        # scrollbar maps like it does in the app (the withdrawn root the helper
+        # returns is 1px wide and never maps its children, so the phrase would
+        # wrap to the cap and winfo_ismapped would always be false).
+        cls.root.geometry("600x852")
+        cls.root.deiconify()
+        cls.root.update()
+        cls.card = HeroCard(
+            cls.root,
+            on_word_clicked=lambda w: None,
+            on_sound_example=lambda w: None)
+        cls.long_words = ["the", "quick", "brown", "fox", "jumps", "over",
+                          "lazy", "dog", "river", "bank", "mountain", "wind",
+                          "tree", "bird", "song", "valley"]
+
+    @classmethod
+    def tearDownClass(cls):
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
+
+    def test_short_phrase_uses_its_own_height(self):
+        # 5 wrapped lines < the 8-line cap: the Text keeps its natural height.
+        self.card.set_phrase("The quick brown fox jumps over the lazy dog")
+        self.root.update()
+        self.assertGreater(self.card.phrase_text.cget("height"), 1)
+        self.assertLessEqual(self.card.phrase_text.cget("height"), 8)
+        self.assertFalse(self.card.phrase_scrollbar.winfo_ismapped())
+
+    def test_long_phrase_is_capped_at_max_lines(self):
+        self.card.set_phrase(" ".join(self.long_words * 8))
+        self.root.update()
+        self.assertEqual(self.card.phrase_text.cget("height"), 8)
+        # Over the cap the scrollbar appears beside the phrase.
+        self.assertTrue(self.card.phrase_scrollbar.winfo_ismapped())
+
+    def test_scrollbar_hides_again_when_phrase_shrinks(self):
+        self.card.set_phrase(" ".join(self.long_words * 8))
+        self.root.update()
+        self.assertTrue(self.card.phrase_scrollbar.winfo_ismapped())
+        self.card.set_phrase("short phrase")
+        self.root.update()
+        self.assertFalse(self.card.phrase_scrollbar.winfo_ismapped())
+
+    def test_wheel_scrolls_long_phrase_down(self):
+        self.card.set_phrase(" ".join(self.long_words * 8))
+        self.root.update()
+        self.card.phrase_text.yview_moveto(0.0)
+        event = tk.Event()
+        event.delta = -120  # wheel down
+        self.card._on_phrase_wheel(event)
+        self.root.update()
+        self.assertGreater(self.card.phrase_text.yview()[0], 0.0)
+
+    def test_wheel_scrolls_long_phrase_up(self):
+        # Scrolled down first, then a wheel-up returns towards the top.
+        self.card.set_phrase(" ".join(self.long_words * 8))
+        self.root.update()
+        self.card.phrase_text.yview_moveto(0.5)
+        before = self.card.phrase_text.yview()[0]
+        event = tk.Event()
+        event.delta = 120  # wheel up
+        self.card._on_phrase_wheel(event)
+        self.root.update()
+        self.assertLess(self.card.phrase_text.yview()[0], before)
+
+    def test_wheel_ignored_when_phrase_is_short(self):
+        # No scrolling under the cap: the view stays at the top.
+        self.card.set_phrase("The quick brown fox")
+        self.root.update()
+        self.card.phrase_text.yview_moveto(0.0)
+        event = tk.Event()
+        event.delta = -120
+        self.card._on_phrase_wheel(event)
+        self.root.update()
+        self.assertEqual(self.card.phrase_text.yview()[0], 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
