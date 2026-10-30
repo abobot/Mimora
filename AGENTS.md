@@ -162,6 +162,17 @@ installs or imports llama-cpp-python.
 - [`mimora/settings_ctl.py`](mimora/settings_ctl.py) - `SettingsGlue`: the
   persistence mechanics around settings.json (persist, live-apply tables,
   window sync, reset-to-defaults). The dispatch itself stays in `app.py`.
+- [`mimora/web/`](mimora/web/) - optional **web companion**: a FastAPI server
+  (console script `mimora-web`) plus a browser single-page frontend that runs
+  the same practice loop (Prompt → Record → Analyze → Feedback) without Tk.
+  `runtime.py` is the Tk-free composition root mirroring `app.py`'s wiring;
+  `server.py` is the HTTP surface. The browser records audio (`getUserMedia`)
+  and uploads a WAV; the backend scores it with the shared
+  engine/TTS/LLM/stats modules. Installed only with the `[web]` extra
+  (`pip install "mimora[web]"`). Do **not** run it at the same time as the
+  desktop app: the models and llama-server subprocess are per-machine
+  resources. The static files ship inside the package so a wheel carries them
+  (see the packaging note under `paths.py`).
 
 ### Engines and audio
 

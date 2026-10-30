@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mimora 网页版</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🎤</span>
+    <span class="title">Mimora <em>网页版</em></span>
+  </div>
+  <div id="status-banner" class="status-banner loading">正在加载模型…</div>
+</header>
+
+<main class="container">
+  <!-- 短语卡片 -->
+  <section class="card phrase-card">
+    <div class="card-head">
+      <h2>当前短语</h2>
+      <span id="voice-label" class="muted"></span>
+    </div>
+    <div id="phrase-text" class="phrase-text">—</div>
+    <div id="translation" class="translation"></div>
+    <div class="phrase-actions">
+      <button id="btn-play-ref" class="btn primary" disabled>▶ 播放参考</button>
+      <button id="btn-play-slow" class="btn" disabled>🐢 慢速</button>
+      <button id="btn-next" class="btn" disabled>⏭ 下一句</button>
+    </div>
+  </section>
+
+  <!-- 练习控制 -->
+  <section class="card practice-card">
+    <div class="card-head">
+      <h2>练习</h2>
+      <span id="rec-timer" class="muted"></span>
+    </div>
+    <div id="rec-level" class="rec-level"><div class="rec-level-bar" id="rec-level-bar"></div></div>
+    <div class="practice-actions">
+      <button id="btn-record" class="btn record" disabled>● 开始录音</button>
+      <button id="btn-play-user" class="btn" disabled>🎧 播放我的录音</button>
+    </div>
+  </section>
+
+  <!-- 评分反馈 -->
+  <section class="card feedback-card">
+    <div class="card-head">
+      <h2>评分</h2>
+      <div id="session-summary" class="session-summary muted"></div>
+    </div>
+    <div id="feedback-score" class="feedback-score muted">—</div>
+    <div id="feedback-grade" class="feedback-grade muted"></div>
+    <div id="feedback-text" class="feedback-text muted"></div>
+    <div id="word-errors" class="word-errors"></div>
+  </section>
+
+  <!-- 会话历史 -->
+  <section class="card history-card">
+    <div class="card-head">
+      <h2>本次会话</h2>
+      <button id="btn-refresh-history" class="btn small">刷新</button>
+    </div>
+    <div id="history-list" class="history-list"></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span class="muted">本地离线 · 浏览器录音 · 引擎评分</span>
+  <span id="engine-label" class="muted"></span>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

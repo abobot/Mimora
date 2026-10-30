@@ -252,6 +252,18 @@ dependencies = [
     "pillow>=9.1",
 ]
 
+# --- optional: web frontend ----------------------------------------------
+# The web companion (mimora/web/) serves the same practice loop over HTTP.
+# It reuses the engine/TTS/LLM/stats modules, so only the HTTP layer itself
+# is a dependency here - everything else is already in the base set above.
+# Install with: pip install -e ".[web]"
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+]
+
 [project.urls]
 Homepage = "https://github.com/vikonix/Mimora"
 Repository = "https://github.com/vikonix/Mimora"
@@ -264,6 +276,7 @@ Issues = "https://github.com/vikonix/Mimora/issues"
 # `python -m mimora` into the same function.
 [project.scripts]
 mimora = "mimora.cli:main"
+mimora-web = "mimora.web.server:main"
 
 # The same entry point without a console window, for the shortcut that the
 # Windows installer creates. The `mimora` command above stays the one to use
@@ -292,6 +305,7 @@ namespaces = false
 # config/ directory.
 [tool.setuptools.package-data]
 mimora = ["texts/*.txt", "themes/*_schema.json", "icons/*"]
+"mimora.web" = ["static/*.html", "static/*.css", "static/*.js"]
 "pronunciation.phoneme" = ["*_model_calibration.json"]
 
 [tool.setuptools.dynamic]
