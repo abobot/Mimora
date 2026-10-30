@@ -147,6 +147,9 @@ and stay in the user data directory across upgrades.
   a range actually takes effect: previously the dropdown never updated the
   variable it read on selection, so the Overview heading stayed on the default
   range no matter what was picked.
+- Long-pressing the dictation progress counter (e.g. "1 / 10") now opens the
+  per-session limit popup again: the popup used a font size constant that was
+  never imported, so the Tk callback raised and no popup appeared.
 
 ## [1.1.0] - 2026-08-23
 

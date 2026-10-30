@@ -42,6 +42,7 @@ from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
+    FONT_SIZE_SMALL,
     FONT_SIZE_SUBTITLE,
     THEME,
     FlatButton,
