@@ -169,6 +169,14 @@ and stay in the user data directory across upgrades.
 - The word-feedback cells now wrap onto centred rows instead of a single
   side-packed row, so a narrow card no longer clips the trailing words; every
   cell stays visible and centred no matter how wide the card is.
+- Wrapped rows of the word-feedback strip no longer sit flush against each
+  other: each cell carries its own internal padding and border, so a zero row
+  gap made two rows' borders touch and the wrapped lines looked cramped. The
+  layout now advances a small explicit gap per row.
+- Dictation mode now shows the same colour-coded word feedback as the hero
+  card: after a check, one cell per reference word (green = correct, red =
+  missed or spelling error, grey = extra words the user typed) appears under
+  the summary line, centred and wrapping like the main view's strip.
 
 ## [1.1.0] - 2026-08-23
 

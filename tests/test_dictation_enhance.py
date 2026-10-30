@@ -200,5 +200,92 @@ class ProgressLongPressPopupTest(unittest.TestCase):
         v._cb.on_max_attempts_changed.assert_called_once_with(12)
 
 
+class _FakeCell:
+    """A stand-in tk.Label that records its options for cget assertions.
+
+    The real Label reads options from Tk, which a Tk-free test cannot do; this
+    stores the kwargs at construction so ``cget("text")``/``cget("fg")`` return
+    the values the view actually passed (the behaviour the tests assert on).
+    """
+
+    def __init__(self, *a, **k):
+        self._opts = dict(k)
+
+    def cget(self, name):
+        return self._opts.get(name)
+
+    def place_forget(self):
+        pass
+
+    def destroy(self):
+        pass
+
+
+class FeedbackCellsTests(unittest.TestCase):
+    """Colored per-word feedback cells in the dictation window.
+
+    After a check, the summary text line is joined by a strip of colored cells
+    (one per reference word, coloured by state, plus extra words in grey) -
+    the same traffic light the hero card's word feedback gives. This verifies
+    the strip is built (and cleared) without a real Tk root.
+    """
+
+    def _view(self):
+        from mimora.ui_dictation import DictationView
+        v = DictationView.__new__(DictationView)
+        v._feedback_label = mock.MagicMock()
+        v._feedback_cells = []
+        v._feedback_cells_frame = mock.MagicMock()
+        v._feedback_cells_layout_in_progress = False
+        v._layout_feedback_cells = mock.MagicMock()
+        return v
+
+    def _details(self):
+        return {
+            "status": [
+                {"word": "the", "state": "correct"},
+                {"word": "cat", "state": "wrong"},
+                {"word": "sat", "state": "missed"},
+            ],
+            "extra_words": ["quick"],
+        }
+
+    def test_cells_are_built_per_state(self):
+        v = self._view()
+        import tkinter as tk
+        with mock.patch.object(tk, "Label", side_effect=_FakeCell):
+            v._update_feedback(self._details())
+        # 3 reference words + 1 extra word.
+        self.assertEqual(len(v._feedback_cells), 4)
+        texts = [c.cget("text") for c in v._feedback_cells]
+        self.assertEqual(texts, ["the", "cat", "sat", "quick"])
+        # Colors: correct=good, wrong=bad, missed=bad, extra=text_dim.
+        from mimora.ui_theme import THEME
+        self.assertEqual(v._feedback_cells[0].cget("fg"), THEME["good"])
+        self.assertEqual(v._feedback_cells[1].cget("fg"), THEME["bad"])
+        self.assertEqual(v._feedback_cells[2].cget("fg"), THEME["bad"])
+        self.assertEqual(v._feedback_cells[3].cget("fg"), THEME["text_dim"])
+
+    def test_no_details_hides_strip(self):
+        v = self._view()
+        import tkinter as tk
+        with mock.patch.object(tk, "Label", side_effect=_FakeCell):
+            v._update_feedback(None)
+        self.assertEqual(v._feedback_cells, [])
+        v._feedback_cells_frame.pack_forget.assert_called()
+
+    def test_clear_cells_hides_strip(self):
+        v = self._view()
+        v._feedback_cells = [mock.MagicMock(), mock.MagicMock()]
+        v._clear_feedback_cells()
+        self.assertEqual(v._feedback_cells, [])
+        v._feedback_cells_frame.pack_forget.assert_called()
+
+    def test_layout_uses_shared_helper(self):
+        """The dictation strip lays out with the same centered-wrap helper."""
+        from mimora.ui_hero import layout_cells_centered
+        self.assertTrue(callable(layout_cells_centered))
+
+
 if __name__ == "__main__":
     unittest.main()

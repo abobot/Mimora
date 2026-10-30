@@ -37,6 +37,7 @@ from typing import Any, Callable, Dict, List, Optional
 from mimora import config, i18n, window_icon
 from mimora.dictation.engine import DictationEngine
 from mimora.dictation.scoring import tokenize_words
+from mimora.ui_hero import layout_cells_centered
 from mimora.ui_stats import _CanvasChart
 from mimora.ui_theme import (
     FONT_FAMILY,
@@ -59,6 +60,17 @@ _SOURCE_CHOICES = [
     ("Custom text", "custom"),
     ("Built-in", "built-in"),
 ]
+
+# Word-level feedback cell colour per dictation state. "correct" is green, the
+# two problem states are red (a missed word and a spelling error are both
+# "needs work"), and an "extra" word the user inserted is neutral grey. Extra
+# words are not reference words, so they use the "ok" colour rather than red.
+_STATE_COLORS = {
+    "correct": THEME["good"],
+    "wrong": THEME["bad"],
+    "missed": THEME["bad"],
+    "extra": THEME["text_dim"],
+}
 
 
 def _source_labels() -> List[str]:
@@ -245,6 +257,14 @@ class DictationView:
             bg=THEME["bg_main"], fg=THEME["text_dim"],
             wraplength=660, justify=tk.LEFT)
         self._feedback_label.pack(anchor=tk.W)
+        # Colored per-word cells (one per reference word, coloured by state),
+        # laid out centered/wrapping like the hero card's word strip. Hidden
+        # until a check produces diagnostics; rebuilt on every check.
+        self._feedback_cells_frame = tk.Frame(self._window, bg=THEME["bg_main"])
+        self._feedback_cells: List[tk.Label] = []
+        self._feedback_cells_layout_in_progress = False
+        self._feedback_cells_frame.bind(
+            "<Configure>", self._layout_feedback_cells)
 
         # Last score + mini chart.
         bottom = tk.Frame(self._window, bg=THEME["bg_main"])
@@ -486,6 +506,7 @@ class DictationView:
         self._submitted = False
         self._answer_label.configure(text="")
         self._feedback_label.configure(text="")
+        self._clear_feedback_cells()
         self._hint_label.configure(text="")
         self._listen_label.configure(text=i18n.tr("Listen, then type what you hear."))
         self._check_btn.configure(state=tk.NORMAL)
@@ -533,6 +554,7 @@ class DictationView:
         self._submitted = False
         self._answer_label.configure(text="")
         self._feedback_label.configure(text="")
+        self._clear_feedback_cells()
         self._hint_label.configure(text="")
         self._listen_label.configure(text=i18n.tr("Previous sentence - type what you hear."))
         self._build_slots(phrase)
@@ -606,7 +628,19 @@ class DictationView:
         self._check_btn.configure(state=tk.DISABLED)
 
     def _update_feedback(self, details: Optional[Dict[str, Any]]) -> None:
-        """Render word-level diagnostics from the comparison result."""
+        """Render word-level diagnostics from the comparison result.
+
+        The text line stays the summary ("✅ ... | ❌ Missed: ..."); beneath it
+        a strip of colored cells (one per reference word, coloured by state,
+        plus any extra words in grey) gives the same at-a-glance traffic light
+        the hero card's word feedback shows - so a long sentence's diagnostics
+        are readable without scanning the summary text.
+        """
+        # Clear any previous cells first (the strip is rebuilt every check).
+        for child in self._feedback_cells:
+            child.destroy()
+        self._feedback_cells = []
+        self._feedback_cells_frame.pack_forget()
         if not details:
             self._feedback_label.configure(text="")
             return
@@ -626,6 +660,41 @@ class DictationView:
         if extra:
             parts.append(i18n.tr("➕ Extra: ") + ", ".join(extra[:6]))
         self._feedback_label.configure(text="  |  ".join(parts))
+        # Build the colored cells: reference words (by state) then extra words.
+        cell_data = [(s["word"], s["state"]) for s in status]
+        cell_data += [(w, "extra") for w in extra]
+        if not cell_data:
+            return
+        self._feedback_cells_frame.pack(fill=tk.X, padx=16, pady=(2, 4))
+        for word, state in cell_data:
+            color = _STATE_COLORS.get(state, THEME["text_dim"])
+            cell = tk.Label(
+                self._feedback_cells_frame, text=word, fg=color,
+                bg=THEME["bg_main"], font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                padx=6, pady=2, highlightthickness=1, highlightbackground=color)
+            cell.place_forget()
+            self._feedback_cells.append(cell)
+        self._layout_feedback_cells()
+
+    def _layout_feedback_cells(self, event=None) -> None:
+        """Center/wrap the feedback cells (same layout as the hero strip)."""
+        if self._feedback_cells_layout_in_progress:
+            return
+        self._feedback_cells_layout_in_progress = True
+        try:
+            height = layout_cells_centered(self._feedback_cells_frame,
+                                           self._feedback_cells)
+            if height:
+                self._feedback_cells_frame.configure(height=height)
+        finally:
+            self._feedback_cells_layout_in_progress = False
+
+    def _clear_feedback_cells(self) -> None:
+        """Destroy the feedback cells and hide the strip (new sentence)."""
+        for child in self._feedback_cells:
+            child.destroy()
+        self._feedback_cells = []
+        self._feedback_cells_frame.pack_forget()
 
     def _show_report(self, outcome) -> None:
         wrong = outcome.wrong_words or []

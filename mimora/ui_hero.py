@@ -46,6 +46,12 @@ _DOUBLE_CLICK_DELAY_MS = 250
 # keeps the badge row always visible no matter how long the phrase is.
 _PHRASE_MAX_LINES = 8
 
+# Vertical gap between wrapped rows of the word-feedback strip. Each cell's
+# requested height already includes its internal pady + highlight border, so a
+# zero gap makes two rows' borders touch and the wrapped lines look cramped.
+# A small explicit gap keeps the wrapped rows visually separate.
+_WORD_FEEDBACK_ROW_GAP = 6
+
 
 def parse_word_levels(reference_words: list) -> list:
     """Resolve per-word quality from either engine's ``reference_words`` shape.
@@ -73,6 +79,52 @@ def parse_word_levels(reference_words: list) -> list:
             resolved.append((word.get("word", ""),
                              "good" if word.get("correct", True) else "bad"))
     return resolved
+
+
+def layout_cells_centered(frame, cells, row_gap: int = 6) -> int:
+    """Place ``cells`` (Tk widgets) in centered, wrapping rows inside ``frame``.
+
+    A row of side-packed cells would overflow a narrow frame and clip every
+    cell past the right edge. This places each cell by hand in rows, centering
+    each row as a whole and wrapping to the next row when the running width
+    would exceed the frame width. Returns the total laid-out height (0 when the
+    frame is not yet sized or there is nothing to place), so the caller can set
+    the frame's height explicitly (placed children do not contribute to a
+    frame's requested height). ``row_gap`` is the vertical gap between rows.
+
+    Used by both the hero card's word-feedback strip and the dictation window's
+    word-level feedback so the two render identically.
+    """
+    width = frame.winfo_width()
+    if width <= 1 or not cells:
+        return 0
+    row = []          # cells in the current row
+    row_width = 0     # running width of the current row (incl. padding)
+    rows = []
+    # First pass: measure and split into rows. Each cell's requested width
+    # includes its internal padding; the 6px right pad is added per cell (the
+    # last in a row gets it too, which the centering absorbs).
+    for cell in cells:
+        cw = cell.winfo_reqwidth() + 6
+        if row and row_width + cw > width:
+            rows.append((row, row_width - 6))  # unwind last cell's pad
+            row, row_width = [], 0
+        row.append(cell)
+        row_width += cw
+    if row:
+        rows.append((row, row_width - 6))
+    # Second pass: place each row centered on its own line. The gap between
+    # rows is explicit (each cell's requested height includes its border and
+    # internal padding, so a zero advance makes two rows' borders touch and
+    # the wrapped lines look cramped).
+    y = 0
+    for row_cells, rw in rows:
+        x = max(0, (width - rw) // 2)
+        for cell in row_cells:
+            cell.place(x=x, y=y, anchor=tk.NW)
+            x += cell.winfo_reqwidth() + 6
+        y += max(cell.winfo_reqheight() for cell in row_cells) + row_gap
+    return y
 
 
 class HeroCard:
@@ -526,38 +578,13 @@ class HeroCard:
             return
         self._word_feedback_layout_in_progress = True
         try:
-            width = self.word_feedback.winfo_width()
-            if width <= 1 or not self._word_feedback_cells:
-                return
-            cells = self._word_feedback_cells
-            row = []          # cells in the current row
-            row_width = 0     # running width of the current row (incl. padding)
-            rows = []
-            # First pass: measure and split into rows. Each cell's requested
-            # width includes its internal padding; the 6px right pad is added
-            # per cell (the last in a row gets it too, which the centering
-            # absorbs).
-            for cell in cells:
-                cw = cell.winfo_reqwidth() + 6
-                if row and row_width + cw > width:
-                    rows.append((row, row_width - 6))  # unwind last cell's pad
-                    row, row_width = [], 0
-                row.append(cell)
-                row_width += cw
-            if row:
-                rows.append((row, row_width - 6))
-            # Second pass: place each row centered on its own line.
-            y = 0
-            for row_cells, rw in rows:
-                x = max(0, (width - rw) // 2)
-                for cell in row_cells:
-                    cell.place(x=x, y=y, anchor=tk.NW)
-                    x += cell.winfo_reqwidth() + 6
-                y += max(cell.winfo_reqheight() for cell in row_cells)
+            height = layout_cells_centered(self.word_feedback,
+                                           self._word_feedback_cells)
             # The frame is packed fill=X, which uses the widget's requested
             # height - but placed children do not contribute to it, so set it
             # explicitly to the total laid-out height.
-            self.word_feedback.configure(height=y)
+            if height:
+                self.word_feedback.configure(height=height)
         finally:
             self._word_feedback_layout_in_progress = False
 
