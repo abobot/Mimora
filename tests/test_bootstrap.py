@@ -61,6 +61,35 @@ class WarningFilterTests(unittest.TestCase):
         self.assertEqual(len(caught), 1)
 
 
+class OpenBLASThreadGuardTests(unittest.TestCase):
+    """early_init caps the OpenBLAS thread pool before numpy imports it.
+
+    On this machine the full pool (one thread per core) segfaults
+    torch_cpu.dll when the wav2vec2 weights load in the same process that
+    already loaded Kokoro; a modest cap avoids the crash. The guard must be a
+    floor only: a user who set the variables keeps their value.
+    """
+
+    def test_unset_openblas_is_capped_to_four(self):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+                mock.patch.object(bootstrap.sys, "stdout", io.StringIO()), \
+                mock.patch.object(bootstrap.sys, "stderr", io.StringIO()):
+            bootstrap.early_init()
+            # Asserted inside the patch: exiting the with restores the env.
+            self.assertEqual(os.environ.get("OPENBLAS_NUM_THREADS"), "4")
+            self.assertEqual(os.environ.get("OMP_NUM_THREADS"), "4")
+
+    def test_user_override_is_kept(self):
+        with mock.patch.dict(os.environ, {"OPENBLAS_NUM_THREADS": "8"},
+                             clear=True), \
+                mock.patch.object(bootstrap.sys, "stdout", io.StringIO()), \
+                mock.patch.object(bootstrap.sys, "stderr", io.StringIO()):
+            bootstrap.early_init()
+            self.assertEqual(os.environ.get("OPENBLAS_NUM_THREADS"), "8")
+            # Only the OPENBLAS variable was set; the OMP floor still applies.
+            self.assertEqual(os.environ.get("OMP_NUM_THREADS"), "4")
+
+
 class LogFileFailureTests(unittest.TestCase):
     """An unopenable log file costs the file and not the application."""
 

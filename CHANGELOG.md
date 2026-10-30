@@ -128,6 +128,15 @@ and stay in the user data directory across upgrades.
 
 ### Fixed
 
+- **Startup crash on Windows: a full OpenBLAS thread pool segfaulted the
+  process.** With one OpenBLAS thread per core (16 on a 16-core machine) the
+  Wav2Vec2 recognizer crashed `torch_cpu.dll` with a native access violation
+  (0xC0000005) when its weights loaded in the same process that already loaded
+  Kokoro, so Mimora vanished on launch with no traceback. `early_init()` now
+  caps `OPENBLAS_NUM_THREADS` and `OMP_NUM_THREADS` to a modest value before
+  numpy is imported (a floor only: a user who already set either variable
+  keeps their choice), which makes the same load sequence complete normally.
+
 - Closing a word drill no longer leaves the drill's recording in the main
   view's "play my recording": a take recorded inside the drill no longer
   overwrites the main loop's own last take, and the button state is re-synced

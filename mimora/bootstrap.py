@@ -268,6 +268,24 @@ def install_log(log_file, intro=()):
         handler.close()
 
 
+def _cap_openblas_threads() -> None:
+    """Cap OpenBLAS threads before numpy/torch import (pre-import phase).
+
+    On this machine a full OpenBLAS thread pool (one thread per core, 16 here)
+    crashes the process with a native access violation (0xC0000005) when the
+    Wav2Vec2 recognizer loads its weights in the same process that already
+    loaded Kokoro: numpy's OpenBLAS 0.3.31 on Windows is not stable at
+    MAX_THREADS and segfaults inside torch_cpu.dll during weight materialisation.
+    Setting ``OPENBLAS_NUM_THREADS`` (and ``OMP_NUM_THREADS``, which OpenBLAS
+    honours for its own parallel regions) to a modest value before numpy is
+    imported avoids the crash; measured safe up to 8 threads on this machine,
+    while the default (16) reproduces it. A user who already set the variables
+    keeps their choice - this is only a floor for the unsafe default.
+    """
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "4")
+    os.environ.setdefault("OMP_NUM_THREADS", "4")
+
+
 def early_init():
     """UTF-8 console/env setup and warning filters (pre-import phase).
 
@@ -282,6 +300,8 @@ def early_init():
     """
     os.environ.setdefault("PYTHONUTF8", "1")
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    # Before numpy/torch, which is the first heavy import: see the helper.
+    _cap_openblas_threads()
     # A windowless launch (the mimora-gui script) has no console, and both
     # streams are None there. print() accepts that, but a library that calls
     # sys.stderr.write() directly stops the application with an
