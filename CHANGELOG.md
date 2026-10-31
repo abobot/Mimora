@@ -10,6 +10,43 @@ and stay in the user data directory across upgrades.
 
 ### Added
 
+- **UI redesign: semantic design tokens and theme contrast audit.** A new
+  `mimora/ui_tokens.py` centralises every colour *meaning* that panels used to
+  interpret independently (score bands, word quality levels, weakness statuses),
+  so a score reads the same colour everywhere. It also gains
+  `assert_contrast()`, a WCAG 2.x contrast audit that `app.run()` logs at
+  startup; a theme whose muted text drops below AA is now a warning in the run
+  instead of a silent regression. `mimora/ui_theme.py` adds the
+  `FONT_SIZE_DISPLAY` step to the type scale, and a new test enforces the rule
+  that every `font=(...)` tuple references a `FONT_SIZE_*` constant rather than
+  a bare number.
+- **UI redesign: shared feedback strip and number popup.** A new
+  `mimora/ui_feedback_strip.py` (the traffic-light word strip behind the hero,
+  drill and dictation feedback) and `mimora/ui_long_press_popup.py` (the
+  -1/+1 number editor for the dictation attempt limit and streak target) replace
+  the five per-panel copies of the same code.
+- **UI redesign: stats dashboard split into tabs.** The stats dashboard now has
+  Overview / Trends / Review pool / Sessions tabs, and its heatmap palette and
+  chart grid/axis colours come from the theme schema instead of hardcoded hex.
+
+### Changed
+
+- **UI redesign: main window layout.** The status bar and the tip line are
+  merged into one row (status left, tip right); each control in the row gets a
+  caption under it; the hero card's word strip and translation live in a fixed
+  detail region instead of fighting for position; the practice-text panel stays
+  collapsed by default.
+- **UI redesign: explicit interaction affordances.** The reference speaker now
+  has a small ▾ button that opens the playback-speed menu (instead of a hidden
+  long-press), the phrase-source LLM/Text choice is a visible segmented
+  switcher in the practice-text panel header (instead of a long-press on Next),
+  and a word in the phrase is heard on a single click with a right-click menu
+  for drilling it. Button state is centralised in a `UIState` enum.
+- **UI redesign: weakness panel.** The Words tab is a sortable, selectable
+  `ttk.Treeview`, the phoneme grid reflows responsively to the window width,
+  the range selector is a segmented button row, and the Overview shows at most
+  three suggestions.
+
 - **Stats dashboard: spaced-repetition pool analysis.** The stats dashboard
   (desktop and web) now analyses your Ebbinghaus review pool from
   config/review.json: KPI cards (total, due today, overdue, average interval
