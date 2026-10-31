@@ -708,11 +708,12 @@ the PR description.
 
 ## 6. Acceptance and Upload (Important)
 
-> **先验收，再推送。** 这是本节的核心规则：任何功能/修复改动，在用户明确
-> 验收通过之前，只允许在本地提交（`git commit`），**不得**推送到
-> <https://github.com/abobot/Mimora>，也不得合并进 `main`。本地提交是安全
-> 的（随时可 `git revert`），推送是公开的、不可轻易收回的，所以推送必须等
-> 到验收之后。
+> **Accept first, push later.** This is the core rule of this section: for any
+> feature/fix change, before the user explicitly confirms it passes, only local
+> commits (`git commit`) are allowed - **no** push to
+> <https://github.com/abobot/Mimora>, and no merge into `main`. Local commits
+> are safe (always revertible); a push is public and hard to retract, so it
+> waits for acceptance.
 
 1. After the feature/fix branch is complete, **stop** and submit it to the user
    for acceptance.
@@ -721,9 +722,11 @@ the PR description.
    - push to <https://github.com/abobot/Mimora>
    - update `TODO.md` (to done) and `CHANGELOG.md`
 3. Before the user confirms, do not merge or push. Keep the status `doing`.
-4. **Exception（仅限本地）**：验收前可以创建本地提交并保留在本地分支上，
-   以便随时审查/回退；但验收前的任何提交都不得 push，且验收通过后需将这些
-   提交一并推送（连同验收后的 TODO/CHANGELOG 更新）。
+4. **Exception (local only)**: you may create local commits before acceptance
+   and keep them on the local branch for review/revert at any time; but no
+   pre-acceptance commit may be pushed, and once acceptance passes those
+   commits are pushed together (with the post-acceptance TODO/CHANGELOG
+   updates).
 
 ## 7. Pre-Merge Checklist (confirm each item)
 
