@@ -12,58 +12,207 @@
     <span class="logo">🎤</span>
     <span class="title">Mimora <em>网页版</em></span>
   </div>
+  <nav class="mode-nav" id="mode-nav">
+    <button data-mode="practice" class="mode-btn active">练习</button>
+    <button data-mode="dictation" class="mode-btn">听写</button>
+    <button data-mode="drill" class="mode-btn">专项</button>
+    <button data-mode="weakness" class="mode-btn">弱点</button>
+    <button data-mode="history" class="mode-btn">历史</button>
+    <button data-mode="stats" class="mode-btn">统计</button>
+    <button data-mode="settings" class="mode-btn">设置</button>
+  </nav>
   <div id="status-banner" class="status-banner loading">正在加载模型…</div>
 </header>
 
 <main class="container">
-  <!-- 短语卡片 -->
-  <section class="card phrase-card">
-    <div class="card-head">
-      <h2>当前短语</h2>
-      <span id="voice-label" class="muted"></span>
-    </div>
-    <div id="phrase-text" class="phrase-text">—</div>
-    <div id="translation" class="translation"></div>
-    <div class="phrase-actions">
-      <button id="btn-play-ref" class="btn primary" disabled>▶ 播放参考</button>
-      <button id="btn-play-slow" class="btn" disabled>🐢 慢速</button>
-      <button id="btn-next" class="btn" disabled>⏭ 下一句</button>
-    </div>
-  </section>
+  <!-- ===== 练习模式 ===== -->
+  <div id="panel-practice" class="panel active">
+    <!-- 源文本（可编辑） -->
+    <section class="card source-card">
+      <div class="card-head">
+        <h2>练习文本</h2>
+        <button id="btn-save-source" class="btn small">保存</button>
+      </div>
+      <textarea id="source-text" class="source-text" rows="4" placeholder="输入或粘贴练习文本…"></textarea>
+    </section>
 
-  <!-- 练习控制 -->
-  <section class="card practice-card">
-    <div class="card-head">
-      <h2>练习</h2>
-      <span id="rec-timer" class="muted"></span>
-    </div>
-    <div id="rec-level" class="rec-level"><div class="rec-level-bar" id="rec-level-bar"></div></div>
-    <div class="practice-actions">
-      <button id="btn-record" class="btn record" disabled>● 开始录音</button>
-      <button id="btn-play-user" class="btn" disabled>🎧 播放我的录音</button>
-    </div>
-  </section>
+    <!-- 短语卡片 -->
+    <section class="card phrase-card">
+      <div class="card-head">
+        <h2>当前短语</h2>
+        <span id="voice-label" class="muted"></span>
+      </div>
+      <div id="phrase-text" class="phrase-text">—</div>
+      <div id="translation" class="translation"></div>
+      <div class="phrase-actions">
+        <button id="btn-play-ref" class="btn primary" disabled>▶ 播放参考</button>
+        <button id="btn-play-slow" class="btn" disabled>🐢 慢速</button>
+        <button id="btn-next" class="btn" disabled>⏭ 下一句</button>
+      </div>
+    </section>
 
-  <!-- 评分反馈 -->
-  <section class="card feedback-card">
-    <div class="card-head">
-      <h2>评分</h2>
-      <div id="session-summary" class="session-summary muted"></div>
-    </div>
-    <div id="feedback-score" class="feedback-score muted">—</div>
-    <div id="feedback-grade" class="feedback-grade muted"></div>
-    <div id="feedback-text" class="feedback-text muted"></div>
-    <div id="word-errors" class="word-errors"></div>
-  </section>
+    <!-- 练习控制 -->
+    <section class="card practice-card">
+      <div class="card-head">
+        <h2>练习</h2>
+        <span id="rec-timer" class="muted"></span>
+      </div>
+      <div id="attempt-dots" class="attempt-dots"></div>
+      <div id="rec-level" class="rec-level"><div class="rec-level-bar" id="rec-level-bar"></div></div>
+      <div class="practice-actions">
+        <button id="btn-record" class="btn record" disabled>● 开始录音</button>
+        <button id="btn-play-user" class="btn" disabled>🎧 播放我的录音</button>
+      </div>
+    </section>
 
-  <!-- 会话历史 -->
-  <section class="card history-card">
-    <div class="card-head">
-      <h2>本次会话</h2>
-      <button id="btn-refresh-history" class="btn small">刷新</button>
-    </div>
-    <div id="history-list" class="history-list"></div>
-  </section>
+    <!-- 评分反馈 -->
+    <section class="card feedback-card">
+      <div class="card-head">
+        <h2>评分</h2>
+        <div id="session-summary" class="session-summary muted"></div>
+      </div>
+      <div id="feedback-score" class="feedback-score muted">—</div>
+      <div id="feedback-grade" class="feedback-grade muted"></div>
+      <div id="feedback-text" class="feedback-text muted"></div>
+      <!-- Word-feedback strip: per-word traffic light (desktop hero parity). -->
+      <div id="word-feedback" class="word-feedback"></div>
+      <!-- Fluency / shadowing axis lines (desktop hero parity). -->
+      <div id="fluency-line" class="axis-line hidden"></div>
+      <div id="shadowing-line" class="axis-line hidden"></div>
+      <!-- WORK ON phoneme badges (click to hear the example word). -->
+      <div id="workon-row" class="workon-row"></div>
+      <div id="word-errors" class="word-errors"></div>
+    </section>
+
+    <!-- 会话历史 -->
+    <section class="card history-card">
+      <div class="card-head">
+        <h2>本次会话</h2>
+        <button id="btn-refresh-history" class="btn small">刷新</button>
+      </div>
+      <div id="history-list" class="history-list"></div>
+    </section>
+  </div>
+
+  <!-- ===== 听写模式 ===== -->
+  <div id="panel-dictation" class="panel">
+    <section class="card">
+      <div class="card-head">
+        <h2>听写</h2>
+        <span id="dictation-progress" class="muted"></span>
+      </div>
+      <div class="phrase-actions">
+        <button id="btn-dict-start" class="btn primary">▶ 开始听写</button>
+        <button id="btn-dict-finish" class="btn">结束</button>
+      </div>
+      <div id="dictation-phrase" class="phrase-text muted">—</div>
+      <div class="phrase-actions">
+        <button id="btn-dict-play" class="btn primary" disabled>▶ 播放</button>
+        <button id="btn-dict-play-slow" class="btn" disabled>🐢 慢速</button>
+      </div>
+      <div id="dictation-slots" class="dictation-slots"></div>
+      <div class="phrase-actions">
+        <button id="btn-dict-submit" class="btn primary" disabled>提交</button>
+        <button id="btn-dict-skip" class="btn">跳过</button>
+        <button id="btn-dict-prev" class="btn">上一句</button>
+      </div>
+      <div id="dictation-feedback" class="dictation-feedback muted"></div>
+      <div id="dictation-result" class="word-errors"></div>
+      <div class="phrase-actions">
+        <button id="btn-dict-finish" class="btn">结束</button>
+      </div>
+      <div id="dictation-outcome" class="dictation-outcome"></div>
+    </section>
+  </div>
+
+  <!-- ===== 专项（drill）模式 ===== -->
+  <div id="panel-drill" class="panel">
+    <section class="card">
+      <div class="card-head">
+        <h2>专项练习</h2>
+        <span id="drill-progress" class="muted"></span>
+      </div>
+      <div class="phrase-actions">
+        <input id="drill-target-input" class="text-input" type="text" placeholder="输入目标词或音素，点开始专项练习">
+        <button id="btn-drill-start" class="btn primary">▶ 开始专项</button>
+      </div>
+      <div id="drill-target" class="drill-target muted"></div>
+      <div id="drill-phrase" class="phrase-text">—</div>
+      <div id="drill-fallback" class="drill-fallback muted"></div>
+      <div class="phrase-actions">
+        <button id="btn-drill-play" class="btn primary" disabled>▶ 播放参考</button>
+        <button id="btn-drill-play-slow" class="btn" disabled>🐢 慢速</button>
+        <button id="btn-drill-next" class="btn" disabled>⏭ 下一句</button>
+      </div>
+      <div id="rec-level" class="rec-level"><div class="rec-level-bar" id="rec-level-bar-drill"></div></div>
+      <div class="practice-actions">
+        <button id="btn-drill-record" class="btn record" disabled>● 开始录音</button>
+        <button id="btn-drill-play-user" class="btn" disabled>🎧 播放我的录音</button>
+      </div>
+      <div id="drill-feedback" class="drill-feedback muted"></div>
+      <div id="drill-scores" class="drill-scores"></div>
+      <div class="phrase-actions">
+        <button id="btn-drill-finish" class="btn">结束</button>
+      </div>
+      <div id="drill-outcome" class="drill-outcome"></div>
+    </section>
+  </div>
+
+  <!-- ===== 弱点面板 ===== -->
+  <div id="panel-weakness" class="panel">
+    <section class="card">
+      <div class="card-head">
+        <h2>弱点分析</h2>
+        <select id="weakness-range" class="select"></select>
+      </div>
+      <div id="weakness-suggestions" class="weakness-suggestions"></div>
+      <h3>错误词</h3>
+      <table class="weak-table"><thead><tr><th>词</th><th>状态</th><th>次数</th><th>错误率</th><th></th></tr></thead><tbody id="weakness-words"></tbody></table>
+      <h3>音素</h3>
+      <div id="weakness-phonemes" class="phoneme-grid"></div>
+    </section>
+  </div>
+
+  <!-- ===== 历史浏览 ===== -->
+  <div id="panel-history" class="panel">
+    <section class="card">
+      <div class="card-head">
+        <h2>历史记录</h2>
+        <div class="head-actions">
+          <button id="btn-history-refresh" class="btn small">刷新</button>
+          <button id="btn-history-export" class="btn small">导出</button>
+          <button id="btn-history-clear" class="btn small danger">清空</button>
+        </div>
+      </div>
+      <div id="history-full" class="history-full"></div>
+    </section>
+  </div>
+
+  <!-- ===== 统计看板 ===== -->
+  <div id="panel-stats" class="panel">
+    <section class="card">
+      <div class="card-head"><h2>统计看板</h2><button id="btn-stats-refresh" class="btn small">刷新</button></div>
+      <div id="stats-cards" class="stats-cards"></div>
+      <h3>每日均分（近 30 天）</h3>
+      <div id="stats-daily" class="chart"></div>
+      <h3>分数分布</h3>
+      <div id="stats-dist" class="chart"></div>
+      <h3>每日时长（近 14 天）</h3>
+      <div id="stats-duration" class="chart"></div>
+      <h3>活动热力图（近 28 天）</h3>
+      <div id="stats-activity" class="chart"></div>
+      <h3>最近会话</h3>
+      <div id="stats-recent" class="history-full"></div>
+    </section>
+  </div>
+
+  <!-- ===== 设置 ===== -->
+  <div id="panel-settings" class="panel">
+    <section class="card">
+      <div class="card-head"><h2>设置</h2><span id="settings-hint" class="muted"></span></div>
+      <div id="settings-form" class="settings-form"></div>
+    </section>
+  </div>
 </main>
 
 <footer class="foot">
