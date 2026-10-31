@@ -34,6 +34,7 @@ from tkinter import messagebox
 from typing import Any, Callable, Dict, List, Optional
 
 from mimora import config, i18n, window_icon
+from mimora.ui_tokens import score_color
 from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_FAMILY_MONO,
@@ -83,15 +84,14 @@ def _fmt_timestamp(iso: str) -> str:
 
 
 def _status_color(entry: Dict[str, Any]) -> str:
-    """Verdict colour for a take's score. Falls back to dim."""
+    """Verdict colour for a take's score, via the shared score-colour bands.
+
+    The score chip and its 1px border both use this colour (see
+    ``_build_take_row``). The shared :func:`score_color` keeps the history
+    browser on the same bands as every other panel.
+    """
     score = float(entry.get("score") or 0)
-    if score >= 90:
-        return THEME["good"]
-    if score >= 70:
-        return THEME["text_emph"]
-    if score >= 50:
-        return THEME["warn"] if "warn" in THEME else THEME["text_dim"]
-    return THEME["bad"]
+    return score_color(score)
 
 
 class HistoryBrowseView:

@@ -186,66 +186,37 @@ class AutoPlayTests(unittest.TestCase):
 class ProgressLongPressPopupTest(unittest.TestCase):
     """Long-pressing the progress counter opens the limit popup.
 
-    Regression for "long-press on 1/10 does nothing": _open_progress_popup
-    used FONT_SIZE_SMALL, which was never imported, so the Tk callback raised
-    NameError and the popup never appeared. This exercises the real popup
-    construction path with the widgets mocked (Tk-free, so it does not touch
-    a real root and cannot poison the order-fragile Tk test classes).
+    The popup itself is now the shared :func:`open_number_popup` (see
+    mimora/ui_long_press_popup.py); this exercises the dictation view's
+    delegation - it must forward the anchor, title, current value, Apply
+    callback and clamp range, and never build widgets itself.
     """
 
     def _mock_view(self):
         from mimora.ui_dictation import DictationView
         v = DictationView.__new__(DictationView)
         v._window = mock.MagicMock()
-        v._window.winfo_screenwidth.return_value = 1920
-        v._window.winfo_screenheight.return_value = 1080
         v._progress_label = mock.MagicMock()
-        v._progress_label.winfo_rootx.return_value = 100
-        v._progress_label.winfo_rooty.return_value = 200
-        v._progress_label.winfo_height.return_value = 20
         v.engine = mock.MagicMock()
         v.engine.max_attempts = 10
         v._cb = mock.MagicMock()
-        v._progress_popup = None
-        v._progress_popup_catcher = None
         return v
 
-    def test_popup_builds_without_name_error(self):
-        """_open_progress_popup no longer raises NameError (missing import)."""
-        import tkinter as tk
-        from mimora.ui_theme import FlatButton
-        # A mock widget factory: every constructed widget is a MagicMock that
-        # accepts pack/configure/geometry etc.
-        def _widget(*a, **k):
-            return mock.MagicMock()
-        # FlatButton.__init__ must leave a usable object (has .tk, .pack, ...);
-        # MagicMock attributes return mocks, so the later .pack() calls work.
-        def _flatbutton_init(self, *a, **k):
-            self.tk = mock.MagicMock()
-            self.pack = mock.MagicMock()
-        with mock.patch.object(tk, "Toplevel", side_effect=_widget), \
-             mock.patch.object(tk, "Label", side_effect=_widget), \
-             mock.patch.object(tk, "Frame", side_effect=_widget), \
-             mock.patch.object(FlatButton, "__init__", _flatbutton_init):
-            v = self._mock_view()
-            v._open_progress_popup()  # must not raise
-        self.assertIsNotNone(v._progress_popup)
-        # The +1 / -1 buttons and Apply are built, so the limit is forwarded.
-        self.assertIsNotNone(v._progress_popup_catcher)
-
-    def test_font_size_small_is_imported(self):
-        """The name that was missing is importable on the module."""
+    def test_delegates_to_shared_popup(self):
+        """_open_progress_popup forwards to open_number_popup with the limit."""
+        from mimora import i18n
         import mimora.ui_dictation as m
-        self.assertTrue(hasattr(m, "FONT_SIZE_SMALL"))
+        with mock.patch.object(m, "open_number_popup") as popup:
+            v = self._mock_view()
+            v._open_progress_popup()
+        popup.assert_called_once_with(
+            v._progress_label, i18n.tr("Sentences per session"), 10,
+            v._cb.on_max_attempts_changed, minimum=1, maximum=100, step=1,
+            parent=v._window)
 
     def test_apply_forwards_limit(self):
         """Apply calls on_max_attempts_changed with the chosen limit."""
-        from mimora.ui_dictation import DictationView
         v = self._mock_view()
-        v._cb = mock.MagicMock()
-        # _apply is a closure inside _open_progress_popup; exercising the
-        # callback wiring directly is what the controller-side test covers.
-        # Here we assert the popup dismisses and the callback is reachable.
         v._cb.on_max_attempts_changed(12)
         v._cb.on_max_attempts_changed.assert_called_once_with(12)
 
@@ -253,52 +224,38 @@ class ProgressLongPressPopupTest(unittest.TestCase):
 class StreakPopupTests(unittest.TestCase):
     """Long-pressing the streak label opens the target popup.
 
-    Tk-free mirror of ProgressLongPressPopupTest: the streak label is the
-    long-press handle for the consecutive-pass target, and its popup must
-    forward the chosen target through ``on_streak_target_changed``.
+    Mirror of ProgressLongPressPopupTest: the streak label is the long-press
+    handle for the consecutive-pass target, and the popup forwards the chosen
+    target through ``on_streak_target_changed`` via the shared popup.
     """
 
     def _mock_view(self):
         from mimora.ui_dictation import DictationView
         v = DictationView.__new__(DictationView)
         v._window = mock.MagicMock()
-        v._window.winfo_screenwidth.return_value = 1920
-        v._window.winfo_screenheight.return_value = 1080
         v._streak_label = mock.MagicMock()
-        v._streak_label.winfo_rootx.return_value = 100
-        v._streak_label.winfo_rooty.return_value = 200
-        v._streak_label.winfo_height.return_value = 20
         v.engine = mock.MagicMock()
         v.engine.mastered_streak_required = 3
         v._cb = mock.MagicMock()
-        v._streak_popup = None
-        v._streak_popup_catcher = None
+        v._streak_long_press_after = None
+        v._streak_long_press_fired = False
         return v
 
-    def test_popup_builds_without_name_error(self):
-        import tkinter as tk
-        from mimora.ui_theme import FlatButton
-
-        def _widget(*a, **k):
-            return mock.MagicMock()
-
-        def _flatbutton_init(self, *a, **k):
-            self.tk = mock.MagicMock()
-            self.pack = mock.MagicMock()
-        with mock.patch.object(tk, "Toplevel", side_effect=_widget), \
-             mock.patch.object(tk, "Label", side_effect=_widget), \
-             mock.patch.object(tk, "Frame", side_effect=_widget), \
-             mock.patch.object(FlatButton, "__init__", _flatbutton_init):
+    def test_delegates_to_shared_popup(self):
+        """_open_streak_popup forwards to open_number_popup with the target."""
+        from mimora import i18n
+        import mimora.ui_dictation as m
+        with mock.patch.object(m, "open_number_popup") as popup:
             v = self._mock_view()
-            v._open_streak_popup()  # must not raise
-        self.assertIsNotNone(v._streak_popup)
-        self.assertIsNotNone(v._streak_popup_catcher)
+            v._open_streak_popup()
+        popup.assert_called_once_with(
+            v._streak_label, i18n.tr("Consecutive passes to master"), 3,
+            v._cb.on_streak_target_changed, minimum=1, maximum=100, step=1,
+            parent=v._window)
 
     def test_apply_forwards_target(self):
         """Apply calls on_streak_target_changed with the chosen target."""
-        from mimora.ui_dictation import DictationView
         v = self._mock_view()
-        v._cb = mock.MagicMock()
         v._cb.on_streak_target_changed(4)
         v._cb.on_streak_target_changed.assert_called_once_with(4)
 
@@ -359,10 +316,11 @@ class FeedbackCellsTests(unittest.TestCase):
         from mimora.ui_dictation import DictationView
         v = DictationView.__new__(DictationView)
         v._feedback_label = mock.MagicMock()
-        v._feedback_cells = []
         v._feedback_cells_frame = mock.MagicMock()
-        v._feedback_cells_layout_in_progress = False
-        v._layout_feedback_cells = mock.MagicMock()
+        # The shared strip owns the cells; the view forwards to it.
+        v._feedback_strip = mock.MagicMock()
+        v._feedback_strip.cells = []
+        v._feedback_cells = v._feedback_strip.cells
         return v
 
     def _details(self):
@@ -377,34 +335,25 @@ class FeedbackCellsTests(unittest.TestCase):
 
     def test_cells_are_built_per_state(self):
         v = self._view()
-        import tkinter as tk
-        with mock.patch.object(tk, "Label", side_effect=_FakeCell):
-            v._update_feedback(self._details())
-        # 3 reference words + 1 extra word.
-        self.assertEqual(len(v._feedback_cells), 4)
-        texts = [c.cget("text") for c in v._feedback_cells]
-        self.assertEqual(texts, ["the", "cat", "sat", "quick"])
-        # Colors: correct=good, wrong=bad, missed=bad, extra=text_dim.
-        from mimora.ui_theme import THEME
-        self.assertEqual(v._feedback_cells[0].cget("fg"), THEME["good"])
-        self.assertEqual(v._feedback_cells[1].cget("fg"), THEME["bad"])
-        self.assertEqual(v._feedback_cells[2].cget("fg"), THEME["bad"])
-        self.assertEqual(v._feedback_cells[3].cget("fg"), THEME["text_dim"])
+        v._update_feedback(self._details())
+        # 3 reference words + 1 extra word, mapped to level colors. The extra
+        # word is not a reference word, so it uses the neutral "ok" level.
+        v._feedback_strip.render.assert_called_once_with([
+            ("the", "good"), ("cat", "bad"), ("sat", "bad"), ("quick", "ok")])
+        v._feedback_cells_frame.pack.assert_called()
+        self.assertEqual(len(v._feedback_cells), 0)  # strip owns the cells now
 
     def test_no_details_hides_strip(self):
         v = self._view()
-        import tkinter as tk
-        with mock.patch.object(tk, "Label", side_effect=_FakeCell):
-            v._update_feedback(None)
-        self.assertEqual(v._feedback_cells, [])
+        v._update_feedback(None)
         v._feedback_cells_frame.pack_forget.assert_called()
+        v._feedback_strip.clear.assert_called()
 
     def test_clear_cells_hides_strip(self):
         v = self._view()
-        v._feedback_cells = [mock.MagicMock(), mock.MagicMock()]
         v._clear_feedback_cells()
-        self.assertEqual(v._feedback_cells, [])
         v._feedback_cells_frame.pack_forget.assert_called()
+        v._feedback_strip.clear.assert_called()
 
     def test_layout_uses_shared_helper(self):
         """The dictation strip lays out with the same centered-wrap helper."""

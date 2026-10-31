@@ -37,16 +37,15 @@ from typing import Any, Callable, Dict, List, Optional
 from mimora import config, i18n, window_icon
 from mimora.dictation.engine import DictationEngine
 from mimora.dictation.scoring import tokenize_words
-from mimora.ui_hero import layout_cells_centered
+from mimora.ui_feedback_strip import FeedbackStrip
+from mimora.ui_long_press_popup import open_number_popup
 from mimora.ui_stats import _CanvasChart
 from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
-    FONT_SIZE_SMALL,
     FONT_SIZE_SUBTITLE,
     THEME,
-    FlatButton,
     make_icon_button,
 )
 import ttkbootstrap as ttk
@@ -60,18 +59,6 @@ _SOURCE_CHOICES = [
     ("Custom text", "custom"),
     ("Built-in", "built-in"),
 ]
-
-# Word-level feedback cell colour per dictation state. "correct" is green, the
-# two problem states are red (a missed word and a spelling error are both
-# "needs work"), and an "extra" word the user inserted is neutral grey. Extra
-# words are not reference words, so they use the "ok" colour rather than red.
-_STATE_COLORS = {
-    "correct": THEME["good"],
-    "wrong": THEME["bad"],
-    "missed": THEME["bad"],
-    "extra": THEME["text_dim"],
-}
-
 
 def _source_labels() -> List[str]:
     """The localized display labels for the source dropdown."""
@@ -195,12 +182,8 @@ class DictationView:
                                   cursor="hand2")
         progress_label.pack(side=tk.LEFT)
         self._progress_label = progress_label
-        self._progress_popup: Optional[tk.Toplevel] = None
-        self._progress_popup_catcher: Optional[tk.Toplevel] = None
         self._bind_progress_long_press(progress_label)
         self._streak_var = tk.StringVar(value="")
-        self._streak_popup: Optional[tk.Toplevel] = None
-        self._streak_popup_catcher: Optional[tk.Toplevel] = None
         self._streak_long_press_after = None
         self._streak_long_press_fired = False
         streak_label = tk.Label(progress, textvariable=self._streak_var,
@@ -269,12 +252,11 @@ class DictationView:
         self._feedback_label.pack(anchor=tk.W)
         # Colored per-word cells (one per reference word, coloured by state),
         # laid out centered/wrapping like the hero card's word strip. Hidden
-        # until a check produces diagnostics; rebuilt on every check.
-        self._feedback_cells_frame = tk.Frame(self._window, bg=THEME["bg_main"])
-        self._feedback_cells: List[tk.Label] = []
-        self._feedback_cells_layout_in_progress = False
-        self._feedback_cells_frame.bind(
-            "<Configure>", self._layout_feedback_cells)
+        # until a check produces diagnostics; rebuilt on every check. The shared
+        # FeedbackStrip (hero / drill / dictation) owns the cells and layout.
+        self._feedback_strip = FeedbackStrip(self._window, bg=THEME["bg_main"])
+        self._feedback_cells_frame = self._feedback_strip.frame
+        self._feedback_cells = self._feedback_strip.cells
 
         # Last score + mini chart.
         bottom = tk.Frame(self._window, bg=THEME["bg_main"])
@@ -429,84 +411,10 @@ class DictationView:
 
     def _open_progress_popup(self) -> None:
         """Non-modal popup to adjust the per-session sentence limit."""
-        self._dismiss_progress_popup()
-        x = self._progress_label.winfo_rootx()
-        y = self._progress_label.winfo_rooty() + self._progress_label.winfo_height()
-        popup = tk.Toplevel(self._window)
-        catcher = tk.Toplevel(self._window)
-        popup.overrideredirect(True)
-        catcher.overrideredirect(True)
-        catcher.attributes("-alpha", 0.01)
-        catcher.geometry(f"{self._window.winfo_screenwidth()}x"
-                         f"{self._window.winfo_screenheight()}+0+0")
-        catcher.lower()
-        popup.configure(bg=THEME["bg_panel"], highlightthickness=1,
-                        highlightbackground=THEME["border"])
-        popup.geometry(f"+{x}+{y}")
-        popup.transient(self._window)
-        catcher.bind("<ButtonPress-1>", lambda e: self._dismiss_progress_popup())
-        popup.bind("<Escape>", lambda e: self._dismiss_progress_popup())
-
-        limit = int(self.engine.max_attempts)
-        tk.Label(popup, text=i18n.tr("Sentences per session"),
-                 font=(FONT_FAMILY, FONT_SIZE_CAPTION),
-                 bg=THEME["bg_panel"], fg=THEME["text_dim"]).pack(
-            side=tk.TOP, anchor=tk.W, padx=12, pady=(8, 2))
-        state = {"limit": limit}
-
-        def _set_limit(value: int) -> None:
-            state["limit"] = max(1, min(100, value))
-
-        def _rebuild_label() -> None:
-            value_label.config(text=f"{state['limit']}")
-
-        value_label = tk.Label(popup, text=f"{state['limit']}",
-                               font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
-                               bg=THEME["bg_panel"], fg=THEME["text_emph"])
-        value_label.pack(side=tk.TOP, pady=(0, 4))
-
-        row = tk.Frame(popup, bg=THEME["bg_panel"])
-        row.pack(side=tk.TOP, padx=12, pady=(0, 4))
-        FlatButton(row, text="-1", command=lambda: (_set_limit(state["limit"] - 1),
-                                                    _rebuild_label()),
-                   font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_button"],
-                   fg=THEME["text_button"],
-                   activebackground=THEME["bg_button_active"],
-                   activeforeground=THEME["text"],
-                   bd=0, padx=10, pady=2, cursor="hand2").pack(side=tk.LEFT, padx=2)
-        FlatButton(row, text="+1", command=lambda: (_set_limit(state["limit"] + 1),
-                                                    _rebuild_label()),
-                   font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_button"],
-                   fg=THEME["text_button"],
-                   activebackground=THEME["bg_button_active"],
-                   activeforeground=THEME["text"],
-                   bd=0, padx=10, pady=2, cursor="hand2").pack(side=tk.LEFT, padx=2)
-
-        def _apply() -> None:
-            self._dismiss_progress_popup()
-            self._cb.on_max_attempts_changed(state["limit"])
-
-        FlatButton(popup, text=i18n.tr("Apply"), command=_apply,
-                   font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"), bg=THEME["bg_accent"],
-                   fg=THEME["text_accent"],
-                   activebackground=THEME["bg_accent_active"],
-                   activeforeground=THEME["text_bright"],
-                   bd=0, padx=14, pady=3, cursor="hand2").pack(
-            side=tk.TOP, pady=(0, 8))
-
-        self._progress_popup = popup
-        self._progress_popup_catcher = catcher
-        popup.lift()
-
-    def _dismiss_progress_popup(self) -> None:
-        for w in (self._progress_popup_catcher, self._progress_popup):
-            if w is not None:
-                try:
-                    w.destroy()
-                except tk.TclError:
-                    pass
-        self._progress_popup = None
-        self._progress_popup_catcher = None
+        open_number_popup(
+            self._progress_label, i18n.tr("Sentences per session"),
+            int(self.engine.max_attempts), self._cb.on_max_attempts_changed,
+            minimum=1, maximum=100, step=1, parent=self._window)
 
     # ------------------------------------------------------------------
     # Long-press on the streak label: change the consecutive-pass target
@@ -558,84 +466,11 @@ class DictationView:
 
     def _open_streak_popup(self) -> None:
         """Non-modal popup to adjust the consecutive-pass target."""
-        self._dismiss_streak_popup()
-        x = self._streak_label.winfo_rootx()
-        y = self._streak_label.winfo_rooty() + self._streak_label.winfo_height()
-        popup = tk.Toplevel(self._window)
-        catcher = tk.Toplevel(self._window)
-        popup.overrideredirect(True)
-        catcher.overrideredirect(True)
-        catcher.attributes("-alpha", 0.01)
-        catcher.geometry(f"{self._window.winfo_screenwidth()}x"
-                         f"{self._window.winfo_screenheight()}+0+0")
-        catcher.lower()
-        popup.configure(bg=THEME["bg_panel"], highlightthickness=1,
-                        highlightbackground=THEME["border"])
-        popup.geometry(f"+{x}+{y}")
-        popup.transient(self._window)
-        catcher.bind("<ButtonPress-1>", lambda e: self._dismiss_streak_popup())
-        popup.bind("<Escape>", lambda e: self._dismiss_streak_popup())
-
-        target = int(self.engine.mastered_streak_required)
-        tk.Label(popup, text=i18n.tr("Consecutive passes to master"),
-                 font=(FONT_FAMILY, FONT_SIZE_CAPTION),
-                 bg=THEME["bg_panel"], fg=THEME["text_dim"]).pack(
-            side=tk.TOP, anchor=tk.W, padx=12, pady=(8, 2))
-        state = {"target": target}
-
-        def _set_target(value: int) -> None:
-            state["target"] = max(1, min(100, value))
-
-        def _rebuild_label() -> None:
-            value_label.config(text=f"{state['target']}")
-
-        value_label = tk.Label(popup, text=f"{state['target']}",
-                               font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
-                               bg=THEME["bg_panel"], fg=THEME["text_emph"])
-        value_label.pack(side=tk.TOP, pady=(0, 4))
-
-        row = tk.Frame(popup, bg=THEME["bg_panel"])
-        row.pack(side=tk.TOP, padx=12, pady=(0, 4))
-        FlatButton(row, text="-1", command=lambda: (_set_target(state["target"] - 1),
-                                                    _rebuild_label()),
-                   font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_button"],
-                   fg=THEME["text_button"],
-                   activebackground=THEME["bg_button_active"],
-                   activeforeground=THEME["text"],
-                   bd=0, padx=10, pady=2, cursor="hand2").pack(side=tk.LEFT, padx=2)
-        FlatButton(row, text="+1", command=lambda: (_set_target(state["target"] + 1),
-                                                    _rebuild_label()),
-                   font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_button"],
-                   fg=THEME["text_button"],
-                   activebackground=THEME["bg_button_active"],
-                   activeforeground=THEME["text"],
-                   bd=0, padx=10, pady=2, cursor="hand2").pack(side=tk.LEFT, padx=2)
-
-        def _apply() -> None:
-            self._dismiss_streak_popup()
-            self._cb.on_streak_target_changed(state["target"])
-
-        FlatButton(popup, text=i18n.tr("Apply"), command=_apply,
-                   font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"), bg=THEME["bg_accent"],
-                   fg=THEME["text_accent"],
-                   activebackground=THEME["bg_accent_active"],
-                   activeforeground=THEME["text_bright"],
-                   bd=0, padx=14, pady=3, cursor="hand2").pack(
-            side=tk.TOP, pady=(0, 8))
-
-        self._streak_popup = popup
-        self._streak_popup_catcher = catcher
-        popup.lift()
-
-    def _dismiss_streak_popup(self) -> None:
-        for w in (self._streak_popup_catcher, self._streak_popup):
-            if w is not None:
-                try:
-                    w.destroy()
-                except tk.TclError:
-                    pass
-        self._streak_popup = None
-        self._streak_popup_catcher = None
+        open_number_popup(
+            self._streak_label, i18n.tr("Consecutive passes to master"),
+            int(self.engine.mastered_streak_required),
+            self._cb.on_streak_target_changed,
+            minimum=1, maximum=100, step=1, parent=self._window)
 
     def _advance_phrase(self) -> None:
         """Advance to the next sentence, clearing input and hiding the answer."""
@@ -776,10 +611,8 @@ class DictationView:
         are readable without scanning the summary text.
         """
         # Clear any previous cells first (the strip is rebuilt every check).
-        for child in self._feedback_cells:
-            child.destroy()
-        self._feedback_cells = []
         self._feedback_cells_frame.pack_forget()
+        self._feedback_strip.clear()
         if not details:
             self._feedback_label.configure(text="")
             return
@@ -800,40 +633,22 @@ class DictationView:
             parts.append(i18n.tr("➕ Extra: ") + ", ".join(extra[:6]))
         self._feedback_label.configure(text="  |  ".join(parts))
         # Build the colored cells: reference words (by state) then extra words.
-        cell_data = [(s["word"], s["state"]) for s in status]
-        cell_data += [(w, "extra") for w in extra]
+        # Dictation states map onto the shared level vocabulary: correct -> good,
+        # wrong/missed -> bad, extra (not a reference word) -> ok/neutral grey.
+        _STATE_TO_LEVEL = {"correct": "good", "wrong": "bad",
+                           "missed": "bad", "extra": "ok"}
+        cell_data = [(s["word"], _STATE_TO_LEVEL.get(s["state"], "ok"))
+                     for s in status]
+        cell_data += [(w, "ok") for w in extra]
         if not cell_data:
             return
         self._feedback_cells_frame.pack(fill=tk.X, padx=16, pady=(2, 4))
-        for word, state in cell_data:
-            color = _STATE_COLORS.get(state, THEME["text_dim"])
-            cell = tk.Label(
-                self._feedback_cells_frame, text=word, fg=color,
-                bg=THEME["bg_main"], font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
-                padx=6, pady=2, highlightthickness=1, highlightbackground=color)
-            cell.place_forget()
-            self._feedback_cells.append(cell)
-        self._layout_feedback_cells()
-
-    def _layout_feedback_cells(self, event=None) -> None:
-        """Center/wrap the feedback cells (same layout as the hero strip)."""
-        if self._feedback_cells_layout_in_progress:
-            return
-        self._feedback_cells_layout_in_progress = True
-        try:
-            height = layout_cells_centered(self._feedback_cells_frame,
-                                           self._feedback_cells)
-            if height:
-                self._feedback_cells_frame.configure(height=height)
-        finally:
-            self._feedback_cells_layout_in_progress = False
+        self._feedback_strip.render(cell_data)
 
     def _clear_feedback_cells(self) -> None:
         """Destroy the feedback cells and hide the strip (new sentence)."""
-        for child in self._feedback_cells:
-            child.destroy()
-        self._feedback_cells = []
         self._feedback_cells_frame.pack_forget()
+        self._feedback_strip.clear()
 
     def _show_report(self, outcome) -> None:
         wrong = outcome.wrong_words or []

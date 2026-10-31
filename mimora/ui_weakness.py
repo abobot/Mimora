@@ -42,6 +42,7 @@ from mimora.analysis import (
 )
 from mimora.phoneme_examples import example_for
 from mimora.ui_stats import _CanvasChart
+from mimora.ui_tokens import status_color
 from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_FAMILY_MONO,
@@ -66,11 +67,8 @@ class WeaknessCallbacks:
 
 
 def _status_color(status: str) -> str:
-    return {
-        "need_practice": THEME["bad"],
-        "watch": THEME["warn"] if "warn" in THEME else THEME["text_dim"],
-        "improving": THEME["good"],
-    }.get(status, THEME["text_dim"])
+    """Verdict colour for an aggregation status, via the shared token map."""
+    return status_color(status)
 
 
 def _status_label(status: str) -> str:
