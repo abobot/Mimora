@@ -62,5 +62,32 @@ class WithoutArrowsTests(unittest.TestCase):
         ])
 
 
+class UIStateEnumTests(unittest.TestCase):
+    """The enum's shape: each member carries the full chrome contract."""
+
+    def test_all_members_have_the_expected_tuple_shape(self):
+        # (generate, reference, user, test, status_key, status_color, mic)
+        for member in ui.UIState:
+            self.assertEqual(len(member.value), 7, member)
+
+    def test_readiness_leaves_reference_and_user_untouched(self):
+        # READY means "models loaded, no phrase yet": only Next phrase is on.
+        state = ui.UIState.READY
+        self.assertIs(state.value[0], True)    # generate
+        self.assertIsNone(state.value[1])      # reference (left as-is)
+        self.assertIsNone(state.value[2])      # user (left as-is)
+        self.assertIsNone(state.value[3])      # test (left as-is)
+
+    def test_recording_locks_everything_out(self):
+        state = ui.UIState.RECORDING
+        for flag in state.value[0:4]:
+            self.assertIs(flag, False)
+
+    def test_playback_and_analysis_leave_buttons_untouched(self):
+        for member in (ui.UIState.ANALYZING, ui.UIState.PLAYING,
+                       ui.UIState.REFERENCE_PLAYING):
+            self.assertTrue(all(f is None for f in member.value[0:4]), member)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -34,6 +34,7 @@ view: ``app.py`` and ``settings_window.py`` take TrainerView, ViewCallbacks and
 LENGTH_* from here, and THEME, FONT_FAMILY, WHEEL_EVENTS and wheel_scroll_units
 are re-exported from ui_theme for settings_window.
 """
+import enum
 import logging
 import tkinter as tk
 
@@ -61,7 +62,7 @@ from mimora.ui_theme import (  # noqa: F401  (re-exported for settings_window)
 import ttkbootstrap as ttk
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Optional
 
 from mimora import config, i18n
 from mimora.ui_hero import HeroCard
@@ -170,6 +171,43 @@ def without_arrows(layout: list[tuple[str, dict]]) -> list[tuple[str, dict]]:
             options["children"] = without_arrows(options["children"])
         result.append((name, options))
     return result
+
+
+class UIState(enum.Enum):
+    """Named UI states the controller transitions into.
+
+    Each member centralizes the button enable/disable flags, the status-line
+    copy and the mic glyph for one state, so a transition is one named call
+    (``view.apply_state(UIState.RECORDING)``) instead of a scattered
+    ``_set_actions`` / ``update_status`` / ``draw_mic_button`` triple. A ``None``
+    button flag leaves that button untouched - playback and analysis run while
+    the surrounding buttons keep whatever the previous transition set (they are
+    not locked out by playback; only recording disables them).
+
+    The status ``key`` is an i18n key; ``color`` is a THEME key. ``mic`` is the
+    glyph drawn on the button, or ``None`` when the caller draws it itself
+    (recording draws the live level indicator instead of a static glyph).
+    """
+
+    # (generate, reference, user, test, status_key, status_color, mic)
+    LOADING = (False, False, False, False, "Loading models...", "warn", "idle")
+    READY = (True, None, None, None, "Ready", "ready", "idle")
+    GENERATING = (False, False, False, False, "Generating phrase (LLM)...",
+                  "info", "processing")
+    # A fresh phrase is shown and its reference is playing. Buttons keep their
+    # state (the phrase-enter sequence set them); only status + mic update.
+    REFERENCE_PLAYING = (None, None, None, None, "Listen to the reference...",
+                         "reference", "speaking")
+    PHRASE_READY = (True, True, None, True, "Your turn", "ready", "idle")
+    RECORDING = (False, False, False, False, "Recording...", "bad", None)
+    ANALYZING = (None, None, None, None, "Analyzing pronunciation...", "warn",
+                 "processing")
+    PLAYING = (None, None, None, None, "", "reference", "speaking")
+    # A take was scored and the flow returns to the user. Reference replay and
+    # the self-test come back on; "Next phrase" and "My recording" are dynamic
+    # (pass gate / whether a take exists), so the caller layers them after
+    # apply_state via _set_actions.
+    DONE = (None, True, None, True, "", "reference", "idle")
 
 
 class TrainerView:
@@ -690,17 +728,31 @@ class TrainerView:
         if test is not None:
             self._test_enabled = bool(test)
 
+    def apply_state(self, state: UIState, status: Optional[str] = None,
+                    color: Optional[str] = None):
+        """Apply one :class:`UIState` to the chrome.
+
+        Centralizes what the intent methods used to do inline: button flags,
+        status line and mic glyph in one call. ``status``/``color`` override the
+        state's own copy (for states whose text is dynamic, e.g. the playback
+        status or an ad-hoc message). The mic glyph is skipped when the state
+        carries ``mic=None`` (recording draws the live level indicator).
+        """
+        generate, reference, user, test, key, color_key, mic = state.value
+        self._set_actions(generate=generate, reference=reference,
+                          user=user, test=test)
+        if mic is not None:
+            self.draw_mic_button(mic)
+        self.update_status(status or i18n.tr(key),
+                           THEME[color_key] if color is None else color)
+
     def enter_app_ready(self):
         """Models loaded, no phrase yet: only New phrase is available."""
-        self.draw_mic_button("idle")
-        self.update_status(i18n.tr("Ready"), THEME["ready"])
-        self._set_actions(generate=True)
+        self.apply_state(UIState.READY)
 
     def enter_generating(self):
         """LLM is producing a phrase: every action is locked out."""
-        self._set_actions(generate=False, reference=False, user=False, test=False)
-        self.draw_mic_button("processing")
-        self.update_status(i18n.tr("Generating phrase (LLM)..."), THEME["info"])
+        self.apply_state(UIState.GENERATING)
 
     def enter_reference_playing(self, phrase: str, translation: str = ""):
         """A fresh phrase is shown and its reference is being played.
@@ -722,21 +774,16 @@ class TrainerView:
         self._hero.clear_attempts()
         self._hero.set_phrase(phrase)
         self._hero.set_translation(translation)
-        self.update_status(i18n.tr("Listen to the reference..."), THEME["reference"])
-        self.draw_mic_button("speaking")
+        self.apply_state(UIState.REFERENCE_PLAYING)
 
     def enter_phrase_ready(self):
         """Reference done: the user can record, replay or self-test."""
-        self.draw_mic_button("idle")
-        self.update_status(i18n.tr("Your turn"), THEME["ready"])
-        self._set_actions(generate=True, reference=True, test=True)
+        self.apply_state(UIState.PHRASE_READY)
 
     def generation_failed(self, message: str):
         """Phrase generation failed: surface the error and offer a retry."""
         self.append_error_msg(message)
-        self.draw_mic_button("idle")
-        self.update_status(i18n.tr("Ready"), THEME["ready"])
-        self._set_actions(generate=True)
+        self.apply_state(UIState.READY)
 
     def enter_recording(self):
         """Microphone is open: lock out playback so it cannot bleed into the take."""
@@ -744,24 +791,21 @@ class TrainerView:
         # the moment the mic opens. The attempt history is left intact: it is a
         # running record of all attempts and must not be wiped on each take.
         self.clear_previous_result()
-        self._set_actions(generate=False, reference=False, user=False, test=False)
+        self.apply_state(UIState.RECORDING)
         # Paint the level indicator straight away (at zero) instead of the
         # "recording" glyph: the first live level frame overwrites the whole
         # button anyway, so drawing the emoji first only flashes a redundant
         # symbol. set_record_level(0.0) draws the same red ring + dark track with
         # a minimal level disc, so the look is identical from the first frame.
         self.set_record_level(0.0)
-        self.update_status(i18n.tr("Recording..."), THEME["bad"])
 
     def enter_analyzing(self, status: str = None):
         """Analysis is running (also used for the reference self-test)."""
-        self.draw_mic_button("processing")
-        self.update_status(status or i18n.tr("Analyzing pronunciation..."), THEME["warn"])
+        self.apply_state(UIState.ANALYZING, status=status)
 
     def enter_playing(self, status: str):
         """Reference or recorded take is being played back during a flow."""
-        self.draw_mic_button("speaking")
-        self.update_status(status, THEME["reference"])
+        self.apply_state(UIState.PLAYING, status=status)
 
     def enter_retry(self, *, has_phrase: bool, has_recording: bool):
         """Return to a recordable idle state, enabling only what is available."""
@@ -1060,15 +1104,16 @@ class TrainerView:
         # on and the take did NOT pass, the user must repeat the phrase until it
         # passes (the gate is off by default, so the loop stays ungated).
         can_advance = (not config.PASS_GATING_ENABLED) or bool(getattr(result, "passed", True))
-        self._set_actions(generate=can_advance, reference=True, user=has_recording, test=True)
-        self.draw_mic_button("idle")
-
-        if not can_advance:
-            self.update_status(
-                i18n.tr("Keep trying - the next phrase unlocks when this take passes."),
-                THEME["warn"])
-        else:
-            self.update_status(quality, quality_color)
+        # The gate is the one state-dependent exception: reference replay and
+        # self-test always come back, but "Next phrase" only when the gate lets
+        # the user advance, and "My recording" only when a take exists. So the
+        # DONE state sets the static part and _set_actions layers the two
+        # dynamic flags on top.
+        self.apply_state(UIState.DONE, status=(
+            i18n.tr("Keep trying - the next phrase unlocks when this take passes.")
+            if not can_advance else quality),
+            color=(THEME["warn"] if not can_advance else quality_color))
+        self._set_actions(generate=can_advance, user=has_recording)
 
     def _show_unscored_feedback(self, result: "PronunciationResult", current_phrase,
                                 has_recording: bool, is_self_test: bool = False,
@@ -1108,7 +1153,6 @@ class TrainerView:
         # Unscored takes ("none" engine) do not contribute to the session tally,
         # so the hero card's progress ring is left untouched here.
 
-        self._set_actions(generate=True, reference=True, user=has_recording, test=True)
-        self.draw_mic_button("idle")
-
-        self.update_status(i18n.tr("Recorded (scoring off)"), THEME["text_dim"])
+        self.apply_state(UIState.DONE, status=i18n.tr("Recorded (scoring off)"),
+                         color=THEME["text_dim"])
+        self._set_actions(generate=True, user=has_recording)
