@@ -76,6 +76,16 @@ class PhraseResponse(BaseModel):
     review: bool = False
 
 
+class StandalonePhraseRequest(BaseModel):
+    """Body for POST /api/phrase/standalone (dictation/drill playback).
+
+    Synthesizes a phrase WITHOUT touching the practice-loop cache, so the
+    practice reference stays aligned with the practice phrase.
+    """
+    phrase: str
+    voice: Optional[str] = None
+
+
 class ScoreResponse(BaseModel):
     """The scored take, flattened for JSON."""
     phrase: str
@@ -183,6 +193,28 @@ def phrase(req: PhraseRequest) -> dict[str, Any]:
     }
 
 
+@app.post("/api/phrase/standalone")
+def phrase_standalone(req: StandalonePhraseRequest) -> dict[str, Any]:
+    """Synthesize reference audio for a non-practice phrase (dictation/drill).
+
+    The dictation and drill panels play phrases that are not the current
+    practice phrase. This endpoint synthesizes them WITHOUT replacing the
+    cached practice reference, so a later ``/api/score`` still scores the
+    practice phrase against its own audio.
+    """
+    rt = _ready_or_raise()
+    phrase_text = (req.phrase or "").strip()
+    if not phrase_text:
+        raise HTTPException(status_code=400, detail="phrase is required")
+    audio, sr = rt.synthesize_standalone(phrase_text, req.voice)
+    return {
+        "phrase": phrase_text,
+        "reference_wav_base64": _wav_to_base64(audio, sr),
+        "reference_sr": sr,
+        "voice": req.voice or rt.current_voice,
+    }
+
+
 @app.post("/api/score")
 async def score(
     file: UploadFile = File(...),
@@ -251,6 +283,271 @@ def stats_history(lookback: int = 50) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         logger.exception("History read failed:")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# -- extended surface (full-feature round) ------------------------------------
+
+class SettingRequest(BaseModel):
+    """Body for POST /api/settings."""
+    key: str
+    value: Any = None
+
+
+class SourceTextRequest(BaseModel):
+    """Body for PUT /api/source-text."""
+    text: str = ""
+
+
+class WeaknessRequest(BaseModel):
+    """Body for POST /api/weakness."""
+    range: str = "last_30d"
+
+
+class DictationStartRequest(BaseModel):
+    """Body for POST /api/dictation/start."""
+    source_text: str = ""
+    random_order: Optional[bool] = None
+
+
+class DictationSubmitRequest(BaseModel):
+    """Body for POST /api/dictation/submit."""
+    user_text: str = ""
+
+
+class DrillStartRequest(BaseModel):
+    """Body for POST /api/drill/start."""
+    target: dict[str, Any]
+    source_text: str = ""
+
+
+class DrillTakeRequest(BaseModel):
+    """Body for POST /api/drill/take."""
+    phrase: str = ""
+    score: float = 0.0
+
+
+@app.post("/api/settings")
+def save_setting(req: SettingRequest) -> dict[str, Any]:
+    """Persist one setting; restart-only keys are reported as such."""
+    rt = get_runtime()
+    try:
+        return rt.save_setting(req.key, req.value)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Save setting failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/source-text")
+def source_text() -> dict[str, Any]:
+    """The current practice text (file contents or shipped fallback)."""
+    return {"text": get_runtime().source_text()}
+
+
+@app.put("/api/source-text")
+def save_source_text(req: SourceTextRequest) -> dict[str, Any]:
+    """Persist the practice text (source for practice phrases and drills)."""
+    try:
+        return get_runtime().save_source_text(req.text)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Save source text failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/weakness")
+def weakness(req: WeaknessRequest) -> dict[str, Any]:
+    """Weak-word + phoneme aggregates and suggestions for the weakness panel."""
+    try:
+        return get_runtime().weakness(req.range)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weakness read failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/history")
+def history(lookback: int = 50) -> dict[str, Any]:
+    """Sessions, drill and dictation history for the browse view."""
+    try:
+        return get_runtime().history(lookback)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("History read failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/dashboard")
+def dashboard() -> dict[str, Any]:
+    """Stats dashboard: summary cards + chart series."""
+    try:
+        return get_runtime().dashboard()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Dashboard read failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.delete("/api/takes/{session_id}/{take_id}")
+def delete_take(session_id: str, take_id: str) -> dict[str, Any]:
+    """Delete one take from a session."""
+    ok = get_runtime().delete_take(session_id, take_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Take not found")
+    return {"deleted": True}
+
+
+@app.get("/api/takes/{session_id}/{take_id}/audio")
+def take_audio(session_id: str, take_id: str) -> dict[str, Any]:
+    """Return one take's recorded WAV (base64) for browser playback.
+
+    Mirrors the desktop history browser's Play ▶ button. Returns 404 when the
+    audio is not available (``HISTORY_MODE != "with_audio"`` or file missing)
+    so the frontend hides the button rather than showing an error.
+    """
+    data = get_runtime().take_audio(session_id, take_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Take audio not available")
+    return data
+
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: str) -> dict[str, Any]:
+    """Delete an entire session."""
+    ok = get_runtime().delete_session(session_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"deleted": True}
+
+
+@app.delete("/api/history")
+def clear_history() -> dict[str, Any]:
+    """Clear all history (takes, sessions, drill/dictation sessions)."""
+    ok = get_runtime().clear_history()
+    if not ok:
+        raise HTTPException(status_code=500, detail="Could not clear history")
+    return {"deleted": True}
+
+
+@app.get("/api/export")
+def export_history() -> dict[str, Any]:
+    """Download the stats store as JSON."""
+    try:
+        return get_runtime().export_history()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Export failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# -- dictation / drill --------------------------------------------------------
+
+@app.post("/api/dictation/start")
+def dictation_start(req: DictationStartRequest) -> dict[str, Any]:
+    """Start a dictation session; returns the first phrase to type."""
+    rt = _ready_or_raise()
+    try:
+        return rt.dictation_start(req.source_text, req.random_order)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Dictation start failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/dictation/submit")
+def dictation_submit(req: DictationSubmitRequest) -> dict[str, Any]:
+    """Score one dictation attempt against the current phrase."""
+    rt = _ready_or_raise()
+    try:
+        return rt.dictation_submit(req.user_text)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Dictation submit failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/dictation/skip")
+def dictation_skip() -> dict[str, Any]:
+    rt = _ready_or_raise()
+    try:
+        return rt.dictation_skip()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Dictation skip failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/dictation/previous")
+def dictation_previous() -> dict[str, Any]:
+    rt = _ready_or_raise()
+    try:
+        return rt.dictation_previous()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Dictation previous failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/dictation/finish")
+def dictation_finish() -> dict[str, Any]:
+    rt = _ready_or_raise()
+    try:
+        return rt.dictation_finish()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Dictation finish failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/dictation/cancel")
+def dictation_cancel() -> dict[str, Any]:
+    return get_runtime().dictation_cancel()
+
+
+@app.post("/api/drill/start")
+def drill_start(req: DrillStartRequest) -> dict[str, Any]:
+    """Start a drill for a target (word / phoneme / free-form)."""
+    rt = _ready_or_raise()
+    try:
+        return rt.drill_start(req.target, req.source_text)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Drill start failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/drill/next")
+def drill_next() -> dict[str, Any]:
+    rt = _ready_or_raise()
+    try:
+        return rt.drill_next()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Drill next failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/drill/previous")
+def drill_previous() -> dict[str, Any]:
+    rt = _ready_or_raise()
+    try:
+        return rt.drill_previous()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Drill previous failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/drill/take")
+def drill_take(req: DrillTakeRequest) -> dict[str, Any]:
+    """Record a scored take into the active drill session."""
+    rt = _ready_or_raise()
+    try:
+        return rt.drill_record_take(req.phrase, req.score)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Drill take failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/drill/finish")
+def drill_finish() -> dict[str, Any]:
+    rt = _ready_or_raise()
+    try:
+        return rt.drill_finish()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Drill finish failed:")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/drill/cancel")
+def drill_cancel() -> dict[str, Any]:
+    return get_runtime().drill_cancel()
 
 
 # -- static frontend ---------------------------------------------------------

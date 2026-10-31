@@ -168,7 +168,22 @@ installs or imports llama-cpp-python.
   `runtime.py` is the Tk-free composition root mirroring `app.py`'s wiring;
   `server.py` is the HTTP surface. The browser records audio (`getUserMedia`)
   and uploads a WAV; the backend scores it with the shared
-  engine/TTS/LLM/stats modules. Installed only with the `[web]` extra
+  engine/TTS/LLM/stats modules. Beyond the practice loop it exposes the rest of
+  the desktop feature set as API routes: dictation, drill, the weakness panel
+  (error words / phonemes / suggestions), history browsing (sessions, drill and
+  dictation sessions, per-take and per-session delete, JSON export), the stats
+  dashboard (daily average, score distribution, activity, duration table,
+  streak), editable source text and the settings view (live-applied via
+  `settings_ctl`'s live tables; restart-required keys reported to the client).
+  Dictation/drill run the desktop `DictationEngine`/`DrillEngine` objects held
+  for the length of the session. The practice read-out mirrors the desktop hero
+  card: a per-word traffic-light strip, WORK ON phoneme badges (click to hear an
+  example word, resolved from `phoneme_examples`), fluency/shadowing axis lines,
+  clickable phrase word spans (miss words underlined), attempt dots for the
+  session, a 28-day activity heatmap in the stats panel, and history rows with
+  trend arrow, error-word summary, a Play button for stored recordings
+  (`GET /api/takes/{sid}/{tid}/audio`) and a Re-drill shortcut.
+  Installed only with the `[web]` extra
   (`pip install "mimora[web]"`). Do **not** run it at the same time as the
   desktop app: the models and llama-server subprocess are per-machine
   resources. The static files ship inside the package so a wheel carries them

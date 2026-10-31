@@ -86,3 +86,5 @@ config/stats.json
 config/stats.json.bak
 config/review.json
 config/review.json.bak
+# Web companion practice text (user-owned; the shipped text stays tracked)
+config/practice_text.txt

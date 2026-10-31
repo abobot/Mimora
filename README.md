@@ -435,6 +435,26 @@ and stats modules over a small FastAPI server. The browser records your voice
 (with `getUserMedia`) and the backend scores it, so the practice loop
 (Prompt → Record → Analyze → Feedback) runs without the desktop window.
 
+The web app mirrors the desktop feature set: the practice loop, **dictation**
+(hear a sentence, type one word per slot, get scored), **drill** (repeated
+practice of one target word or phoneme), the **weakness panel** (error words,
+phonemes and suggestions), **history browsing** (sessions, drill and dictation
+sessions, delete, JSON export), the **stats dashboard** (daily average, score
+distribution, activity, streak), an editable **source text** and a **settings**
+view (live-applied; restart-required keys are reported). The settings view also
+lets you change the **UI language** (`ui_language`, en/zh, restart required).
+
+The practice screen matches the desktop read-out too: a per-word **traffic-light
+strip** under the phrase (green = right, grey = acceptable, red = wrong, click
+to hear that word), **WORK ON** phoneme badges (click to hear an example word),
+and **fluency / shadowing** axis lines when those modes are enabled. The phrase
+itself is made of **clickable word spans** — click a word to hear it slowly,
+and mispronounced words are underlined. A row of **attempt dots** stands in for
+the desktop progress ring. History rows carry the **trend arrow**, the
+**error-word summary**, a **Play** button for stored recordings and a
+**Re-drill** shortcut on the weakest word. The stats panel includes the
+**28-day activity heatmap**.
+
 Install the extra and launch it:
 
 ```bash

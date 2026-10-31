@@ -10,6 +10,21 @@ and stay in the user data directory across upgrades.
 
 ### Added
 
+- **Web companion — full desktop feature set.** The web frontend
+  (http://127.0.0.1:8788) now mirrors the desktop app beyond the core practice
+  loop: dictation mode (hear a sentence, type one word per slot, get scored),
+  drill mode (repeated practice of one target word or phoneme), the weakness
+  panel (error words / phonemes / suggestions), history browsing (sessions,
+  drill and dictation sessions, per-take and per-session delete, JSON export),
+  the stats dashboard (daily average, score distribution, 28-day activity
+  heatmap, duration table, streak), an editable source text and a settings view
+  (live-applied; restart-required keys reported, including the UI language
+  en/zh). The practice read-out mirrors the desktop hero card: per-word
+  traffic-light strip, WORK ON phoneme badges (click to hear an example word),
+  fluency/shadowing axis lines, clickable phrase word spans (miss words
+  underlined), attempt dots for the session, and history rows with trend arrow,
+  error-word summary, a Play button for stored recordings and a Re-drill
+  shortcut.
 - **Web companion (experimental).** An optional FastAPI + Uvicorn web frontend
   (`pip install "mimora[web]"`, run `mimora-web` or
   `python -m mimora.web.server`, open http://127.0.0.1:8788) that reuses the
