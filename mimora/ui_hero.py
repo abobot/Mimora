@@ -197,6 +197,16 @@ class HeroCard:
         self._bind_copy_menu(self.phrase_text,
                              getter=lambda: self.phrase_text.get("1.0", "end-1c"))
 
+        # Fixed detail region directly under the phrase: the word-feedback strip
+        # above, the translation below. Both live inside this one always-present
+        # frame, so the two can never fight for position - the old code packed
+        # both "after=phrase_frame", and whichever packed last displaced the
+        # other. The strip is always packed (its own height collapses when
+        # empty); only the translation packs/unpacks (it is the lower slot and
+        # is hidden when no translation language is selected).
+        self.detail_region = tk.Frame(self.frame, bg=THEME["bg_card"])
+        self.detail_region.pack(fill=tk.X)
+
         # Word-feedback strip: one coloured cell per target-phrase word, laid out
         # under the phrase (above the translation) so the user sees, in one glance,
         # which words were judged right (green), acceptable (grey) or wrong (red).
@@ -207,20 +217,27 @@ class HeroCard:
         # The strip is the shared FeedbackStrip (hero / drill / dictation all use
         # it), so the colouring and wrapping can never drift between panels.
         self._feedback_strip = FeedbackStrip(
-            self.frame, on_word_clicked=self._on_feedback_cell_clicked,
+            self.detail_region, on_word_clicked=self._on_feedback_cell_clicked,
             bg=THEME["bg_card"])
         self.word_feedback = self._feedback_strip.frame
         self._word_feedback_cells = self._feedback_strip.cells
+        # The strip is ALWAYS packed inside the detail region (it is the region's
+        # top slot) and collapses to its empty height when there is nothing to
+        # show (see FeedbackStrip). No pack/unpack on feedback: the region's
+        # child order (strip above translation) is fixed at construction, so the
+        # two can never fight for position. The strip's own <Configure> drives
+        # its height.
+        self.word_feedback.pack(fill=tk.X, padx=26, pady=(6, 0), side=tk.TOP)
 
         # Placeholder until the first phrase arrives.
         self.set_phrase("-")
 
-        # Translation inside the same card, right under the phrase: just dimmer,
-        # smaller text - no separator needed. Packed/unpacked by
+        # Translation inside the same detail region, right under the strip:
+        # just dimmer, smaller text - no separator needed. Packed/unpacked by
         # refresh_translation_ui() when a translation language is (de)selected;
         # "-" stands in until a translation arrives with the next phrase.
         self.translation_label = tk.Label(
-            self.frame, text="-", font=(FONT_FAMILY, FONT_SIZE_SUBTITLE),
+            self.detail_region, text="-", font=(FONT_FAMILY, FONT_SIZE_SUBTITLE),
             fg=THEME["text_dim"], bg=THEME["bg_card"], wraplength=560,
             justify=tk.CENTER)
         # Wrap the translation to the label's real width so a long translation
@@ -483,11 +500,9 @@ class HeroCard:
         """
         resolved = parse_word_levels(reference_words)
         self._feedback_strip.render(resolved)
-        if resolved:
-            self.word_feedback.pack(fill=tk.X, padx=26, pady=(6, 0),
-                                    after=self.phrase_frame)
-        else:
-            self.word_feedback.pack_forget()
+        # The strip is always packed (see __init__) - rendering an empty
+        # breakdown simply clears it and its height collapses, so there is no
+        # pack/unpack to race with the translation below.
 
     def _on_feedback_cell_clicked(self, word: str):
         """Hear the word behind a feedback cell slowly (same as the phrase words).
@@ -501,8 +516,12 @@ class HeroCard:
             self._on_word_clicked(word)
 
     def reset_word_feedback(self):
-        """Hide the word-feedback strip (empty / unscored / new phrase)."""
-        self.word_feedback.pack_forget()
+        """Clear the word-feedback strip (empty / unscored / new phrase).
+
+        The strip stays packed (it is the detail region's top slot); clearing
+        collapses its height via FeedbackStrip.clear(), which is the whole
+        "hide".
+        """
         self._feedback_strip.clear()
 
     def _phrase_word_at(self, event) -> str:
@@ -647,12 +666,12 @@ class HeroCard:
         show = bool(config.TRANSLATION_LANGUAGE)
         packed = self.translation_label.winfo_manager() == "pack"
         if show and not packed:
-            # Inside the hero card, right under the phrase (no separator - the
-            # dimmer, smaller type is the whole distinction). Packed after
-            # phrase_frame (the strip's and translation's sibling) - the phrase
-            # Text itself lives in that frame, so "after" must name the frame.
+            # Inside the hero card's detail region, right under the word-feedback
+            # strip (no separator - the dimmer, smaller type is the whole
+            # distinction). The strip is always packed and collapses when empty,
+            # so the translation simply follows it.
             self.translation_label.pack(fill=tk.X, padx=26, pady=(10, 0),
-                                        after=self.phrase_frame)
+                                        side=tk.TOP)
         elif not show and packed:
             self.translation_label.pack_forget()
 

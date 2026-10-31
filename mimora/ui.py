@@ -250,20 +250,30 @@ class TrainerView:
     # ------------------------------------------------------------------
     # UI construction (window chrome + control row; panels build themselves)
     # ------------------------------------------------------------------
-    def _control_column(self, parent):
-        """A vertical control cell holding one control widget.
+    def _control_column(self, parent, caption=None):
+        """A vertical control cell holding one control widget plus its caption.
 
-        Used by the bottom control panel so each action - Reference,
-        the mic, My recording, Next phrase - can be packed side by side and
-        vertically centered in the row (the mic column defines the row height,
-        so the short buttons line up with it).
+        Used by the bottom control panel so each action - Reference, the mic,
+        My recording, Next phrase - can be packed side by side with a
+        FONT_SIZE_CAPTION caption beneath it (the caption names the action
+        visibly, replacing tooltip-only labelling). Every column is forced to
+        the same height (the mic defines it) with the control at the top and
+        the caption pinned to the bottom, so all four captions share one
+        baseline even though the buttons are shorter than the mic.
         """
         col = tk.Frame(parent, bg=THEME["bg_main"])
-        # padx=4 on each side yields a ~8px gap between columns, tight enough
-        # that all four columns fit the 600px window. anchor=CENTER vertically
-        # centers each column in the row, so the short buttons align with the
-        # taller mic (see build_ui; the mic column defines the row height).
-        col.pack(side=tk.LEFT, anchor=tk.CENTER, padx=4)
+        # padx=8 on each side yields a ~16px gap between columns (the redesign
+        # asks for a more generous spacing than the old 4px/8px, which kept all
+        # four columns fitting the 600px window). anchor=CENTER vertically
+        # centers each column in the row; the uniform column height below makes
+        # the four captions line up regardless of the button heights.
+        col.pack(side=tk.LEFT, anchor=tk.CENTER, padx=8)
+        col.configure(height=self._CONTROL_COLUMN_HEIGHT)
+        col.pack_propagate(False)
+        if caption:
+            tk.Label(col, text=caption, font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                     fg=THEME["text_muted"], bg=THEME["bg_main"]).pack(
+                side=tk.BOTTOM, pady=(2, 0))
         return col
 
     def build_ui(self):
@@ -323,7 +333,12 @@ class TrainerView:
         # separates the chrome from the content region.
         tk.Frame(self.root, height=1, bg=THEME["border"]).pack(side=tk.TOP, fill=tk.X)
 
-        # 2. Status bar (absolute bottom)
+        # 2. Status bar (absolute bottom): one row holding the transient status
+        # line on the left and the static tip hint on the right. Merging the old
+        # separate tip line (a second BOTTOM row) into the status bar reclaims
+        # the vertical space and reads as one chrome strip instead of two
+        # competing lines; the tip is muted and right-aligned so it never
+        # competes with the status text for the user's attention.
         self.status_bar = tk.Frame(self.root, bg=THEME["bg_panel"], height=30)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
@@ -331,22 +346,24 @@ class TrainerView:
                                      font=(FONT_FAMILY, FONT_SIZE_SMALL), fg=THEME["ready"], bg=THEME["bg_panel"])
         self.status_label.pack(side=tk.LEFT, padx=15, pady=4)
 
-        # The status bar carries only the transient status line on the left.
-        # The session tally (distinct-phrase count + running average) belongs to
-        # the hero card's progress ring (see HeroCard / update_session_stats).
+        # The status bar carries only the transient status line on the left and
+        # the tip on the right. The session tally (distinct-phrase count +
+        # running average) belongs to the hero card's progress ring (see
+        # HeroCard / update_session_stats).
 
-        # 2a. Tip line - a single static hint sitting directly above the status
-        # bar. Packed side=BOTTOM after the status bar so it lands just above it,
-        # regardless of the TOP-packed content built later. It is the only place
+        # 2a. Tip hint, right-aligned inside the same status bar. The only place
         # the two least discoverable actions are stated (space-to-record,
-        # Reference-replays).
+        # Reference-replays). It stays visible during every state - the design
+        # drops the "tip only when idle" idea because hiding it during recording
+        # would make the hint appear to flicker and offer no benefit (the tip is
+        # not state-dependent guidance).
         self.tip_label = tk.Label(
-            self.root,
+            self.status_bar,
             text=i18n.tr('Tip: press SPACE or click the mic to record. '
                          'Tap the 🔊 button to replay the example.'),
             font=(FONT_FAMILY, FONT_SIZE_CAPTION), fg=THEME["text_muted"],
-            bg=THEME["bg_main"], anchor=tk.W)
-        self.tip_label.pack(side=tk.BOTTOM, fill=tk.X, padx=24, pady=(0, 5))
+            bg=THEME["bg_panel"], anchor=tk.E)
+        self.tip_label.pack(side=tk.RIGHT, padx=15)
 
         # 3. Control panel: one row holding every phrase-level
         # action, each in its own column with an 8pt caption beneath. Left to
@@ -380,7 +397,8 @@ class TrainerView:
         # -- Reference column: the replay button paired with the "Slow ▶"
         #    replay. Both are gated together by _set_actions(reference=...); the
         #    exact slow speed lives in Settings. --
-        ref_col = self._control_column(controls_row)
+        ref_col = self._control_column(controls_row,
+                                       caption=i18n.tr("Reference ▶"))
         ref_pair = tk.Frame(ref_col, bg=THEME["bg_main"])
         ref_pair.pack()
         self.ref_btn = make_icon_button(
@@ -401,6 +419,10 @@ class TrainerView:
         self.slow_btn.config(state=tk.DISABLED)
 
         # -- Mic column: the press-to-toggle record button (canvas-drawn). --
+        # The mic has no caption - it is the focal control and the only one whose
+        # glyph is universally understood; the spacebar hint lives in the tip
+        # line. The column is still forced to the shared height so its button
+        # sits on the same baseline as the other columns.
         mic_col = self._control_column(controls_row)
         self.btn_canvas = tk.Canvas(mic_col, width=100, height=100, bg=THEME["bg_main"],
                                     highlightthickness=0, cursor="hand2")
@@ -412,7 +434,8 @@ class TrainerView:
 
         # -- My recording column: always visible; enabled only once a take
         #    exists (_set_actions(user=...)). --
-        user_col = self._control_column(controls_row)
+        user_col = self._control_column(controls_row,
+                                        caption=i18n.tr("My recording ▶"))
         self.user_btn = make_icon_button(
             user_col, i18n.tr("📼"), i18n.tr("Play my recording"),
             self._cb.play_user_recording, padx=action_btn_padx)
@@ -420,7 +443,8 @@ class TrainerView:
         self.user_btn.config(state=tk.DISABLED)
 
         # -- Next phrase column: generate the next phrase. --
-        gen_col = self._control_column(controls_row)
+        gen_col = self._control_column(controls_row,
+                                       caption=i18n.tr("Next phrase ▶"))
         self.generate_btn = make_icon_button(
             gen_col, i18n.tr("⏭"), i18n.tr("Next phrase"),
             self._cb.on_generate_phrase, padx=action_btn_padx,
@@ -472,6 +496,12 @@ class TrainerView:
     _MIC_CENTER = 50
     _MIC_R_OUTER = 42
     _MIC_R_INNER = 34
+    # The mic canvas is 100px tall and defines the control-row height; every
+    # control column is forced to this height so the four captions (added in the
+    # redesign) all sit on one baseline below the buttons. 100 (canvas) + 20
+    # (caption line + its top pad) leaves the control buttons a little short of
+    # the mic, which is exactly the intended look (the mic is the focal control).
+    _CONTROL_COLUMN_HEIGHT = 120
     # Live-level mapping for the recording indicator: the fixed outer ring stays
     # at full radius, and a solid red disc inside it grows with the input level,
     # from _MIC_LEVEL_MIN_R up to the inner radius (just short of the ring). Input

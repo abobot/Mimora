@@ -122,10 +122,15 @@ class FeedbackStrip:
         self._layout()
 
     def clear(self) -> None:
-        """Destroy all cells (the strip is hidden by the caller)."""
+        """Destroy all cells and collapse the strip to its empty height."""
         for cell in self.cells:
             cell.destroy()
         self.cells.clear()
+        # Collapse to 1 (not 0): 0 is Tk's "auto" sentinel, and once a frame has
+        # had a positive height, setting 0 back leaves winfo_reqheight() stuck at
+        # the last positive value. 1 is the empty-frame floor and invisible here
+        # because the strip's bg matches its host region (same color, no border).
+        self.frame.configure(height=1)
 
     def _layout(self, event=None) -> None:
         """Center/wrap the cells, resizing the frame to the row heights."""
@@ -134,7 +139,8 @@ class FeedbackStrip:
         self._layout_in_progress = True
         try:
             height = layout_cells_centered(self.frame, self.cells)
-            if height:
-                self.frame.configure(height=height)
+            # Collapse to 1 when there is nothing to show (same reason as in
+            # clear() - the 0 sentinel lies once a positive height was set).
+            self.frame.configure(height=height if height else 1)
         finally:
             self._layout_in_progress = False

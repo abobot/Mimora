@@ -121,13 +121,19 @@ class HeroCardWordFeedbackTests(unittest.TestCase):
     def test_empty_breakdown_hides_strip(self):
         self.card.set_word_feedback([])
         self.assertEqual(self.card._word_feedback_cells, [])
-        self.assertNotEqual(self.card.word_feedback.winfo_manager(), "pack")
+        # The strip stays packed (it is the detail region's top slot) and
+        # collapses to its empty height (the 1px floor, invisible on the card
+        # background). winfo_reqheight() is synchronous; winfo_height() would
+        # report the previous geometry pass, which needs an event-loop pump.
+        self.assertEqual(self.card.word_feedback.winfo_manager(), "pack")
+        self.assertEqual(int(self.card.word_feedback.winfo_reqheight()), 1)
 
     def test_reset_clears_cells_and_hides(self):
         self.card.set_word_feedback([{"word": "x", "level": "bad"}])
         self.card.reset_word_feedback()
         self.assertEqual(self.card._word_feedback_cells, [])
-        self.assertNotEqual(self.card.word_feedback.winfo_manager(), "pack")
+        self.assertEqual(self.card.word_feedback.winfo_manager(), "pack")
+        self.assertEqual(int(self.card.word_feedback.winfo_reqheight()), 1)
 
     def test_set_phrase_clears_strip(self):
         self.card.set_word_feedback([{"word": "x", "level": "bad"}])
