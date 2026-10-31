@@ -166,6 +166,10 @@ def _run_window() -> None:
     frame = tk.Frame(root, padx=40, pady=28, highlightthickness=1,
                      highlightbackground="#888888")
     frame.pack()
+    # Fonts are hardcoded, not FONT_SIZE_* constants: this window runs in its
+    # own process and shows *while* config/UI_theme import (the heavy torch
+    # load), so importing them here would defeat its whole purpose. The two
+    # sizes are the splash's only text and are never theme-dependent.
     tk.Label(frame, text="Mimora", font=("Segoe UI", 20, "bold")).pack()
     tk.Label(frame, text="Starting...", font=("Segoe UI", 10)).pack(pady=(4, 14))
     progress = ttk.Progressbar(frame, mode="indeterminate", length=260)

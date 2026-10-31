@@ -80,6 +80,7 @@ from mimora.playback import PlaybackController
 from mimora.session import SessionState
 from mimora.settings_ctl import SettingsGlue
 from mimora.ui import TrainerView, ViewCallbacks, LENGTH_FEW_WORDS
+from mimora.ui_tokens import assert_contrast
 from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_SIZE_BODY,
@@ -3360,6 +3361,16 @@ def run(append_log: bool = False):
     # Select the UI language before any widget is built. The settings window
     # marks ui_language as restart-only, so this is the one place it is read.
     i18n.set_language(config.UI_LANGUAGE)
+
+    # Contrast check on the resolved palette: the muted/text-accent pairs in a
+    # theme may fall below WCAG AA on purpose (light/cream trade contrast for
+    # warmth). This is a warning, not a refusal - a hard failure here would
+    # brick the app over a palette decision - but it is exactly the signal a
+    # theme author needs, and it is the one place that must not be skipped.
+    # assert_contrast returns the failure strings instead of raising, so the
+    # severity is decided here, by the startup path, not in the tokens module.
+    for failure in assert_contrast():
+        logging.warning("Theme contrast below AA: %s", failure)
 
     # Named gui, not app: inside this module "app" is the module itself.
     gui = PronunciationTrainerGUI()

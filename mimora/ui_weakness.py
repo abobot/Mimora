@@ -48,6 +48,7 @@ from mimora.ui_theme import (
     FONT_FAMILY_MONO,
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
+    FONT_SIZE_DISPLAY,
     FONT_SIZE_SUBTITLE,
     THEME,
 )
@@ -524,7 +525,7 @@ class WeaknessView:
         color = THEME["bad"] if severity > 0.5 else \
                 (THEME["warn"] if severity > 0.25 else THEME["good"])
         tk.Label(card, text=f"/{ipa}/",
-                 font=(FONT_FAMILY_MONO, 20, "bold"),
+                 font=(FONT_FAMILY_MONO, FONT_SIZE_DISPLAY, "bold"),
                  bg=THEME["bg_panel"], fg=color,
                  ).pack(pady=(8, 0))
         tk.Label(card, text=f"{entry.get('count', 0)}×  "

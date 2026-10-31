@@ -74,6 +74,7 @@ FONT_FAMILY_MONO = _FONT_FAMILIES_MONO.get(platform.system(), "DejaVu Sans Mono"
 # constants so each can be tuned independently later.
 FONT_SIZE_SCORE = 30         # hero verdict score - the single largest element
 FONT_SIZE_EMOJI = 22         # emoji glyph drawn on the round record button
+FONT_SIZE_DISPLAY = 20       # large display text: drill phrase, phoneme IPA symbol
 FONT_SIZE_PHRASE = 18        # hero practice phrase (the sentence being trained)
 FONT_SIZE_ICON = 16          # header gear / settings glyph
 FONT_SIZE_CONTROL_ICON = 20  # control-row icon buttons (speaker/turtle/cassette/skip)

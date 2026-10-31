@@ -32,6 +32,7 @@ from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
+    FONT_SIZE_DISPLAY,
     FONT_SIZE_SUBTITLE,
     THEME,
     make_icon_button,
@@ -136,7 +137,7 @@ class DrillView:
         self._phrase_frame.pack(fill=tk.BOTH, expand=True,
                                 padx=16, pady=8)
         self._phrase_label = tk.Label(self._phrase_frame, text="",
-                                      font=(FONT_FAMILY, 20, "bold"),
+                                      font=(FONT_FAMILY, FONT_SIZE_DISPLAY, "bold"),
                                       bg=THEME["bg_panel"], fg=THEME["text_emph"],
                                       wraplength=520, justify=tk.CENTER)
         self._phrase_label.pack(pady=(32, 8))
