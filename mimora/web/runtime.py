@@ -926,7 +926,8 @@ class WebRuntime:
         for s in scores:
             buckets[min(int(s // 25), 3)] += 1
 
-        # Per-day activity, last 28 days (heatmap).
+        # Per-day activity (heatmap). The client switches months with
+        # prev/next arrows, so it needs every day, not just the last 28.
         day_sec: Dict[str, int] = defaultdict(int)
         for t in takes:
             try:
@@ -935,10 +936,8 @@ class WebRuntime:
             except ValueError:
                 continue
             day_sec[day] += int(t.get("audio_duration_sec") or 0)
-        activity = []
-        for i in range(27, -1, -1):
-            day = (today - datetime.timedelta(days=i)).isoformat()
-            activity.append({"date": day, "seconds": day_sec.get(day, 0)})
+        activity = [{"date": day, "seconds": secs}
+                    for day, secs in sorted(day_sec.items())]
 
         # Per-day duration table, last 14 days, newest first.
         duration_rows = []

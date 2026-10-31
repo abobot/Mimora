@@ -205,5 +205,97 @@ class HeatmapLayoutTest(unittest.TestCase):
         self.assertEqual(layout["cells"], [(0, 1, 4)])
 
 
+class HeatmapMonthLayoutTest(unittest.TestCase):
+    """Tk-free tests for the per-month GitHub-style heatmap geometry."""
+
+    def test_november_2026_has_six_weeks(self):
+        # Nov 2026 starts on a Sunday (the 1st) and has 30 days; the grid
+        # anchors to Mon 2026-10-26 and runs through Sun 2026-12-06 = 6 weeks.
+        from mimora.ui_stats import heatmap_month_layout
+        from datetime import date
+        layout = heatmap_month_layout({}, date(2026, 11, 15))
+        self.assertEqual(layout["n_weeks"], 6)
+        self.assertEqual(layout["grid_start"], date(2026, 10, 26))
+
+    def test_month_with_practice_sets_levels_only_in_month(self):
+        # Practice on the 1st (300s) and the 15th (600s); days spilling in
+        # from October are level 0 even though the 1st-of-month week starts
+        # in October. Quantiles of [300, 600] put 300 at level 1 (just above
+        # the lightest green) and 600 at level 4 (the max).
+        from mimora.ui_stats import heatmap_month_layout
+        from datetime import date
+        day_sec = {
+            "2026-11-01": 300,
+            "2026-11-15": 600,
+        }
+        layout = heatmap_month_layout(day_sec, date(2026, 11, 15))
+        by_pos = {(week, row): lvl for week, row, lvl in layout["cells"]}
+        # 2026-11-01 is a Sunday -> row 6 of week 0 (Mon 10-26).
+        self.assertEqual(by_pos[(0, 6)], 1)
+        # 2026-11-15 is a Sunday -> row 6 of week 2 (Mon 11-09).
+        self.assertEqual(by_pos[(2, 6)], 4)
+        # The spill days (Oct 26-31, row 0-5 of week 0) are level 0.
+        for row in range(0, 6):
+            self.assertEqual(by_pos[(0, row)], 0, f"week 0 row {row}")
+
+    def test_empty_month_still_draws_grid(self):
+        # An empty month still yields cells (all level 0), so the calendar
+        # shows a full month grid rather than "No data".
+        from mimora.ui_stats import heatmap_month_layout
+        from datetime import date
+        layout = heatmap_month_layout({}, date(2026, 11, 15))
+        self.assertTrue(layout["cells"])
+        self.assertTrue(all(lvl == 0 for _, _, lvl in layout["cells"]))
+
+    def test_february_leap_year_has_five_weeks(self):
+        # Feb 2028 (leap, 29 days) starts on a Tuesday. The grid anchors to
+        # Mon 2028-01-31 and runs through Sun 2028-03-05 -> 5 weeks.
+        from mimora.ui_stats import heatmap_month_layout
+        from datetime import date
+        layout = heatmap_month_layout({}, date(2028, 2, 10))
+        self.assertEqual(layout["n_weeks"], 5)
+        self.assertEqual(layout["grid_start"], date(2028, 1, 31))
+
+
+class HeatmapMonthNavigationTest(unittest.TestCase):
+    """Tk-free tests for the prev/next month navigation."""
+
+    def _make_view(self, month):
+        from datetime import date
+        from unittest import mock
+        from mimora.ui_stats import StatsView
+        view = StatsView.__new__(StatsView)
+        view._heatmap_month = month
+        view.refresh = mock.MagicMock()
+        return view
+
+    def test_prev_month_goes_back_one(self):
+        from datetime import date
+        view = self._make_view(date(2026, 11, 15))
+        view._heatmap_prev_month()
+        self.assertEqual(view._heatmap_month, date(2026, 10, 1))
+        view.refresh.assert_called_once()
+
+    def test_next_month_goes_forward_one(self):
+        from datetime import date
+        view = self._make_view(date(2026, 11, 15))
+        view._heatmap_next_month()
+        self.assertEqual(view._heatmap_month, date(2026, 12, 1))
+        view.refresh.assert_called_once()
+
+    def test_prev_month_wraps_year_boundary(self):
+        # January -> previous month is December of the prior year.
+        from datetime import date
+        view = self._make_view(date(2026, 1, 15))
+        view._heatmap_prev_month()
+        self.assertEqual(view._heatmap_month, date(2025, 12, 1))
+
+    def test_next_month_wraps_year_boundary(self):
+        from datetime import date
+        view = self._make_view(date(2026, 12, 15))
+        view._heatmap_next_month()
+        self.assertEqual(view._heatmap_month, date(2027, 1, 1))
+
+
 if __name__ == "__main__":
     unittest.main()

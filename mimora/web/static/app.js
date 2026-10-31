@@ -118,6 +118,9 @@ const state = {
   // 专项
   drill: { active: false, phrase: "", target: null },
   drillWav: null,
+  // 统计看板：热力图显示的月份偏移（0=当前月，±n 月）与已加载的全量数据
+  heatMonthOffset: 0,
+  heatActivity: null,
 };
 
 /* ---------- 音频工具 ---------- */
@@ -1169,7 +1172,7 @@ async function loadDashboard() {
     renderLineChart(el("stats-daily"), data.daily_avg);
     renderBars(el("stats-dist"), data.distribution);
     renderDurationTable(el("stats-duration"), data.duration_rows);
-    renderActivityHeatmap(el("stats-activity"), data.activity);
+    loadDashboardHeatmap(data.activity);
     const recent = el("stats-recent");
     recent.innerHTML = "";
     (data.recent_sessions || []).forEach((s) => {
@@ -1181,6 +1184,18 @@ async function loadDashboard() {
   } catch (err) {
     setBanner("统计加载失败: " + err.message, "error");
   }
+}
+
+// Render the activity heatmap for the currently selected month, using the
+// full per-day data already fetched by loadDashboard(). A separate function
+// so the prev/next arrows can re-render without a full dashboard refresh.
+function loadDashboardHeatmap(activity) {
+  if (activity) state.heatActivity = activity;
+  const ym = heatMonthKey(heatMonthOffset);
+  const [y, m] = ym.split("-").map(Number);
+  const title = el("stats-activity-title");
+  if (title) title.textContent = HEAT_MONTHS[m - 1] + " " + y;
+  renderActivityHeatmap(el("stats-activity"), state.heatActivity || [], ym);
 }
 
 function renderLineChart(container, points) {
@@ -1251,37 +1266,52 @@ function renderDurationTable(container, rows) {
 // (Mon/Wed/Fri) to the left; the whole block is centred.
 const HEAT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const HEAT_WEEKDAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-function renderActivityHeatmap(container, activity) {
+
+// Month the heatmap shows; a "YYYY-MM" string, null = current month.
+// The arrows around the title move it and re-render the grid.
+let heatMonthOffset = 0;
+function heatMonthKey(offset) {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Render a GitHub-style heatmap for ONE calendar month. `activity` is every
+// day's practice seconds (all months); the grid is the month `ym` ("YYYY-MM")
+// laid out as one column per week (Mon-Sun rows), with the day-of-month
+// number inside each cell. Days spilling in from the adjacent month are the
+// empty grey. Each month is scaled by its own non-zero days.
+function renderActivityHeatmap(container, activity, ym) {
   container.innerHTML = "";
   const days = activity || [];
-  if (!days.length) { container.textContent = "暂无数据"; return; }
   const byDate = new Map(days.map((d) => [d.date, d.seconds || 0]));
-
-  // Anchors: the grid starts at the Monday of the week containing
-  // (today - 27 days), so the 28 days occupy whole weeks. All date math
-  // stays in LOCAL time (no toISOString), so the day keys line up with the
-  // "YYYY-MM-DD" strings the server produced from its own local calendar.
+  const [year, month] = ym.split("-").map(Number);
+  const first = new Date(year, month - 1, 1);
+  const last = new Date(year, month, 0);              // last day of the month
   const dayMs = 24 * 60 * 60 * 1000;
-  const start = new Date(days[0].date + "T00:00:00");
-  const today = new Date(days[days.length - 1].date + "T00:00:00");
-  const dow = (start.getDay() + 6) % 7;            // 0=Mon .. 6=Sun
-  const gridStart = new Date(start.getTime() - dow * dayMs);
-  const nWeeks = Math.floor((today - gridStart) / dayMs / 7) + 1;
   const keyOf = (d) => {
     const m = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
     return `${d.getFullYear()}-${m}-${day}`;
   };
+  // Anchor to the Monday of the week containing the 1st; extend to the
+  // Sunday of the week containing the last day.
+  const gridStart = new Date(first.getTime() - ((first.getDay() + 6) % 7) * dayMs);
+  const gridEnd = new Date(last.getTime() + (6 - ((last.getDay() + 6) % 7)) * dayMs);
+  const nWeeks = Math.floor((gridEnd - gridStart) / dayMs / 7) + 1;
 
-  // Quantile levels over the non-zero values (GitHub-style 5-level scale).
-  const nonzero = [...byDate.values()].filter((s) => s > 0).sort((a, b) => a - b);
+  // Quantile levels over THIS month's non-zero days (each month is scaled
+  // independently, like GitHub's per-year scale).
+  const inMonth = [];
+  for (let d = new Date(first); d <= last; d = new Date(d.getTime() + dayMs)) {
+    inMonth.push(byDate.get(keyOf(d)) || 0);
+  }
+  const nonzero = inMonth.filter((s) => s > 0).sort((a, b) => a - b);
   if (!nonzero.length) nonzero.push(1);
   const q = (p) => nonzero[Math.min(nonzero.length - 1, Math.floor(p * nonzero.length))];
   const thresholds = [q(0.25), q(0.5), q(0.75), q(1.0)];
   const levelFor = (s) => {
     if (s <= 0) return 0;
-    // Any non-zero day shows at least the lightest green (GitHub never
-    // renders a non-zero value as the empty grey).
     let lvl = 1;
     thresholds.forEach((t, i) => { if (s >= t) lvl = i + 1; });
     return lvl;
@@ -1301,22 +1331,17 @@ function renderActivityHeatmap(container, activity) {
   wrap.appendChild(wd);
   const grid = document.createElement("div");
   grid.className = "gh-heatmap";
-  let prevMonth = -1;
+  // Month label: the grid shows one month only, so a single label is enough.
+  const mCell = document.createElement("span");
+  mCell.className = "gh-month";
+  mCell.textContent = HEAT_MONTHS[month - 1] + " " + year;
+  grid.appendChild(mCell);
   for (let w = 0; w < nWeeks; w++) {
-    // Month label row: one cell per week column, label on the first column
-    // of a new month (GitHub puts the month text above that column).
-    const mCell = document.createElement("span");
-    mCell.className = "gh-month";
-    const colDate = new Date(gridStart.getTime() + w * 7 * dayMs);
-    if (colDate.getMonth() !== prevMonth) {
-      mCell.textContent = HEAT_MONTHS[colDate.getMonth()];
-      prevMonth = colDate.getMonth();
-    }
-    grid.appendChild(mCell);
     for (let r = 0; r < 7; r++) {
       const d = new Date(gridStart.getTime() + (w * 7 + r) * dayMs);
       const key = keyOf(d);
-      const secs = byDate.get(key) || 0;
+      const inMonth2 = d.getFullYear() === year && d.getMonth() === month - 1;
+      const secs = inMonth2 ? (byDate.get(key) || 0) : 0;
       const cell = document.createElement("div");
       const lvl = levelFor(secs);
       cell.className = "gh-cell lv" + lvl;
@@ -1331,6 +1356,11 @@ function renderActivityHeatmap(container, activity) {
   }
   wrap.appendChild(grid);
   container.appendChild(wrap);
+}
+
+function shiftHeatMonth(delta) {
+  heatMonthOffset += delta;
+  loadDashboardHeatmap();
 }
 
 /* ---------- 设置 ---------- */
@@ -1532,6 +1562,8 @@ function bindEvents() {
   el("btn-history-clear").addEventListener("click", clearHistory);
   // 统计
   el("btn-stats-refresh").addEventListener("click", loadDashboard);
+  el("btn-heat-prev").addEventListener("click", () => shiftHeatMonth(-1));
+  el("btn-heat-next").addEventListener("click", () => shiftHeatMonth(+1));
 }
 
 init();

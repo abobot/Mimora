@@ -361,8 +361,26 @@ body {
   min-width: 160px;
 }
 .setting-row input[type="checkbox"] { width: 18px; height: 18px; }
-/* Activity heatmap (last 28 days), GitHub-contributions style. Each cell
-   shows the day-of-month number, like a calendar. */
+/* Activity heatmap (per selected month), GitHub-contributions style. Each
+   cell shows the day-of-month number, like a calendar. A header row holds
+   the prev/next month arrows and the month title. */
+.heat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.heat-head h3 { margin: 0; }
+.heat-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.heat-title {
+  font-weight: 600;
+  min-width: 90px;
+  text-align: center;
+}
 .gh-heatmap-wrap {
   display: flex;
   align-items: flex-end;

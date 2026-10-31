@@ -153,16 +153,20 @@ and stay in the user data directory across upgrades.
   dictation window, or in the settings window under Dictation. The choice is
   persisted (`dictation_streak_target`) and applied live to the running
   session, so it holds across sessions and restarts.
-- **Activity heatmap is now GitHub-contributions style.** The practice-activity
-  heatmap in both the desktop stats dashboard and the web stats page now uses
-  GitHub's contribution-calendar layout: one column per week, rows are the days
-  of the week, and each day's practice time is coloured on GitHub's 5-level
-  green scale (quantiles of the non-zero days; a day with any practice is never
-  the empty grey). Empty days stay the dark neutral. Month labels sit above the
-  columns where a new month starts and weekday labels (Mon/Wed/Fri) to the
-  left; the whole block is centred in its area. Each cell now shows its
-  day-of-month number like a calendar, and the desktop chart area is tall
-  enough that the caption no longer overlaps the grid.
+- **Activity heatmap is now GitHub-contributions style, per month.** The
+  practice-activity heatmap in both the desktop stats dashboard and the web
+  stats page now uses GitHub's contribution-calendar layout: one column per
+  week, rows are the days of the week, and each day's practice time is coloured
+  on GitHub's 5-level green scale (quantiles of the non-zero days; a day with
+  any practice is never the empty grey). Empty days stay the dark neutral.
+  Month labels sit above the columns where a new month starts and weekday
+  labels (Mon/Wed/Fri) to the left; the whole block is centred in its area.
+  Each cell now shows its day-of-month number like a calendar, and the desktop
+  chart area is tall enough that the caption no longer overlaps the grid.
+  Instead of a fixed "last 28 days" window the heatmap now shows **one
+  calendar month at a time** and the ‹ Prev / Next › arrows (both platforms)
+  move between months; the green scale is recomputed per month from that
+  month's own practice days.
 
 ### Fixed
 

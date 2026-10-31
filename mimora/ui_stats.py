@@ -231,6 +231,40 @@ class _CanvasChart:
         cells = layout["cells"]
         grid_start = layout["grid_start"]
         n_weeks = layout["n_weeks"]
+        self._draw_heatmap_grid(cells, grid_start, n_weeks, cell, label)
+
+    def draw_heatmap_month(self, day_seconds: Dict[str, int], month: date,
+                           cell: int = 24, label: str = "") -> None:
+        """Draw a GitHub-style heatmap for one calendar month.
+
+        ``day_seconds`` maps ``"YYYY-MM-DD"`` to practice seconds and
+        ``month`` is any date in the month to display. This is the
+        month-navigable variant of :meth:`draw_heatmap` used by the
+        heatmap's prev/next month arrows: each month is scaled by its own
+        non-zero days, and the single month label is drawn in the header.
+        """
+        c = self.canvas
+        c.delete("all")
+        pad = 8
+        layout = heatmap_month_layout(day_seconds, month)
+        cells = layout["cells"]
+        grid_start = layout["grid_start"]
+        n_weeks = layout["n_weeks"]
+        if n_weeks == 0:
+            c.create_text(self._width / 2, self._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        self._draw_heatmap_grid(cells, grid_start, n_weeks, cell, label)
+
+    def _draw_heatmap_grid(self, cells: List[Tuple[int, int, int]],
+                           grid_start: date, n_weeks: int,
+                           cell: int, label: str) -> None:
+        """Shared grid renderer for :meth:`draw_heatmap` and the month
+        variant: columns per week, weekday labels, day numbers in the
+        cells, centred block, optional caption below."""
+        c = self.canvas
+        pad = 8
         gap = 3
         month_h = 16
         row_lbl_w = 26
@@ -339,6 +373,64 @@ def heatmap_layout(values: List[float], today: date) -> Dict[str, Any]:
     return {"n_weeks": n_weeks, "grid_start": grid_start, "cells": cells}
 
 
+def heatmap_month_layout(day_seconds: Dict[str, int],
+                         month: date) -> Dict[str, Any]:
+    """GitHub-style heatmap geometry for one calendar month (pure, Tk-free).
+
+    ``day_seconds`` maps ``"YYYY-MM-DD"`` to practice seconds. ``month`` is
+    any date in the month (only its year and month matter). The grid is a
+    calendar of that month: one **column per week**, rows Mon-Sun, anchored
+    to the Monday of the week containing the 1st. Days that spill into the
+    week from the adjacent month are level 0 (no practice). The green scale
+    is quantiles of the month's non-zero days, so each month is scaled
+    independently.
+
+    Returns a dict with ``n_weeks`` (int), ``grid_start`` (date) and
+    ``cells`` (list of ``(week, row, level)`` tuples, level 0-4).
+    """
+    first = month.replace(day=1)
+    if first.month == 12:
+        next_first = first.replace(year=first.year + 1, month=1)
+    else:
+        next_first = first.replace(month=first.month + 1)
+    last = next_first - timedelta(days=1)
+    grid_start = first - timedelta(days=first.weekday())
+    last_sunday = last + timedelta(days=6 - last.weekday())
+    n_weeks = (last_sunday - grid_start).days // 7 + 1
+
+    # Quantile levels over the non-zero days inside this month only.
+    in_month = [
+        day_seconds.get((first + timedelta(days=i)).strftime("%Y-%m-%d"), 0)
+        for i in range((last - first).days + 1)
+    ]
+    nonzero = sorted(v for v in in_month if v > 0) or [1.0]
+
+    def q(p: float) -> float:
+        return nonzero[min(len(nonzero) - 1, int(p * len(nonzero)))]
+
+    thresholds = [q(0.25), q(0.5), q(0.75), q(1.0)]
+
+    def level(v: float) -> int:
+        if v <= 0:
+            return 0
+        lvl = 1
+        for i, t in enumerate(thresholds):
+            if v >= t:
+                lvl = i + 1
+        return lvl
+
+    cells = []
+    for week in range(n_weeks):
+        for row in range(7):
+            d = grid_start + timedelta(days=week * 7 + row)
+            if first <= d <= last:
+                v = day_seconds.get(d.strftime("%Y-%m-%d"), 0)
+            else:
+                v = 0  # spill from the adjacent month
+            cells.append((week, row, level(v)))
+    return {"n_weeks": n_weeks, "grid_start": grid_start, "cells": cells}
+
+
 def heatmap_cells(values: List[float], today: date) -> List[Tuple[int, int, int]]:
     """GitHub-style heatmap cell layout (pure, Tk-free).
 
@@ -354,6 +446,11 @@ class StatsView:
     def __init__(self, root, callbacks: StatsCallbacks):
         self.root = root
         self._cb = callbacks
+        # Month shown in the activity heatmap; defaults to the current month
+        # and is moved by the prev/next arrows. Kept on this view so a data
+        # refresh (e.g. after an export) does not reset the selection.
+        today = datetime.now().date()
+        self._heatmap_month = today.replace(day=1)
         self._window = tk.Toplevel(root)
         self._window.title(i18n.tr("Practice stats"))
         self._window.geometry("900x640")
@@ -399,6 +496,20 @@ class StatsView:
         self._charts.pack(fill=tk.BOTH, expand=True, padx=16, pady=8)
 
         # Activity heatmap (calendar of practice minutes) - second chart row.
+        # A header holds the prev/next month arrows and the month title; the
+        # heatmap itself is redrawn in place when the month changes.
+        activity_head = tk.Frame(self._window, bg=THEME["bg_main"])
+        activity_head.pack(fill=tk.X, padx=16, pady=(4, 0))
+        ttk.Button(activity_head, text=i18n.tr("‹ Prev"),
+                   command=self._heatmap_prev_month).pack(side=tk.LEFT)
+        self._heatmap_month_var = tk.StringVar()
+        tk.Label(activity_head, textvariable=self._heatmap_month_var,
+                 font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                 bg=THEME["bg_main"], fg=THEME["text_emph"]
+                 ).pack(side=tk.LEFT, padx=10)
+        ttk.Button(activity_head, text=i18n.tr("Next ›"),
+                   command=self._heatmap_next_month).pack(side=tk.LEFT)
+
         self._activity = tk.Frame(self._window, bg=THEME["bg_main"])
         self._activity.pack(fill=tk.X, padx=16, pady=4)
 
@@ -492,31 +603,44 @@ class StatsView:
         dist.draw_bars(buckets, labels, title=i18n.tr("Score distribution"))
 
     def _render_activity(self, sessions: List[Dict]) -> None:
-        """Render the practice-activity heatmap (calendar) into the charts area.
+        """Render the practice-activity heatmap for the selected month.
 
-        Each day in the last 28 days is a cell, coloured by the total practice
-        seconds that day (empty days stay neutral). Drawn as a second row
-        beneath the trend and distribution charts.
+        ``self._heatmap_month`` selects which calendar month to show; the
+        heatmap is redrawn in place when the prev/next arrows move it. The
+        month title is refreshed here too, so a data refresh keeps it in
+        sync with the selected month.
         """
         for child in self._activity.winfo_children():
             child.destroy()
-        # Daily total practice seconds, last 28 days ending today.
+        # Daily total practice seconds, per calendar day (any month).
         day_sec: Dict[str, int] = defaultdict(int)
         for s in sessions:
             key = _session_date_key(s)
             if key:
                 day_sec[key] += int(s.get("duration_sec") or 0)
-        today = datetime.now().date()
-        values = []
-        days = []
-        for offset in range(27, -1, -1):
-            d = today - timedelta(days=offset)
-            key = d.strftime("%Y-%m-%d")
-            values.append(day_sec.get(key, 0))
-            days.append(key)
+        month = self._heatmap_month
+        self._heatmap_month_var.set(
+            i18n.tr("{year} {month}",
+                    year=month.year,
+                    month=i18n.tr(_MONTH_ABBR[month.month - 1])))
         heat = _CanvasChart(self._activity, width=430, height=240)
         heat.canvas.pack(side=tk.LEFT, padx=8, pady=8)
-        heat.draw_heatmap(values, label=i18n.tr("Practice minutes (last 28 days)"))
+        heat.draw_heatmap_month(
+            day_sec, month,
+            label=i18n.tr("Practice minutes by day"))
+
+    def _shift_heatmap_month(self, delta: int) -> None:
+        """Move the heatmap's selected month by ``delta`` and redraw it."""
+        month = self._heatmap_month
+        month_index = month.year * 12 + (month.month - 1) + delta
+        self._heatmap_month = date(month_index // 12, month_index % 12 + 1, 1)
+        self.refresh()
+
+    def _heatmap_prev_month(self) -> None:
+        self._shift_heatmap_month(-1)
+
+    def _heatmap_next_month(self) -> None:
+        self._shift_heatmap_month(+1)
 
     def _render_duration_table(self, sessions: List[Dict]) -> None:
         """Render the per-session and per-day practice-duration table."""
