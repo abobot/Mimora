@@ -169,27 +169,25 @@ class WeaknessView:
 
         # Statistics range selector (near 7d/14d/30d/60d, or last 30/100/300
         # takes). Changing it re-runs refresh() so every tab re-aggregates
-        # over the chosen window. It sits left of Refresh in the header.
+        # over the chosen window. Seven options in a dropdown are not explicit
+        # (the design doc: "7 个选项用下拉不明示"), so a segmented button row
+        # replaces the Combobox: every window is visible at once and one click
+        # selects it. The active segment is highlighted.
         tk.Label(header, text=i18n.tr("Range:"),
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                  bg=THEME["bg_main"], fg=THEME["text_dim"]
                  ).pack(side=tk.LEFT, padx=(8, 2))
-        labels = {key: i18n.tr(label) for key, label, _spec in RANGE_OPTIONS}
-        # The StringVar MUST be bound to the combobox as textvariable, or it
-        # keeps its initial value and _on_range_selected always reads the
-        # default range - the title then never changes when the user picks
-        # another window. It starts at the *label* of the default key, since
-        # what the user selects is the localized label, not the key.
-        self._range_var = tk.StringVar(value=labels[self._range_key])
-        self._range_combo = ttk.Combobox(
-            header, state="readonly", width=16,
-            textvariable=self._range_var,
-            values=[labels[key] for key, _l, _s in RANGE_OPTIONS],
-        )
-        self._range_combo.pack(side=tk.LEFT)
-        self._range_combo.bind(
-            "<<ComboboxSelected>>",
-            lambda e: self._on_range_selected(labels))
+        self._range_seg = tk.Frame(header, bg=THEME["bg_main"])
+        self._range_seg.pack(side=tk.LEFT)
+        self._range_buttons: Dict[str, tk.Label] = {}
+        for key, label, _spec in RANGE_OPTIONS:
+            btn = tk.Label(self._range_seg, text=i18n.tr(label),
+                           font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                           padx=6, pady=1, cursor="hand2")
+            btn.pack(side=tk.LEFT, padx=1)
+            btn.bind("<Button-1>", lambda e, k=key: self._on_segmented(k))
+            self._range_buttons[key] = btn
+        self._paint_segmented()
 
         self._nb = ttk.Notebook(self._window)
         self._nb.pack(fill=tk.BOTH, expand=True, padx=16, pady=(4, 12))
@@ -216,15 +214,26 @@ class WeaknessView:
     # Data + rendering
     # ------------------------------------------------------------------
 
-    def _on_range_selected(self, labels: Dict[str, str]) -> None:
+    def _on_segmented(self, key: str) -> None:
         """Apply the chosen statistics range and re-render every tab."""
-        selected = self._range_var.get()
-        # Map the localized label back to its key.
-        for key, label in labels.items():
-            if label == selected:
-                self._range_key = key
-                break
+        if key == self._range_key:
+            return
+        self._range_key = key
+        self._paint_segmented()
         self.refresh()
+
+    def _paint_segmented(self) -> None:
+        """Highlight the active range segment, dim the others.
+
+        The selected segment gets the accent color (bg_accent/text_accent);
+        the rest stay text_dim on bg_main. Repainting just configure()s the
+        existing labels - no destruction, so the row never flickers.
+        """
+        for key, btn in self._range_buttons.items():
+            if key == self._range_key:
+                btn.configure(bg=THEME["bg_accent"], fg=THEME["text_accent"])
+            else:
+                btn.configure(bg=THEME["bg_main"], fg=THEME["text_dim"])
 
     def refresh(self) -> None:
         (sessions, raw_takes) = self._cb.load_takes()
@@ -267,7 +276,11 @@ class WeaknessView:
                      bg=THEME["bg_main"], fg=THEME["text_emph"]
                      ).pack(pady=20)
             return
-        for s in suggestions[:8]:
+        # The design doc: Overview shows at most 3 cards, not 8. The rule
+        # engine returns suggestions already ranked worst-first; three is the
+        # attention budget the user can act on before the panel scrolls, and
+        # the full list stays reachable in the Words/Phonemes tabs.
+        for s in suggestions[:3]:
             card = tk.Frame(self._tab_overview, bg=THEME["bg_panel"], bd=1,
                             highlightbackground=THEME["border"],
                             highlightthickness=1)
@@ -311,32 +324,128 @@ class WeaknessView:
                      bg=THEME["bg_main"], fg=THEME["text_emph"]
                      ).pack(pady=20)
             return
-        for word, entry in sorted_by_error_rate(word_agg):
-            row = tk.Frame(self._tab_words, bg=THEME["bg_panel"], bd=0)
-            row.pack(fill=tk.X, pady=2)
+        # A Treeview replaces the destroy-and-rebuild row stack: it supports
+        # incremental updates, column sorting and keyboard selection, and it
+        # does not re-create widgets on every refresh (the old code rebuilt a
+        # Frame per word, which is what made the "start drill" buttons lose
+        # their click on refresh).
+        self._words_data = list(sorted_by_error_rate(word_agg))
+        self._words_sort_key = "error_rate"
+        self._words_sort_desc = True
+        tree = ttk.Treeview(
+            self._tab_words,
+            columns=("status", "word", "rate", "count", "action"),
+            show="headings", selectmode="browse",
+        )
+        tree.heading("status", text=i18n.tr("Status"),
+                     command=lambda: self._sort_words("status"))
+        tree.heading("word", text=i18n.tr("Word"),
+                     command=lambda: self._sort_words("word"))
+        tree.heading("rate", text=i18n.tr("Error rate"),
+                     command=lambda: self._sort_words("rate"))
+        tree.heading("count", text=i18n.tr("Times"),
+                     command=lambda: self._sort_words("count"))
+        tree.heading("action", text=i18n.tr("Action"))
+        tree.column("status", width=130, anchor="w", stretch=False)
+        tree.column("word", width=150, anchor="w")
+        tree.column("rate", width=80, anchor="e", stretch=False)
+        tree.column("count", width=60, anchor="e", stretch=False)
+        tree.column("action", width=70, anchor="center", stretch=False)
+        tree.pack(fill=tk.BOTH, expand=True)
+        # Rows are re-inserted in full on each refresh (the aggregation is the
+        # expensive part, not the widget update); the win over the old code is
+        # that the widget itself is not destroyed, so selection and the sort
+        # order survive a refresh, and a sorted column can be toggled.
+        self._insert_word_rows(tree)
+        # Left-click on the Action cell drills the sentence context (a word
+        # drill pulls phrases containing it); right-click anywhere on a row
+        # drills the word in isolation; double-click is the same as a click on
+        # Action. A single click elsewhere only selects (browse mode), so the
+        # row can be examined before acting.
+        tree.bind("<Button-1>", self._on_word_tree_click)
+        tree.bind("<Double-1>", self._on_word_tree_double)
+        tree.bind("<Button-3>", self._on_word_tree_right)
+        self._word_tree = tree
+        # A small caption below the table keeps the two drill behaviours
+        # discoverable (the original buttons said only "Drill").
+        tk.Label(self._tab_words,
+                 text=i18n.tr("Click the action to drill sentences, right-click "
+                              "a row to drill the word alone."),
+                 font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                 bg=THEME["bg_main"], fg=THEME["text_muted"]
+                 ).pack(anchor="w", pady=(4, 6))
+
+    def _insert_word_rows(self, tree: ttk.Treeview) -> None:
+        """(Re)fill the Treeview with one row per aggregated word."""
+        tree.delete(*tree.get_children())
+        for word, entry in self._words_data:
             status = entry.get("status", "")
-            tk.Label(row, text=_status_label(status),
-                     fg=_status_color(status), bg=THEME["bg_panel"],
-                     font=(FONT_FAMILY, FONT_SIZE_CAPTION),
-                     width=10, anchor="w").pack(side=tk.LEFT, padx=6)
-            tk.Label(row, text=word, font=(FONT_FAMILY, FONT_SIZE_BODY, "bold"),
-                     bg=THEME["bg_panel"], fg=THEME["text_emph"]
-                     ).pack(side=tk.LEFT, padx=(0, 12))
-            # Error types.
             etype = ", ".join(sorted(entry.get("error_types", {}).keys()))
-            tk.Label(row, text=f"{entry.get('count', 0)}×  "
-                               f"{i18n.tr('err')} "
-                               f"{entry.get('error_rate', 0):.0%}  {etype}",
-                     font=(FONT_FAMILY, FONT_SIZE_CAPTION),
-                     bg=THEME["bg_panel"], fg=THEME["text_dim"]
-                     ).pack(side=tk.LEFT, fill=tk.X, expand=True)
-            # Left-click drills sentences containing the word; right-click
-            # drills the word in isolation.
-            self._make_drill_button(
-                row, i18n.tr("Drill"),
-                {"type": "word", "value": word},
-                self._word_only_target(word),
-            ).pack(side=tk.RIGHT, padx=6)
+            tree.insert(
+                "", "end", iid=word,
+                values=(
+                    _status_label(status),
+                    word,
+                    f"{entry.get('error_rate', 0):.0%}",
+                    f"{entry.get('count', 0)}×",
+                    i18n.tr("Drill →"),
+                ),
+                tags=(status,),
+            )
+
+    def _sort_words(self, key: str) -> None:
+        """Sort the word rows by the clicked heading (toggle direction)."""
+        if key == self._words_sort_key:
+            self._words_sort_desc = not self._words_sort_desc
+        else:
+            self._words_sort_key = key
+            # Error rate reads best worst-first; the text columns read
+            # alphabetically. Pick a sensible initial direction per column.
+            self._words_sort_desc = key in ("rate", "count")
+        rank = {"need_practice": 0, "watch": 1, "improving": 2, "other": 3}
+        if key == "status":
+            self._words_data.sort(
+                key=lambda w: rank.get(w[1].get("status", "other"), 3))
+        elif key == "word":
+            self._words_data.sort(key=lambda w: w[0].lower())
+        elif key == "rate":
+            self._words_data.sort(
+                key=lambda w: w[1].get("error_rate", 0), reverse=True)
+        elif key == "count":
+            self._words_data.sort(
+                key=lambda w: w[1].get("count", 0), reverse=True)
+        if self._words_sort_desc and key != "status":
+            self._words_data.reverse()
+        self._insert_word_rows(self._word_tree)
+
+    def _on_word_tree_click(self, event) -> None:
+        """Drill the sentence for a click on the Action cell, else select."""
+        tree = self._word_tree
+        region = tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+        if tree.identify_column(event.x) != "#5":
+            return
+        word = self._row_word_at(event)
+        if word:
+            self._start_drill({"type": "word", "value": word})
+
+    def _on_word_tree_double(self, event) -> None:
+        word = self._row_word_at(event)
+        if word:
+            self._start_drill({"type": "word", "value": word})
+
+    def _on_word_tree_right(self, event) -> None:
+        """Right-click drills the word alone (same fallback as the buttons)."""
+        word = self._row_word_at(event)
+        if word:
+            self._start_drill(self._word_only_target(word))
+
+    def _row_word_at(self, event) -> Optional[str]:
+        row = self._word_tree.identify_row(event.y)
+        if not row:
+            return None
+        return row
 
     def _render_phonemes(self, phoneme_agg: Dict[str, Dict[str, Any]]) -> None:
         for child in self._tab_phonemes.winfo_children():
@@ -356,66 +465,111 @@ class WeaknessView:
                  font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                  bg=THEME["bg_main"], fg=THEME["text_dim"]
                  ).pack(anchor="w", pady=(4, 6))
-        # Grid: 5 columns.
+        # Grid: a responsive column count instead of a fixed 5. The window is
+        # 900px wide; at ~200px per card that is 4 columns, and a narrow window
+        # (or a wide one, after the user resizes) recomputes on <Configure>.
+        # Rebuilding the grid on every <Configure> would thrash the cards, so
+        # only the column layout is reapplied - the cards themselves live in a
+        # fixed (single-column-per-card) grid and are repositioned by the
+        # column count. The <Configure> binding is on the grid's parent.
+        self._phoneme_agg = dict(sorted_by_weakness(phoneme_agg))
         grid = tk.Frame(self._tab_phonemes, bg=THEME["bg_main"])
         grid.pack(fill=tk.X)
-        for i, (ipa, entry) in enumerate(sorted_by_weakness(phoneme_agg)):
-            card = tk.Frame(grid, bg=THEME["bg_panel"], bd=1,
-                            highlightbackground=THEME["border"],
-                            highlightthickness=1, width=170)
-            card.grid(row=i // 5, column=i % 5, sticky="nsew", padx=4, pady=4)
-            severity = entry["severity_avg"]
-            # Color: red for bad, dim for neutral, green for good.
-            color = THEME["bad"] if severity > 0.5 else \
-                    (THEME["warn"] if severity > 0.25 else THEME["good"])
-            tk.Label(card, text=f"/{ipa}/",
-                     font=(FONT_FAMILY_MONO, 20, "bold"),
-                     bg=THEME["bg_panel"], fg=color,
-                     ).pack(pady=(8, 0))
-            tk.Label(card, text=f"{entry.get('count', 0)}×  "
-                                f"{i18n.tr('score')} "
-                                f"{entry.get('avg_score', 0):.0%}",
+        self._phoneme_grid = grid
+        self._phoneme_cards: List[Tuple[int, tk.Frame]] = []
+        for i, (ipa, entry) in enumerate(self._phoneme_agg.items()):
+            card = self._make_phoneme_card(grid, ipa, entry)
+            card.grid(row=0, column=i, sticky="nsew", padx=4, pady=4)
+            self._phoneme_cards.append((i, card))
+        self._phoneme_columns = 5
+        self._layout_phoneme_grid()
+        grid.bind("<Configure>", lambda e: self._layout_phoneme_grid(),
+                  add="+")
+
+    def _layout_phoneme_grid(self) -> None:
+        """Re-position the phoneme cards for the current width.
+
+        cols = max(3, width // 200): a 900px window gives 4 columns, a
+        narrower one fewer, a wider one more. Only the row/column of each
+        card changes; the cards are never destroyed, so a resize does not
+        lose the user's hover or focus.
+        """
+        grid = self._phoneme_grid
+        if grid is None:
+            return
+        width = grid.winfo_width()
+        if width < 40:
+            # Not mapped yet (first layout): fall back to the initial width.
+            width = 900
+        cols = max(3, width // 200)
+        if cols == self._phoneme_columns:
+            return
+        self._phoneme_columns = cols
+        for i, card in self._phoneme_cards:
+            card.grid_configure(row=i // cols, column=i % cols)
+        for c in range(cols):
+            grid.columnconfigure(c, weight=1)
+        # Unused columns keep weight 0 so they collapse instead of leaving a
+        # blank slot on the right.
+        for c in range(cols, 20):
+            grid.columnconfigure(c, weight=0)
+
+    def _make_phoneme_card(self, grid, ipa: str, entry: Dict[str, Any]
+                           ) -> tk.Frame:
+        card = tk.Frame(grid, bg=THEME["bg_panel"], bd=1,
+                        highlightbackground=THEME["border"],
+                        highlightthickness=1, width=170)
+        severity = entry["severity_avg"]
+        # Color: red for bad, dim for neutral, green for good.
+        color = THEME["bad"] if severity > 0.5 else \
+                (THEME["warn"] if severity > 0.25 else THEME["good"])
+        tk.Label(card, text=f"/{ipa}/",
+                 font=(FONT_FAMILY_MONO, 20, "bold"),
+                 bg=THEME["bg_panel"], fg=color,
+                 ).pack(pady=(8, 0))
+        tk.Label(card, text=f"{entry.get('count', 0)}×  "
+                            f"{i18n.tr('score')} "
+                            f"{entry.get('avg_score', 0):.0%}",
+                 font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                 bg=THEME["bg_panel"], fg=THEME["text_dim"]
+                 ).pack(pady=(0, 4))
+        hint = hint_for(ipa)
+        example = example_word_for(ipa)
+        tip_text = (i18n.tr("Example word: {example}", example=example)
+                    if example else "")
+        if hint:
+            # The hint is a Chinese source string (ZH_INTERFERENCE.hint_zh);
+            # pass it through i18n so the English UI renders an English hint
+            # and the Chinese UI keeps the original.
+            hint = i18n.tr(hint)
+            tip_text = (f"{tip_text}  {hint}" if tip_text else hint)
+        if tip_text:
+            tk.Label(card, text=tip_text, wraplength=150, justify=tk.LEFT,
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION),
-                     bg=THEME["bg_panel"], fg=THEME["text_dim"]
+                     bg=THEME["bg_panel"], fg=THEME["text_emph"]
                      ).pack(pady=(0, 4))
-            hint = hint_for(ipa)
-            example = example_word_for(ipa)
-            tip_text = i18n.tr("Example word: {example}", example=example) if example else ""
-            if hint:
-                # The hint is a Chinese source string (ZH_INTERFERENCE.hint_zh);
-                # pass it through i18n so the English UI renders an English hint
-                # and the Chinese UI keeps the original.
-                hint = i18n.tr(hint)
-                tip_text = (f"{tip_text}  {hint}"
-                            if tip_text else hint)
-            if tip_text:
-                tk.Label(card, text=tip_text, wraplength=150, justify=tk.LEFT,
-                         font=(FONT_FAMILY, FONT_SIZE_CAPTION),
-                         bg=THEME["bg_panel"], fg=THEME["text_emph"]
-                         ).pack(pady=(0, 4))
-            # P2#8 interactive IPA chart: clicking a phoneme speaks its example
-            # word. The example is looked up per-language (example_for) so the
-            # word matches what the user is practicing, with the ZH-interference
-            # table's English example as a fallback. The card's /ipa/ label and
-            # the whole card area are clickable, and a small Play button makes
-            # the affordance explicit.
-            play_word = example_for(ipa) or example_word_for(ipa)
-            button_row = tk.Frame(card, bg=THEME["bg_panel"])
-            button_row.pack(pady=(0, 6))
-            if play_word and self._cb.play_example is not None:
-                ttk.Button(
-                    button_row, text=i18n.tr("Play"),
-                    command=lambda w=play_word: self._cb.play_example(w),
-                ).pack(side=tk.LEFT, padx=(0, 4))
-            # Left-click drills words with this phoneme (sentence context);
-            # right-click drills the example word alone when one exists.
-            self._make_drill_button(
-                button_row, i18n.tr("Drill"),
-                {"type": "phoneme", "value": ipa},
-                self._word_only_target(play_word) if play_word else None,
-            ).pack(side=tk.LEFT)
-            for c in range(5):
-                grid.columnconfigure(c, weight=1)
+        # P2#8 interactive IPA chart: clicking a phoneme speaks its example
+        # word. The example is looked up per-language (example_for) so the
+        # word matches what the user is practicing, with the ZH-interference
+        # table's English example as a fallback. The card's /ipa/ label and
+        # the whole card area are clickable, and a small Play button makes
+        # the affordance explicit.
+        play_word = example_for(ipa) or example_word_for(ipa)
+        button_row = tk.Frame(card, bg=THEME["bg_panel"])
+        button_row.pack(pady=(0, 6))
+        if play_word and self._cb.play_example is not None:
+            ttk.Button(
+                button_row, text=i18n.tr("Play"),
+                command=lambda w=play_word: self._cb.play_example(w),
+            ).pack(side=tk.LEFT, padx=(0, 4))
+        # Left-click drills words with this phoneme (sentence context);
+        # right-click drills the example word alone when one exists.
+        self._make_drill_button(
+            button_row, i18n.tr("Drill"),
+            {"type": "phoneme", "value": ipa},
+            self._word_only_target(play_word) if play_word else None,
+        ).pack(side=tk.LEFT)
+        return card
 
     # ------------------------------------------------------------------
     # Actions

@@ -504,6 +504,13 @@ _ZH: Dict[str, str] = {
     "Outcome: 🔁 Try again next time": "结果：🔁 下次再试",
     "Word": "单词",
     "Phoneme": "音标",
+    "Status": "状态",
+    "Error rate": "错误率",
+    "Times": "次数",
+    "Action": "操作",
+    "Drill →": "练习 →",
+    "Click the action to drill sentences, right-click a row to drill the word alone.":
+        "点击“操作”练习整句，右键行练习单个单词。",
     "Custom": "自定义",
     "▶  Record (Space)": "▶  录音（空格）",
     "🔊  Example": "🔊  示范读",

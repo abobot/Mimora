@@ -104,6 +104,128 @@ class RangeFilterTest(unittest.TestCase):
         self.assertEqual(len(out), 1)  # only the dated one
 
 
+class WordsTreeviewTest(unittest.TestCase):
+    """The Words tab renders a ttk.Treeview and drills on click/double/right."""
+
+    @classmethod
+    def setUpClass(cls):
+        from mimora.ui_weakness import WeaknessView, WeaknessCallbacks
+        from tests._tk import make_root
+        cls.root = make_root()
+        cls.drills = []
+        cls.cb = WeaknessCallbacks(
+            load_takes=lambda: ([], []),
+            start_drill=lambda t: cls.drills.append(t),
+            open_practice=lambda: None,
+            play_example=lambda w: None,
+        )
+        cls.view = WeaknessView(cls.root, cls.cb, native_language="zh")
+
+    @classmethod
+    def tearDownClass(cls):
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
+
+    def _agg(self):
+        from mimora.ui_weakness import aggregate_error_words
+        takes = [({"id": "s"}, {
+            "id": "t", "timestamp": "2026-10-26T18:00:00+08:00",
+            "phrase": "hello", "score": 30.0,
+            "error_words": [{"word": "cat", "correct": False,
+                             "error_type": "substitution"}] * 4,
+            "phoneme_scores": [],
+        })]
+        return aggregate_error_words(takes)
+
+    def test_treeview_is_rendered(self):
+        self.view._render_words(self._agg())
+        tree = self.view._word_tree
+        self.assertEqual(tree.get_children(), ("cat",))
+        values = tree.item("cat", "values")
+        self.assertEqual(values[1], "cat")  # word column
+
+    def test_double_click_drills_word(self):
+        self.view._render_words(self._agg())
+        tree = self.view._word_tree
+        tree.selection_set(tree.get_children()[0])
+        self.view._on_word_tree_double(type("E", (), {"x": 10, "y": 10})())
+        self.assertEqual(self.drills[-1], {"type": "word", "value": "cat"})
+
+    def test_right_click_drills_word_alone(self):
+        self.view._render_words(self._agg())
+        tree = self.view._word_tree
+        self.view._on_word_tree_right(type("E", (), {"x": 10, "y": 10})())
+        self.assertEqual(self.drills[-1], {"type": "single_word", "value": "cat"})
+
+    def test_sort_toggles_direction(self):
+        self.view._render_words(self._agg())
+        # First click on "rate" sets the natural direction (worst-first).
+        self.view._sort_words("rate")
+        self.assertTrue(self.view._words_sort_desc)
+        # Second click on the same heading toggles to ascending.
+        self.view._sort_words("rate")
+        self.assertFalse(self.view._words_sort_desc)
+
+
+class PhonemeResponsiveGridTest(unittest.TestCase):
+    """The phoneme grid recomputes its column count from the window width."""
+
+    @classmethod
+    def setUpClass(cls):
+        from mimora.ui_weakness import WeaknessView, WeaknessCallbacks
+        from tests._tk import make_root
+        cls.root = make_root()
+        cls.cb = WeaknessCallbacks(
+            load_takes=lambda: ([], []),
+            start_drill=lambda t: None,
+            open_practice=lambda: None,
+            play_example=lambda w: None,
+        )
+        cls.view = WeaknessView(cls.root, cls.cb, native_language="zh")
+
+    @classmethod
+    def tearDownClass(cls):
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
+
+    def _agg(self):
+        from mimora.ui_weakness import aggregate_phoneme_scores
+        takes = [({"id": "s"}, {
+            "id": "t", "timestamp": "2026-10-26T18:00:00+08:00",
+            "phrase": "hello", "score": 30.0, "error_words": [],
+            "phoneme_scores": [
+                {"ipa": "θ", "score": 0.2, "count": 2},
+                {"ipa": "s", "score": 0.5, "count": 1},
+                {"ipa": "t", "score": 0.7, "count": 3},
+                {"ipa": "k", "score": 0.3, "count": 2},
+                {"ipa": "g", "score": 0.8, "count": 1},
+                {"ipa": "f", "score": 0.4, "count": 2},
+            ],
+        })]
+        return aggregate_phoneme_scores(takes, native_language="zh")
+
+    def test_columns_scale_with_width(self):
+        self.view._render_phonemes(self._agg())
+        grid = self.view._phoneme_grid
+        # Narrow width forces fewer columns than the initial layout.
+        self.view._phoneme_grid.winfo_width = lambda: 500
+        self.view._layout_phoneme_grid()
+        self.assertEqual(self.view._phoneme_columns, 3)
+        # First three cards on row 0, next three on row 1.
+        rows = [c.grid_info().get("row") for _i, c in self.view._phoneme_cards]
+        self.assertEqual(rows, [0, 0, 0, 1, 1, 1])
+        # Wide width allows more columns.
+        self.view._phoneme_grid.winfo_width = lambda: 1200
+        self.view._layout_phoneme_grid()
+        self.assertEqual(self.view._phoneme_columns, 6)
+
+    def test_column_floor_is_three(self):
+        self.view._render_phonemes(self._agg())
+        self.view._phoneme_grid.winfo_width = lambda: 100
+        self.view._layout_phoneme_grid()
+        self.assertEqual(self.view._phoneme_columns, 3)
+
+
 class DrillButtonLeftRightTest(unittest.TestCase):
     """The drill buttons bind left-click = sentence, right-click = word."""
 
@@ -247,13 +369,15 @@ def aggregate(takes):
 
 
 class RangeTitleUpdatesTest(unittest.TestCase):
-    """Selecting a range in the dropdown must update the Overview title.
+    """Selecting a range in the segmented row must update the Overview title.
 
     Regression for the user report "choosing a range changes nothing": the
     StringVar was not bound to the combobox as textvariable, so
     _on_range_selected always read the default range and the title never
-    changed. The combobox is driven by the localized label, so the selected
-    label must be mapped back to its key before refreshing.
+    changed. The combobox is replaced by a segmented button row (P2a): every
+    window is visible at once, one click selects it, and the active segment
+    is highlighted. Clicking a segment must map back to its key before
+    refreshing.
     """
 
     @classmethod
@@ -280,19 +404,21 @@ class RangeTitleUpdatesTest(unittest.TestCase):
         # First label is the section title.
         return labels[0].cget("text") if labels else ""
 
-    def test_range_combo_bound_to_var(self):
-        """The combobox is bound to the StringVar (the bug)."""
-        self.assertIsNotNone(self.view._range_combo.cget("textvariable"))
+    def test_segmented_row_exists(self):
+        """Seven windows are shown as one visible segmented row (no dropdown)."""
+        from mimora.ui_weakness import RANGE_OPTIONS
+        self.assertEqual(len(self.view._range_buttons), len(RANGE_OPTIONS))
+
+    def test_active_segment_highlighted(self):
+        """The default range's segment is highlighted on open."""
+        from mimora.ui_theme import THEME
+        btn = self.view._range_buttons[self.view._range_key]
+        self.assertEqual(btn.cget("bg"), THEME["bg_accent"])
 
     def test_selecting_range_updates_title(self):
-        """Picking a non-default range renames the Overview title."""
-        labels = self.view._range_combo["values"]
-        # Choose "Last 14 days" (index 1) - a different range from the default.
-        self.view._range_combo.current(1)
-        self.view._range_var.set(labels[1])
-        self.view._on_range_selected({k: v for k, v in zip(
-            ("last_7d", "last_14d", "last_30d", "last_60d",
-             "last_30", "last_100", "last_300"), labels)})
+        """Clicking a non-default segment renames the Overview title."""
+        self.view._on_segmented("last_14d")
+        self.assertEqual(self.view._range_key, "last_14d")
         title = self._overview_title()
         self.assertIn("Last 14 days", title)
 
