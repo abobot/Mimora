@@ -1246,7 +1246,11 @@ function renderDurationTable(container, rows) {
 // Activity heatmap (last 28 days), GitHub-contributions style. One column
 // per week, rows are the days of the week (Mon-Sun); each cell is coloured
 // by practice seconds on a 5-level green scale (quantiles of the non-zero
-// values, like GitHub). Level 0 (no practice) stays the empty grey.
+// values, like GitHub). Level 0 (no practice) stays the empty grey. Month
+// labels sit above the columns where a new month starts and weekday labels
+// (Mon/Wed/Fri) to the left; the whole block is centred.
+const HEAT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const HEAT_WEEKDAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 function renderActivityHeatmap(container, activity) {
   container.innerHTML = "";
   const days = activity || [];
@@ -1283,9 +1287,32 @@ function renderActivityHeatmap(container, activity) {
     return lvl;
   };
 
+  // Weekday labels column (Mon/Wed/Fri), then the week columns.
+  const wrap = document.createElement("div");
+  wrap.className = "gh-heatmap-wrap";
+  const wd = document.createElement("div");
+  wd.className = "gh-weekdays";
+  for (const r of [0, 2, 4]) {
+    const lbl = document.createElement("span");
+    lbl.className = "gh-wd";
+    lbl.textContent = HEAT_WEEKDAYS[r];
+    wd.appendChild(lbl);
+  }
+  wrap.appendChild(wd);
   const grid = document.createElement("div");
   grid.className = "gh-heatmap";
+  let prevMonth = -1;
   for (let w = 0; w < nWeeks; w++) {
+    // Month label row: one cell per week column, label on the first column
+    // of a new month (GitHub puts the month text above that column).
+    const mCell = document.createElement("span");
+    mCell.className = "gh-month";
+    const colDate = new Date(gridStart.getTime() + w * 7 * dayMs);
+    if (colDate.getMonth() !== prevMonth) {
+      mCell.textContent = HEAT_MONTHS[colDate.getMonth()];
+      prevMonth = colDate.getMonth();
+    }
+    grid.appendChild(mCell);
     for (let r = 0; r < 7; r++) {
       const d = new Date(gridStart.getTime() + (w * 7 + r) * dayMs);
       const key = keyOf(d);
@@ -1296,7 +1323,8 @@ function renderActivityHeatmap(container, activity) {
       grid.appendChild(cell);
     }
   }
-  container.appendChild(grid);
+  wrap.appendChild(grid);
+  container.appendChild(wrap);
 }
 
 /* ---------- 设置 ---------- */

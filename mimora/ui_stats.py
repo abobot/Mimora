@@ -213,6 +213,9 @@ class _CanvasChart:
         **column per week**, rows are the days of the week (Mon-Sun, top to
         bottom). Each cell is coloured on GitHub's 5-level green scale
         (quantiles of the non-zero values); empty days stay the dark grey.
+        Month labels sit above the columns where a new month starts and
+        weekday labels (Mon/Wed/Fri) sit to the left; the whole block is
+        centred in the canvas.
         """
         c = self.canvas
         c.delete("all")
@@ -222,11 +225,40 @@ class _CanvasChart:
                           text=i18n.tr("No data"), fill=THEME["text_dim"],
                           font=(FONT_FAMILY, FONT_SIZE_BODY))
             return
-        cells = heatmap_cells(values, datetime.today().date())
+        layout = heatmap_layout(values, datetime.today().date())
+        cells = layout["cells"]
+        grid_start = layout["grid_start"]
+        n_weeks = layout["n_weeks"]
         gap = 3
+        month_h = 14
+        row_lbl_w = 26
+        grid_w = n_weeks * (cell + gap) - gap
+        grid_h = 7 * (cell + gap) - gap
+        # Centre the whole block (labels + grid) horizontally.
+        total_w = row_lbl_w + grid_w
+        grid_x = pad + row_lbl_w + max(0, (self._width - pad * 2 - total_w) // 2)
+        grid_y = pad + month_h
+        # Month labels: draw at the first column of each month change.
+        month_abbr = [i18n.tr(m) for m in _MONTH_ABBR]
+        prev_month = None
+        for week in range(n_weeks):
+            col_date = grid_start + timedelta(days=week * 7)
+            if col_date.month != prev_month:
+                mx = grid_x + week * (cell + gap)
+                c.create_text(mx, pad, text=month_abbr[col_date.month - 1],
+                              anchor="nw", fill=THEME["text_dim"],
+                              font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+                prev_month = col_date.month
+        # Weekday labels (Mon / Wed / Fri).
+        weekday_abbr = [i18n.tr(d) for d in _WEEKDAY_ABBR]
+        for row in (0, 2, 4):
+            ry = grid_y + row * (cell + gap)
+            c.create_text(grid_x - 4, ry, text=weekday_abbr[row],
+                          anchor="e", fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
         for week, row, lvl in cells:
-            x = pad + week * (cell + gap)
-            y = pad + row * (cell + gap)
+            x = grid_x + week * (cell + gap)
+            y = grid_y + row * (cell + gap)
             fill = GITHUB_HEATMAP_LEVELS[lvl]
             c.create_rectangle(x, y, x + cell, y + cell,
                                fill=fill, outline=fill)
@@ -239,19 +271,29 @@ class _CanvasChart:
 
 GITHUB_HEATMAP_LEVELS = ["#2d333b", "#0e4429", "#006d32", "#26a641", "#39d353"]
 
+# Month and weekday labels for the heatmap axis. These are passed through
+# i18n.tr() so a non-English UI shows the abbreviated names in its own
+# language; the English catalog renders them as-is (identity).
+_MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_WEEKDAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-def heatmap_cells(values: List[float], today: date) -> List[Tuple[int, int, int]]:
-    """GitHub-contributions style heatmap cell layout (pure, Tk-free).
+
+def heatmap_layout(values: List[float], today: date) -> Dict[str, Any]:
+    """Pure GitHub-style heatmap geometry (Tk-free).
 
     ``values`` holds one value per day, oldest first, ending at ``today``.
-    Returns a list of ``(week, row, level)`` tuples: ``week`` is the column
-    index, ``row`` is the weekday (0=Mon .. 6=Sun) and ``level`` is 0-4 on
-    GitHub's green scale (quantiles of the non-zero values; 0 = no practice).
+    Returns a dict with:
+      * ``n_weeks``: int — number of week columns,
+      * ``grid_start``: date — the Monday the grid is anchored to,
+      * ``cells``: List[(week, row, level)] — ``week`` is the column index,
+        ``row`` is the weekday (0=Mon .. 6=Sun), ``level`` is 0-4 on GitHub's
+        green scale (quantiles of the non-zero values; 0 = no practice).
     The grid is anchored to the Monday of the week containing the first day,
     so leading days occupy their weekday row exactly as GitHub does.
     """
     if not values:
-        return []
+        return {"n_weeks": 0, "grid_start": today, "cells": []}
     nonzero = sorted(v for v in values if v > 0) or [1.0]
 
     def q(p: float) -> float:
@@ -272,6 +314,7 @@ def heatmap_cells(values: List[float], today: date) -> List[Tuple[int, int, int]
 
     start_day = today - timedelta(days=len(values) - 1)
     dow = start_day.weekday()                 # 0=Mon .. 6=Sun
+    grid_start = start_day - timedelta(days=dow)
     n_weeks = (dow + len(values) + 6) // 7
     cells = []
     for week in range(n_weeks):
@@ -280,7 +323,16 @@ def heatmap_cells(values: List[float], today: date) -> List[Tuple[int, int, int]
             if idx < 0 or idx >= len(values):
                 continue
             cells.append((week, row, level(values[idx])))
-    return cells
+    return {"n_weeks": n_weeks, "grid_start": grid_start, "cells": cells}
+
+
+def heatmap_cells(values: List[float], today: date) -> List[Tuple[int, int, int]]:
+    """GitHub-style heatmap cell layout (pure, Tk-free).
+
+    Returns the ``cells`` part of :func:`heatmap_layout` — a list of
+    ``(week, row, level)`` tuples. See :func:`heatmap_layout`.
+    """
+    return heatmap_layout(values, today)["cells"]
 
 
 class StatsView:

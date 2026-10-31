@@ -158,7 +158,9 @@ and stay in the user data directory across upgrades.
   GitHub's contribution-calendar layout: one column per week, rows are the days
   of the week, and each day's practice time is coloured on GitHub's 5-level
   green scale (quantiles of the non-zero days; a day with any practice is never
-  the empty grey). Empty days stay the dark neutral.
+  the empty grey). Empty days stay the dark neutral. Month labels sit above the
+  columns where a new month starts and weekday labels (Mon/Wed/Fri) to the
+  left; the whole block is centred in its area.
 
 ### Fixed
 

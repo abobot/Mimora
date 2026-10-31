@@ -174,5 +174,36 @@ class HeatmapCellsTest(unittest.TestCase):
         self.assertEqual(max(week for week, _, _ in cells), 4)
 
 
+class HeatmapLayoutTest(unittest.TestCase):
+    """Tk-free tests for the centred GitHub-style heatmap geometry."""
+
+    def test_layout_reports_week_count_and_anchor(self):
+        from mimora.ui_stats import heatmap_layout
+        from datetime import date
+        # 28 days ending Friday 2026-10-30: grid starts Monday 2026-09-28.
+        layout = heatmap_layout([1] * 28, date(2026, 10, 30))
+        self.assertEqual(layout["n_weeks"], 5)
+        self.assertEqual(layout["grid_start"], date(2026, 9, 28))
+
+    def test_layout_empty_returns_zero_weeks(self):
+        from mimora.ui_stats import heatmap_layout
+        from datetime import date
+        layout = heatmap_layout([], date(2026, 10, 31))
+        self.assertEqual(layout["n_weeks"], 0)
+        self.assertEqual(layout["cells"], [])
+
+    def test_layout_single_value_anchors_to_its_week(self):
+        # A single day ending Tuesday 2026-10-27 anchors to Monday 2026-10-26
+        # and occupies row 1 (Tue) in week 0. With one non-zero value the
+        # quantile thresholds all collapse to it, so it gets the darkest
+        # green (level 4) — GitHub renders a lone practice day as the max.
+        from mimora.ui_stats import heatmap_layout
+        from datetime import date
+        layout = heatmap_layout([50], date(2026, 10, 27))
+        self.assertEqual(layout["n_weeks"], 1)
+        self.assertEqual(layout["grid_start"], date(2026, 10, 26))
+        self.assertEqual(layout["cells"], [(0, 1, 4)])
+
+
 if __name__ == "__main__":
     unittest.main()

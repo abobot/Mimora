@@ -362,15 +362,37 @@ body {
 }
 .setting-row input[type="checkbox"] { width: 18px; height: 18px; }
 /* Activity heatmap (last 28 days), GitHub-contributions style. */
-.gh-heatmap {
+.gh-heatmap-wrap {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.gh-weekdays {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(10px, 1fr));
-  grid-auto-flow: column;      /* one column per week; rows are the days */
   grid-template-rows: repeat(7, 10px);
   gap: 3px;
-  width: 100%;
+  /* Align the label rows with the cell rows below the month-label row. */
+  padding-top: 17px;
+  font-size: 10px;
+  color: #768390;
+}
+.gh-weekdays .gh-wd { line-height: 10px; }
+.gh-heatmap {
+  display: grid;
+  /* Row 0 = month labels, rows 1-7 = the days of the week (Mon-Sun). */
+  grid-template-rows: 14px repeat(7, 10px);
+  grid-auto-flow: column;      /* one column per week */
+  grid-auto-columns: 10px;
+  gap: 3px;
   max-width: 480px;
-  justify-content: start;
+  justify-content: center;
+}
+.gh-month {
+  font-size: 10px;
+  color: #768390;
+  line-height: 14px;
 }
 .gh-heatmap .gh-cell {
   width: 10px; height: 10px; border-radius: 2px;

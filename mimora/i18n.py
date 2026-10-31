@@ -296,6 +296,13 @@ _ZH: Dict[str, str] = {
     # ------------------------------------------------------------------
     "Practice stats": "练习统计",
     "Practice minutes (last 28 days)": "练习分钟数（最近 28 天）",
+    # Month / weekday abbreviations for the activity heatmap axis. GitHub
+    # renders English abbreviations; a Chinese UI shows the Chinese ones.
+    "Jan": "1月", "Feb": "2月", "Mar": "3月", "Apr": "4月",
+    "May": "5月", "Jun": "6月", "Jul": "7月", "Aug": "8月",
+    "Sep": "9月", "Oct": "10月", "Nov": "11月", "Dec": "12月",
+    "Mon": "一", "Tue": "二", "Wed": "三", "Thu": "四",
+    "Fri": "五", "Sat": "六", "Sun": "日",
     "Practice duration": "练习时长明细",
     "Export JSON": "导出 JSON",
     "Export CSV": "导出 CSV",
