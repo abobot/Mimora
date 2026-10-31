@@ -1243,32 +1243,59 @@ function renderDurationTable(container, rows) {
   });
 }
 
-// Activity heatmap (last 28 days). One cell per day, coloured by practice
-// seconds; more practice = brighter. Mirrors desktop ui_stats heatmap.
+// Activity heatmap (last 28 days), GitHub-contributions style. One column
+// per week, rows are the days of the week (Mon-Sun); each cell is coloured
+// by practice seconds on a 5-level green scale (quantiles of the non-zero
+// values, like GitHub). Level 0 (no practice) stays the empty grey.
 function renderActivityHeatmap(container, activity) {
   container.innerHTML = "";
   const days = activity || [];
   if (!days.length) { container.textContent = "暂无数据"; return; }
-  const max = Math.max(1, ...days.map((d) => d.seconds || 0));
+  const byDate = new Map(days.map((d) => [d.date, d.seconds || 0]));
+
+  // Anchors: the grid starts at the Monday of the week containing
+  // (today - 27 days), so the 28 days occupy whole weeks. All date math
+  // stays in LOCAL time (no toISOString), so the day keys line up with the
+  // "YYYY-MM-DD" strings the server produced from its own local calendar.
+  const dayMs = 24 * 60 * 60 * 1000;
+  const start = new Date(days[0].date + "T00:00:00");
+  const today = new Date(days[days.length - 1].date + "T00:00:00");
+  const dow = (start.getDay() + 6) % 7;            // 0=Mon .. 6=Sun
+  const gridStart = new Date(start.getTime() - dow * dayMs);
+  const nWeeks = Math.floor((today - gridStart) / dayMs / 7) + 1;
+  const keyOf = (d) => {
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${m}-${day}`;
+  };
+
+  // Quantile levels over the non-zero values (GitHub-style 5-level scale).
+  const nonzero = [...byDate.values()].filter((s) => s > 0).sort((a, b) => a - b);
+  if (!nonzero.length) nonzero.push(1);
+  const q = (p) => nonzero[Math.min(nonzero.length - 1, Math.floor(p * nonzero.length))];
+  const thresholds = [q(0.25), q(0.5), q(0.75), q(1.0)];
+  const levelFor = (s) => {
+    if (s <= 0) return 0;
+    // Any non-zero day shows at least the lightest green (GitHub never
+    // renders a non-zero value as the empty grey).
+    let lvl = 1;
+    thresholds.forEach((t, i) => { if (s >= t) lvl = i + 1; });
+    return lvl;
+  };
+
   const grid = document.createElement("div");
-  grid.className = "heatmap";
-  days.forEach((d) => {
-    const cell = document.createElement("div");
-    cell.className = "heat-cell";
-    cell.title = `${d.date} — ${fmtSec(d.seconds)}`;
-    const secs = d.seconds || 0;
-    if (secs <= 0) {
-      cell.classList.add("none");
-    } else {
-      const ratio = secs / max;
-      cell.classList.add(ratio > 0.75 ? "hi" : ratio > 0.4 ? "mid" : "lo");
+  grid.className = "gh-heatmap";
+  for (let w = 0; w < nWeeks; w++) {
+    for (let r = 0; r < 7; r++) {
+      const d = new Date(gridStart.getTime() + (w * 7 + r) * dayMs);
+      const key = keyOf(d);
+      const secs = byDate.get(key) || 0;
+      const cell = document.createElement("div");
+      cell.className = "gh-cell lv" + levelFor(secs);
+      cell.title = `${key} — ${fmtSec(secs)}`;
+      grid.appendChild(cell);
     }
-    const label = document.createElement("span");
-    label.className = "heat-label";
-    label.textContent = d.date.slice(5);
-    cell.appendChild(label);
-    grid.appendChild(cell);
-  });
+  }
   container.appendChild(grid);
 }
 

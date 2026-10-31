@@ -27,9 +27,9 @@ from __future__ import annotations
 import tkinter as tk
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from tkinter import messagebox
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 from mimora import config, i18n, window_icon
@@ -204,14 +204,15 @@ class _CanvasChart:
                           fill=THEME["text_emph"],
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
 
-    def draw_heatmap(self, values: List[float], n_cols: int = 7,
-                     cell: int = 18, label: str = "") -> None:
-        """Draw a calendar-style heatmap: ``values`` one cell per value,
-        laid out left-to-right, top-to-bottom in ``n_cols`` columns.
+    def draw_heatmap(self, values: List[float], cell: int = 18,
+                     label: str = "") -> None:
+        """Draw a GitHub-contributions style heatmap.
 
-        Each cell is coloured by intensity: empty (0) stays neutral, low
-        values a light accent, high values the good colour. Useful for
-        the daily-activity calendar and per-day duration view.
+        ``values`` holds one cell per day (the last N days ending today).
+        The grid is laid out like GitHub's contribution calendar: one
+        **column per week**, rows are the days of the week (Mon-Sun, top to
+        bottom). Each cell is coloured on GitHub's 5-level green scale
+        (quantiles of the non-zero values); empty days stay the dark grey.
         """
         c = self.canvas
         c.delete("all")
@@ -221,20 +222,14 @@ class _CanvasChart:
                           text=i18n.tr("No data"), fill=THEME["text_dim"],
                           font=(FONT_FAMILY, FONT_SIZE_BODY))
             return
-        max_v = max(values) or 1.0
-        for i, v in enumerate(values):
-            col = i % n_cols
-            row = i // n_cols
-            x = pad + col * (cell + 2)
-            y = pad + row * (cell + 2)
-            if v <= 0:
-                fill = THEME["border"]
-            else:
-                ratio = min(v / max_v, 1.0)
-                # Blend neutral → good by intensity.
-                fill = _blend_color(THEME["border"], THEME["good"], ratio)
+        cells = heatmap_cells(values, datetime.today().date())
+        gap = 3
+        for week, row, lvl in cells:
+            x = pad + week * (cell + gap)
+            y = pad + row * (cell + gap)
+            fill = GITHUB_HEATMAP_LEVELS[lvl]
             c.create_rectangle(x, y, x + cell, y + cell,
-                               fill=fill, outline=THEME["border"])
+                               fill=fill, outline=fill)
         if label:
             c.create_text(self._width / 2, self._height - 6,
                           text=label, anchor="s",
@@ -242,17 +237,50 @@ class _CanvasChart:
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
 
 
-def _blend_color(c1: str, c2: str, ratio: float) -> str:
-    """Blend two '#rrggbb' colours toward c2 by ``ratio`` (0..1)."""
-    try:
-        r1, g1, b1 = (int(c1[i:i + 2], 16) for i in (1, 3, 5))
-        r2, g2, b2 = (int(c2[i:i + 2], 16) for i in (1, 3, 5))
-        r = int(r1 + (r2 - r1) * ratio)
-        g = int(g1 + (g2 - g1) * ratio)
-        b = int(b1 + (b2 - b1) * ratio)
-        return f"#{r:02x}{g:02x}{b:02x}"
-    except (ValueError, TypeError):
-        return c1
+GITHUB_HEATMAP_LEVELS = ["#2d333b", "#0e4429", "#006d32", "#26a641", "#39d353"]
+
+
+def heatmap_cells(values: List[float], today: date) -> List[Tuple[int, int, int]]:
+    """GitHub-contributions style heatmap cell layout (pure, Tk-free).
+
+    ``values`` holds one value per day, oldest first, ending at ``today``.
+    Returns a list of ``(week, row, level)`` tuples: ``week`` is the column
+    index, ``row`` is the weekday (0=Mon .. 6=Sun) and ``level`` is 0-4 on
+    GitHub's green scale (quantiles of the non-zero values; 0 = no practice).
+    The grid is anchored to the Monday of the week containing the first day,
+    so leading days occupy their weekday row exactly as GitHub does.
+    """
+    if not values:
+        return []
+    nonzero = sorted(v for v in values if v > 0) or [1.0]
+
+    def q(p: float) -> float:
+        return nonzero[min(len(nonzero) - 1, int(p * len(nonzero)))]
+
+    thresholds = [q(0.25), q(0.5), q(0.75), q(1.0)]
+
+    def level(v: float) -> int:
+        if v <= 0:
+            return 0
+        # Any non-zero day shows at least the lightest green (GitHub never
+        # renders a non-zero value as the empty grey).
+        lvl = 1
+        for i, t in enumerate(thresholds):
+            if v >= t:
+                lvl = i + 1
+        return lvl
+
+    start_day = today - timedelta(days=len(values) - 1)
+    dow = start_day.weekday()                 # 0=Mon .. 6=Sun
+    n_weeks = (dow + len(values) + 6) // 7
+    cells = []
+    for week in range(n_weeks):
+        for row in range(7):
+            idx = week * 7 + row - dow
+            if idx < 0 or idx >= len(values):
+                continue
+            cells.append((week, row, level(values[idx])))
+    return cells
 
 
 class StatsView:
@@ -423,7 +451,7 @@ class StatsView:
             days.append(key)
         heat = _CanvasChart(self._activity, width=430, height=110)
         heat.canvas.pack(side=tk.LEFT, padx=8, pady=8)
-        heat.draw_heatmap(values, n_cols=7, label=i18n.tr("Practice minutes (last 28 days)"))
+        heat.draw_heatmap(values, label=i18n.tr("Practice minutes (last 28 days)"))
 
     def _render_duration_table(self, sessions: List[Dict]) -> None:
         """Render the per-session and per-day practice-duration table."""

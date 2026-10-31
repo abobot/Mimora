@@ -153,6 +153,12 @@ and stay in the user data directory across upgrades.
   dictation window, or in the settings window under Dictation. The choice is
   persisted (`dictation_streak_target`) and applied live to the running
   session, so it holds across sessions and restarts.
+- **Activity heatmap is now GitHub-contributions style.** The practice-activity
+  heatmap in both the desktop stats dashboard and the web stats page now uses
+  GitHub's contribution-calendar layout: one column per week, rows are the days
+  of the week, and each day's practice time is coloured on GitHub's 5-level
+  green scale (quantiles of the non-zero days; a day with any practice is never
+  the empty grey). Empty days stay the dark neutral.
 
 ### Fixed
 

@@ -1,3 +1,6 @@
+==2026-10-31 22:41==
+  -[doing] 数据分析页面（统计看板）活动热力图改用 GitHub 风格（周列布局 + 绿阶色阶，仿 github-contributions）
+
 ==2026-10-31 22:10==
   -[done] 听写模式：长按 streak 标签永久更改连续通过目标次数（dictation_streak_target 设置） (2026-10-31 22:25)
 
