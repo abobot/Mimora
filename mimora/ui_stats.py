@@ -204,18 +204,20 @@ class _CanvasChart:
                           fill=THEME["text_emph"],
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
 
-    def draw_heatmap(self, values: List[float], cell: int = 18,
+    def draw_heatmap(self, values: List[float], cell: int = 24,
                      label: str = "") -> None:
-        """Draw a GitHub-contributions style heatmap.
+        """Draw a GitHub-contributions style heatmap as a calendar.
 
         ``values`` holds one cell per day (the last N days ending today).
         The grid is laid out like GitHub's contribution calendar: one
         **column per week**, rows are the days of the week (Mon-Sun, top to
         bottom). Each cell is coloured on GitHub's 5-level green scale
         (quantiles of the non-zero values); empty days stay the dark grey.
-        Month labels sit above the columns where a new month starts and
-        weekday labels (Mon/Wed/Fri) sit to the left; the whole block is
-        centred in the canvas.
+        The day-of-month is drawn inside every cell, like a calendar. Month
+        labels sit above the columns where a new month starts and weekday
+        labels (Mon/Wed/Fri) sit to the left; the whole block is centred in
+        the canvas. The caller must give the canvas enough height for the
+        month row, all seven day rows and the caption label below.
         """
         c = self.canvas
         c.delete("all")
@@ -230,10 +232,9 @@ class _CanvasChart:
         grid_start = layout["grid_start"]
         n_weeks = layout["n_weeks"]
         gap = 3
-        month_h = 14
+        month_h = 16
         row_lbl_w = 26
         grid_w = n_weeks * (cell + gap) - gap
-        grid_h = 7 * (cell + gap) - gap
         # Centre the whole block (labels + grid) horizontally.
         total_w = row_lbl_w + grid_w
         grid_x = pad + row_lbl_w + max(0, (self._width - pad * 2 - total_w) // 2)
@@ -262,6 +263,13 @@ class _CanvasChart:
             fill = GITHUB_HEATMAP_LEVELS[lvl]
             c.create_rectangle(x, y, x + cell, y + cell,
                                fill=fill, outline=fill)
+            # Day-of-month number inside the cell, like a calendar. The text
+            # colour contrasts with the fill (dark text on the lightest green,
+            # light text on the empty grey and the darker greens).
+            d = grid_start + timedelta(days=week * 7 + row)
+            c.create_text(x + cell / 2, y + cell / 2, text=str(d.day),
+                          fill=_HEAT_TEXT_COLORS[lvl],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
         if label:
             c.create_text(self._width / 2, self._height - 6,
                           text=label, anchor="s",
@@ -270,6 +278,11 @@ class _CanvasChart:
 
 
 GITHUB_HEATMAP_LEVELS = ["#2d333b", "#0e4429", "#006d32", "#26a641", "#39d353"]
+
+# Text colour for the day-of-month number inside a heatmap cell, indexed by
+# the same 0-4 level as GITHUB_HEATMAP_LEVELS. The lightest green (level 4)
+# needs dark text for contrast; everything else reads best in white.
+_HEAT_TEXT_COLORS = ["#c9d1d9", "#ffffff", "#ffffff", "#ffffff", "#0d1117"]
 
 # Month and weekday labels for the heatmap axis. These are passed through
 # i18n.tr() so a non-English UI shows the abbreviated names in its own
@@ -501,7 +514,7 @@ class StatsView:
             key = d.strftime("%Y-%m-%d")
             values.append(day_sec.get(key, 0))
             days.append(key)
-        heat = _CanvasChart(self._activity, width=430, height=110)
+        heat = _CanvasChart(self._activity, width=430, height=240)
         heat.canvas.pack(side=tk.LEFT, padx=8, pady=8)
         heat.draw_heatmap(values, label=i18n.tr("Practice minutes (last 28 days)"))
 

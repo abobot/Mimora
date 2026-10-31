@@ -1318,8 +1318,14 @@ function renderActivityHeatmap(container, activity) {
       const key = keyOf(d);
       const secs = byDate.get(key) || 0;
       const cell = document.createElement("div");
-      cell.className = "gh-cell lv" + levelFor(secs);
+      const lvl = levelFor(secs);
+      cell.className = "gh-cell lv" + lvl;
       cell.title = `${key} — ${fmtSec(secs)}`;
+      // Day-of-month number inside the cell, like a calendar.
+      const num = document.createElement("span");
+      num.className = "gh-cell-num";
+      num.textContent = String(d.getDate());
+      cell.appendChild(num);
       grid.appendChild(cell);
     }
   }

@@ -361,7 +361,8 @@ body {
   min-width: 160px;
 }
 .setting-row input[type="checkbox"] { width: 18px; height: 18px; }
-/* Activity heatmap (last 28 days), GitHub-contributions style. */
+/* Activity heatmap (last 28 days), GitHub-contributions style. Each cell
+   shows the day-of-month number, like a calendar. */
 .gh-heatmap-wrap {
   display: flex;
   align-items: flex-end;
@@ -371,20 +372,20 @@ body {
 }
 .gh-weekdays {
   display: grid;
-  grid-template-rows: repeat(7, 10px);
+  grid-template-rows: repeat(7, 26px);
   gap: 3px;
   /* Align the label rows with the cell rows below the month-label row. */
   padding-top: 17px;
   font-size: 10px;
   color: #768390;
 }
-.gh-weekdays .gh-wd { line-height: 10px; }
+.gh-weekdays .gh-wd { line-height: 26px; }
 .gh-heatmap {
   display: grid;
   /* Row 0 = month labels, rows 1-7 = the days of the week (Mon-Sun). */
-  grid-template-rows: 14px repeat(7, 10px);
+  grid-template-rows: 14px repeat(7, 26px);
   grid-auto-flow: column;      /* one column per week */
-  grid-auto-columns: 10px;
+  grid-auto-columns: 26px;
   gap: 3px;
   max-width: 480px;
   justify-content: center;
@@ -395,10 +396,21 @@ body {
   line-height: 14px;
 }
 .gh-heatmap .gh-cell {
-  width: 10px; height: 10px; border-radius: 2px;
+  width: 26px; height: 26px; border-radius: 3px;
   background: #2d333b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .gh-heatmap .gh-cell.lv1 { background: #0e4429; }
 .gh-heatmap .gh-cell.lv2 { background: #006d32; }
 .gh-heatmap .gh-cell.lv3 { background: #26a641; }
 .gh-heatmap .gh-cell.lv4 { background: #39d353; }
+.gh-cell-num {
+  font-size: 11px;
+  line-height: 1;
+  color: #c9d1d9;
+}
+/* The lightest green needs dark text for contrast (GitHub uses dark text
+   on its bright greens). */
+.gh-heatmap .gh-cell.lv4 .gh-cell-num { color: #0d1117; }

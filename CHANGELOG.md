@@ -160,7 +160,9 @@ and stay in the user data directory across upgrades.
   green scale (quantiles of the non-zero days; a day with any practice is never
   the empty grey). Empty days stay the dark neutral. Month labels sit above the
   columns where a new month starts and weekday labels (Mon/Wed/Fri) to the
-  left; the whole block is centred in its area.
+  left; the whole block is centred in its area. Each cell now shows its
+  day-of-month number like a calendar, and the desktop chart area is tall
+  enough that the caption no longer overlaps the grid.
 
 ### Fixed
 
