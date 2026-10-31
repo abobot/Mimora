@@ -168,7 +168,10 @@ and stay in the user data directory across upgrades.
   move between months; the green scale is recomputed per month from that
   month's own practice days. Only the month's own days are drawn — cells that
   spill in from the adjacent month are left blank, so the calendar never shows
-  another month's days.
+  another month's days. The layout now reads **like a wall calendar**: each week
+  is one row and the days flow left-to-right Mon-Sun, with the weekday labels
+  across the top and the month name above them, instead of GitHub's vertical
+  week-columns.
 
 ### Fixed
 

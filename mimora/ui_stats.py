@@ -255,45 +255,46 @@ class _CanvasChart:
                           text=i18n.tr("No data"), fill=THEME["text_dim"],
                           font=(FONT_FAMILY, FONT_SIZE_BODY))
             return
-        self._draw_heatmap_grid(cells, grid_start, n_weeks, cell, label)
+        self._draw_heatmap_grid(cells, grid_start, n_weeks, cell, label,
+                                month_label=month.month)
 
     def _draw_heatmap_grid(self, cells: List[Tuple[int, int, int]],
                            grid_start: date, n_weeks: int,
-                           cell: int, label: str) -> None:
+                           cell: int, label: str,
+                           month_label: int | None = None) -> None:
         """Shared grid renderer for :meth:`draw_heatmap` and the month
-        variant: columns per week, weekday labels, day numbers in the
-        cells, centred block, optional caption below."""
+        variant: one **row per week** with the days of the week flowing
+        left-to-right (Mon-Sun, like a wall calendar), weekday labels across
+        the top, day numbers in the cells, centred block, caption below."""
         c = self.canvas
         pad = 8
         gap = 3
         month_h = 16
-        row_lbl_w = 26
-        grid_w = n_weeks * (cell + gap) - gap
+        col_lbl_h = 16
+        grid_w = 7 * (cell + gap) - gap          # 7 weekday columns
+        grid_h = n_weeks * (cell + gap) - gap    # one row per week
         # Centre the whole block (labels + grid) horizontally.
-        total_w = row_lbl_w + grid_w
-        grid_x = pad + row_lbl_w + max(0, (self._width - pad * 2 - total_w) // 2)
-        grid_y = pad + month_h
-        # Month labels: draw at the first column of each month change.
+        total_w = grid_w
+        grid_x = pad + max(0, (self._width - pad * 2 - total_w) // 2)
+        grid_y = pad + month_h + col_lbl_h
+        # Month label: drawn above the grid (one month at a time).
         month_abbr = [i18n.tr(m) for m in _MONTH_ABBR]
-        prev_month = None
-        for week in range(n_weeks):
-            col_date = grid_start + timedelta(days=week * 7)
-            if col_date.month != prev_month:
-                mx = grid_x + week * (cell + gap)
-                c.create_text(mx, pad, text=month_abbr[col_date.month - 1],
-                              anchor="nw", fill=THEME["text_dim"],
-                              font=(FONT_FAMILY, FONT_SIZE_CAPTION))
-                prev_month = col_date.month
-        # Weekday labels (Mon / Wed / Fri).
+        label_month = month_label if month_label is not None else grid_start.month
+        c.create_text(grid_x, pad, text=month_abbr[label_month - 1],
+                      anchor="nw", fill=THEME["text_dim"],
+                      font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        # Weekday labels across the top (Mon / Wed / Fri).
         weekday_abbr = [i18n.tr(d) for d in _WEEKDAY_ABBR]
-        for row in (0, 2, 4):
-            ry = grid_y + row * (cell + gap)
-            c.create_text(grid_x - 4, ry, text=weekday_abbr[row],
-                          anchor="e", fill=THEME["text_dim"],
+        for col in (0, 2, 4):
+            cx = grid_x + col * (cell + gap) + cell / 2
+            c.create_text(cx, pad + month_h, text=weekday_abbr[col],
+                          anchor="center", fill=THEME["text_dim"],
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION))
         for week, row, lvl in cells:
-            x = grid_x + week * (cell + gap)
-            y = grid_y + row * (cell + gap)
+            # Transpose: week = row index, row (weekday) = column index, so
+            # days flow left-to-right and each week is a horizontal line.
+            x = grid_x + row * (cell + gap)
+            y = grid_y + week * (cell + gap)
             if lvl < 0:
                 # A day outside the displayed month: leave the cell empty so
                 # the calendar shows only the month's own days.
@@ -631,6 +632,9 @@ class StatsView:
             i18n.tr("{year} {month}",
                     year=month.year,
                     month=i18n.tr(_MONTH_ABBR[month.month - 1])))
+        # Horizontal layout: 7 weekday columns across, one row per week. A
+        # 5-6 week month needs ~5-6 rows (each ~27px) plus the month and
+        # weekday label rows and the caption, so 240px height is generous.
         heat = _CanvasChart(self._activity, width=430, height=240)
         heat.canvas.pack(side=tk.LEFT, padx=8, pady=8)
         heat.draw_heatmap_month(

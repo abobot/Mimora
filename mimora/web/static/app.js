@@ -1317,9 +1317,15 @@ function renderActivityHeatmap(container, activity, ym) {
     return lvl;
   };
 
-  // Weekday labels column (Mon/Wed/Fri), then the week columns.
+  // One calendar month: a month label, a weekday label row, then one row per
+  // week with the days flowing left-to-right (Mon-Sun, wall-calendar). All
+  // three share a 7-column template so the labels line up with the cells.
   const wrap = document.createElement("div");
   wrap.className = "gh-heatmap-wrap";
+  const mCell = document.createElement("span");
+  mCell.className = "gh-month";
+  mCell.textContent = HEAT_MONTHS[month - 1] + " " + year;
+  wrap.appendChild(mCell);
   const wd = document.createElement("div");
   wd.className = "gh-weekdays";
   for (const r of [0, 2, 4]) {
@@ -1331,11 +1337,6 @@ function renderActivityHeatmap(container, activity, ym) {
   wrap.appendChild(wd);
   const grid = document.createElement("div");
   grid.className = "gh-heatmap";
-  // Month label: the grid shows one month only, so a single label is enough.
-  const mCell = document.createElement("span");
-  mCell.className = "gh-month";
-  mCell.textContent = HEAT_MONTHS[month - 1] + " " + year;
-  grid.appendChild(mCell);
   for (let w = 0; w < nWeeks; w++) {
     for (let r = 0; r < 7; r++) {
       const d = new Date(gridStart.getTime() + (w * 7 + r) * dayMs);
@@ -1343,8 +1344,8 @@ function renderActivityHeatmap(container, activity, ym) {
       const inMonth2 = d.getFullYear() === year && d.getMonth() === month - 1;
       const cell = document.createElement("div");
       // A day spilling in from the adjacent month is invisible but still
-      // occupies its grid slot, so the week columns stay aligned (the grid
-      // flows column by column; removing a cell would shift the rest).
+      // occupies its grid slot, so the week rows stay aligned (the grid
+      // flows row by row; removing a cell would shift the rest).
       if (!inMonth2) {
         cell.className = "gh-cell gh-empty";
         grid.appendChild(cell);
