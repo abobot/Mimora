@@ -36,10 +36,12 @@ from mimora.ui_theme import (
     Tooltip,
 )
 
-# How long a single click waits before playing the word. A double-click fires
-# two single-clicks first, so the playback is deferred just long enough for the
-# double-click to cancel it and start a drill instead - without this the word
-# would play twice before the drill window opened.
+# A single click on a phrase word plays it immediately (no deferral). The old
+# 250ms double-click deferral existed so a double-click could cancel the
+# playback and start a drill instead; the redesign moves the drill onto the
+# right-click context menu, so the single click no longer has to wait (see the
+# design doc: "单击播放，右键菜单（含"钻取此词"）"). Kept only as the
+# fallback constant name for any future re-introduction; no longer used.
 _DOUBLE_CLICK_DELAY_MS = 250
 
 # Maximum wrapped lines the phrase Text grows to before it becomes scrollable.
@@ -111,8 +113,9 @@ class HeroCard:
         self._on_sound_example = on_sound_example
         self._on_word_drill_clicked = on_word_drill_clicked
         self._on_word_single_drill_clicked = on_word_single_drill_clicked
-        # Pending single-click word playback, so a double-click can cancel it
-        # (see _schedule_word_playback / _DOUBLE_CLICK_DELAY_MS).
+        # Pending single-click word playback (a right-click context menu and a
+        # new phrase both cancel it so a word does not play after the user has
+        # already chosen another action). See _schedule_word_playback.
         self._scheduled_word_after_id = None
 
         # Drawn on bg_card, the lightest of the three surfaces (bg_main <
@@ -162,17 +165,18 @@ class HeroCard:
         # background could not target one word without lighting up the rest.
         self.phrase_text.tag_configure("hover", background=THEME["bg_accent_active"])
         self.phrase_text.tag_bind("word", "<Button-1>", self._on_phrase_word_clicked)
-        # Double-click any word to start a single-word drill on it (bound on the
-        # same "word" tag as the single-click playback). The single click is
-        # deferred (see _DOUBLE_CLICK_DELAY_MS) so the double-click cancels the
-        # playback instead of playing the word twice before the drill opens.
-        if self._on_word_single_drill_clicked:
-            self.phrase_text.tag_bind("word", "<Double-Button-1>",
-                                       self._on_phrase_word_double_clicked)
-        # Right-click a mispronounced word to start a drill on it.
-        if self._on_word_drill_clicked:
-            self.phrase_text.tag_bind("miss", "<Button-3>",
-                                       self._on_miss_word_right_clicked)
+        # Right-click any word to open a context menu with the drill actions.
+        # The redesign replaces the double-click drill with this standard
+        # desktop "more actions" entry (see the design doc: "右键在桌面端是标准
+        # '更多操作'入口"), so the single click no longer needs the 250ms
+        # deferral that made a double-click possible.
+        self.phrase_text.tag_bind("word", "<Button-3>",
+                                  self._on_phrase_word_right_clicked)
+        # Tk/aqua (macOS) reports the right mouse button as Button-2; on the
+        # other platforms Button-2 is the middle button and stays unbound.
+        if self.phrase_text.tk.call("tk", "windowingsystem") == "aqua":
+            self.phrase_text.tag_bind("word", "<Button-2>",
+                                      self._on_phrase_word_right_clicked)
         self.phrase_text.bind("<Motion>", self._on_phrase_motion)
         self.phrase_text.bind("<Leave>", self._clear_phrase_hover)
         # Native mouse selection stays enabled on purpose: dragging (or a double-
@@ -326,7 +330,7 @@ class HeroCard:
         # set_hint), so the empty/unscored states stay quiet.
         self.hint_label = tk.Label(
             workon_col,
-            text=i18n.tr("Click a word or sound to hear it. Double-click a word to drill it."),
+            text=i18n.tr("Click a word or sound to hear it. Right-click a word to drill it."),
             font=(FONT_FAMILY, FONT_SIZE_CAPTION), fg=THEME["text_muted"],
             bg=THEME["bg_card"], justify=tk.LEFT, wraplength=320)
 
@@ -541,40 +545,39 @@ class HeroCard:
         return self.phrase_text.get(*tag_range).strip(".,!?;:\"'()").strip()
 
     def _on_phrase_word_clicked(self, event):
-        """Defer speaking the clicked phrase word slowly (any word).
+        """Play the clicked phrase word slowly (any word, single click).
 
-        The playback is delayed by ``_DOUBLE_CLICK_DELAY_MS`` so a double-click
-        (which fires two single-clicks first) can cancel it and start a drill
-        instead - without the delay the word would play twice before the drill
-        opened. A single click therefore hears the word after a short pause; a
-        double-click hears nothing and drills the word.
+        The redesign removed the double-click drill, so the single click no
+        longer defers for a double-click window - it plays immediately. The
+        drill moves to the right-click context menu
+        (:meth:`_on_phrase_word_right_clicked`), the standard desktop "more
+        actions" entry.
         """
         word = self._phrase_word_at(event)
         # Return focus to the window so the spacebar record toggle keeps
         # working (app.py's global click handler skips Text widgets).
         self.root.focus_set()
         if word:
-            self._schedule_word_playback(word)
+            self._play_scheduled_word(word)
 
     def _schedule_word_playback(self, word: str):
         """Arrange for ``word`` to be played after the double-click window.
 
-        Replaces any previously scheduled word (a click on another word within
-        the window supersedes it). Stored as an ``after`` id so a double-click
-        can cancel it via :meth:`_cancel_scheduled_word_playback`.
+        Kept for test compat and as the single chokepoint for word playback;
+        the single-click path now calls :meth:`_play_scheduled_word` directly.
         """
         self._cancel_scheduled_word_playback()
         self._scheduled_word_after_id = self.root.after(
             _DOUBLE_CLICK_DELAY_MS, lambda: self._play_scheduled_word(word))
 
     def _play_scheduled_word(self, word: str):
-        """Play a word that survived the double-click window (single click)."""
+        """Play a word (single-click path, immediate)."""
         self._scheduled_word_after_id = None
         if word:
             self._on_word_clicked(word)
 
     def _cancel_scheduled_word_playback(self):
-        """Drop any pending single-click playback (double-click or new phrase)."""
+        """Drop any pending single-click playback (context menu or new phrase)."""
         if self._scheduled_word_after_id is not None:
             try:
                 self.root.after_cancel(self._scheduled_word_after_id)
@@ -582,35 +585,39 @@ class HeroCard:
                 pass
             self._scheduled_word_after_id = None
 
-    def _on_phrase_word_double_clicked(self, event):
-        """Double-click a phrase word to start a single-word drill on it.
+    def _on_phrase_word_right_clicked(self, event):
+        """Right-click any phrase word: open a context menu of drill actions.
 
-        Cancels the pending single-click playback (the word does not play) and
-        starts a drill on the word alone via ``on_word_single_drill_clicked``
-        (the word itself is the whole practice phrase - no surrounding
-        sentence). Returning "break" suppresses the native double-click text
-        selection, which would otherwise select the word while the drill window
-        opens.
+        The menu offers the two drill modes the old double-click/right-click
+        pair provided, now under one explicit entry point: drill the word in
+        sentence context (``on_word_drill_clicked``) or drill the word alone
+        (``on_word_single_drill_clicked``). The menu only appears when the
+        relevant callback exists - a card built without drill callbacks has
+        nothing to offer. Also cancels any pending single-click playback.
         """
         word = self._phrase_word_at(event)
         self.root.focus_set()
         self._cancel_scheduled_word_playback()
-        if word:
-            self._start_word_single_drill(word)
-        return "break"
+        if not word:
+            return
+        menu = tk.Menu(self.root, tearoff=0)
+        if self._on_word_drill_clicked:
+            menu.add_command(label=i18n.tr("Drill this word"),
+                             command=lambda: self._on_word_drill_clicked(word))
+        if self._on_word_single_drill_clicked:
+            menu.add_command(label=i18n.tr("Drill this word alone"),
+                             command=lambda: self._on_word_single_drill_clicked(word))
+        if menu.index("end") is None:
+            return
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
 
     def _start_word_single_drill(self, word: str):
         """Start a single-word drill on ``word`` (no-op without the callback)."""
         if word and self._on_word_single_drill_clicked:
             self._on_word_single_drill_clicked(word)
-
-    def _on_miss_word_right_clicked(self, event):
-        """Right-click a mispronounced word to start a drill on it."""
-        word = self._phrase_word_at(event)
-        self.root.focus_set()
-        self._cancel_scheduled_word_playback()
-        if word and self._on_word_drill_clicked:
-            self._on_word_drill_clicked(word)
 
     def _on_phrase_motion(self, event):
         """Highlight the word under the pointer and show it is clickable.

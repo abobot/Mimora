@@ -142,7 +142,9 @@ class HeroCardWordFeedbackTests(unittest.TestCase):
 
 
 class HeroCardWordDrillTests(unittest.TestCase):
-    """Double-click a phrase word to start a word drill on it."""
+    """Word drill interactions: a single click plays the word immediately (the
+    old 250ms double-click deferral was removed by the redesign) and a
+    right-click opens a context menu with the two drill modes."""
 
     @classmethod
     def setUpClass(cls):
@@ -170,6 +172,20 @@ class HeroCardWordDrillTests(unittest.TestCase):
         HeroCardWordDrillTests.single_drilled = []
         self.card._cancel_scheduled_word_playback()
 
+    def test_single_click_plays_immediately(self):
+        # The redesign removed the double-click drill: a single click plays the
+        # word at once (no deferral, no pending after-id).
+        self.card._play_scheduled_word("helping")
+        self.assertEqual(HeroCardWordDrillTests.played, ["helping"])
+        self.assertIsNone(self.card._scheduled_word_after_id)
+
+    def test_click_on_gap_does_not_play(self):
+        from unittest import mock
+        self.card._phrase_word_at = lambda event: ""
+        self.card._on_phrase_word_clicked(
+            type("E", (), {"x": 99999, "y": 99999})())
+        self.assertEqual(HeroCardWordDrillTests.played, [])
+
     def test_start_single_word_drill_forwards_word(self):
         self.card._start_word_single_drill("helping")
         self.assertEqual(HeroCardWordDrillTests.single_drilled, ["helping"])
@@ -179,41 +195,31 @@ class HeroCardWordDrillTests(unittest.TestCase):
             self.root, on_word_clicked=lambda w: None,
             on_sound_example=lambda w: None)
         card._start_word_single_drill("helping")  # must not raise
-        self.assertEqual(card._scheduled_word_after_id, None)
 
-    def test_single_click_is_deferred_not_immediate(self):
-        self.card._schedule_word_playback("helping")
-        # Not played yet: the playback waits for the double-click window.
-        self.assertEqual(HeroCardWordDrillTests.played, [])
-        self.assertIsNotNone(self.card._scheduled_word_after_id)
+    def test_right_click_opens_menu_with_both_drill_modes(self):
+        # Right-click any word: a menu with both drill actions appears.
+        from unittest import mock
+        self.card._phrase_word_at = lambda event: "helping"
+        popped = []
+        with mock.patch.object(tk.Menu, "tk_popup",
+                               lambda self, x, y: popped.append((x, y))):
+            self.card._on_phrase_word_right_clicked(
+                type("E", (), {"x_root": 0, "y_root": 0})())
+        self.assertEqual(len(popped), 1)
 
-    def test_scheduled_playback_plays_word_after_window(self):
-        self.card._schedule_word_playback("helping")
-        self.card._play_scheduled_word("helping")
-        self.assertEqual(HeroCardWordDrillTests.played, ["helping"])
-        self.assertIsNone(self.card._scheduled_word_after_id)
-
-    def test_cancel_scheduled_playback_prevents_play(self):
-        self.card._schedule_word_playback("helping")
-        self.card._cancel_scheduled_word_playback()
-        self.assertIsNone(self.card._scheduled_word_after_id)
-        self.assertEqual(HeroCardWordDrillTests.played, [])
-
-    def test_second_click_supersedes_first(self):
-        self.card._schedule_word_playback("helping")
-        self.card._schedule_word_playback("others")
-        # Only the second word remains scheduled (first was cancelled).
-        self.card._play_scheduled_word("others")
-        self.assertEqual(HeroCardWordDrillTests.played, ["others"])
-
-    def test_double_click_cancels_playback_and_single_word_drills(self):
-        # A double-click fires two single-clicks first; the first schedules the
-        # playback, then the double-click cancels it and drills the word alone.
-        self.card._schedule_word_playback("helping")
-        self.card._cancel_scheduled_word_playback()
-        self.card._start_word_single_drill("helping")
-        self.assertEqual(HeroCardWordDrillTests.played, [])
-        self.assertEqual(HeroCardWordDrillTests.single_drilled, ["helping"])
+    def test_right_click_without_drill_callbacks_has_no_menu_items(self):
+        from unittest import mock
+        card = HeroCard(
+            self.root, on_word_clicked=lambda w: None,
+            on_sound_example=lambda w: None)
+        card._phrase_word_at = lambda event: "helping"
+        # No drill callbacks -> the menu never popups (nothing to offer).
+        popped = []
+        with mock.patch.object(tk.Menu, "tk_popup",
+                               lambda self, x, y: popped.append((x, y))):
+            card._on_phrase_word_right_clicked(
+                type("E", (), {"x_root": 0, "y_root": 0})())
+        self.assertEqual(popped, [])
 
     def test_new_phrase_cancels_pending_playback(self):
         self.card._schedule_word_playback("helping")

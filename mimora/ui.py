@@ -100,15 +100,18 @@ class ViewCallbacks:
     play_user_recording: Callable[[], None]
     play_reference: Callable[[], None]
     play_reference_slow: Callable[[], None]
-    # Long-press the Reference / Slow buttons: the controller opens a small
-    # popup near the button (positioned by its screen x/y) to pick a playback
-    # speed / slow multiplier and play the reference at it. Used for A and B.
+    # The small ▾ next to 🔊 opens the reference-speed menu: the controller
+    # shows a popup near the button (positioned by its screen x/y) to pick a
+    # playback speed and play the reference at it.
     on_ref_long_press: Callable[[int, int], None]
+    # Long-press 🐢: a low-frequency setting (the slow multiplier) that keeps
+    # its long-press affordance per the redesign (like the dictation limits).
     on_slow_long_press: Callable[[int, int], None]
     on_generate_phrase: Callable[[], None]
-    # Long-press ⏭ opens a popup to choose the phrase source (LLM / practice
-    # text); the controller flips the mode via on_phrase_source_changed.
-    on_next_long_press: Callable[[int, int], None]
+    # The phrase-source switcher (LLM / Text) next to the practice text panel
+    # was clicked; the controller flips the mode via _on_phrase_source_changed
+    # and the view reflects it through set_phrase_source.
+    on_phrase_source_changed: Callable[[str], None]
     # Click on any word inside the hero phrase (mispronounced ones are
     # underlined): the controller synthesizes that single word and plays it
     # slowly.
@@ -394,20 +397,26 @@ class TrainerView:
         controls_row = tk.Frame(control_frame, bg=THEME["bg_main"])
         controls_row.pack()
 
-        # -- Reference column: the replay button paired with the "Slow ▶"
-        #    replay. Both are gated together by _set_actions(reference=...); the
-        #    exact slow speed lives in Settings. --
+        # -- Reference column: the replay button paired with a small ▾ that
+        #    opens the playback-speed menu (the long-press used to be the only
+        #    affordance; the redesign makes it explicit) and the "Slow ▶"
+        #    replay. All three are gated together by _set_actions(reference=...).
         ref_col = self._control_column(controls_row,
                                        caption=i18n.tr("Reference ▶"))
         ref_pair = tk.Frame(ref_col, bg=THEME["bg_main"])
         ref_pair.pack()
         self.ref_btn = make_icon_button(
             ref_pair, i18n.tr("🔊"), i18n.tr("Play reference"), self._cb.play_reference,
-            padx=action_btn_padx,
-            on_long_press=lambda: self._cb.on_ref_long_press(
-                self.ref_btn.winfo_rootx(), self.ref_btn.winfo_rooty()))
+            padx=action_btn_padx)
         self.ref_btn.pack(side=tk.LEFT, padx=(0, 4))
         self.ref_btn.config(state=tk.DISABLED)
+        self.speed_btn = make_icon_button(
+            ref_pair, i18n.tr("▾"), i18n.tr("Playback speed"),
+            lambda: self._cb.on_ref_long_press(
+                self.speed_btn.winfo_rootx(), self.speed_btn.winfo_rooty()),
+            padx=action_btn_padx)
+        self.speed_btn.pack(side=tk.LEFT, padx=(0, 4))
+        self.speed_btn.config(state=tk.DISABLED)
         self.slow_btn = make_icon_button(
             ref_pair, i18n.tr("🐢"), i18n.tr("Play reference slowly"),
             self._cb.play_reference_slow, padx=action_btn_padx,
@@ -447,19 +456,20 @@ class TrainerView:
                                        caption=i18n.tr("Next phrase ▶"))
         self.generate_btn = make_icon_button(
             gen_col, i18n.tr("⏭"), i18n.tr("Next phrase"),
-            self._cb.on_generate_phrase, padx=action_btn_padx,
-            on_long_press=lambda: self._cb.on_next_long_press(
-                self.generate_btn.winfo_rootx(), self.generate_btn.winfo_rooty()))
+            self._cb.on_generate_phrase, padx=action_btn_padx)
         self.generate_btn.pack()
         self.generate_btn.config(state=tk.DISABLED)
-        # Phrase source (D) is chosen by long-pressing ⏭: a popup offers "LLM"
-        # (fresh phrase through the active backend) and "Text" (walk the source
-        # text's own sentences verbatim). The controller owns the mode.
+        # Phrase source (D) now has an explicit switcher in the practice-text
+        # panel header (PracticePanel.set_source_switcher): "LLM" (fresh phrase
+        # through the active backend) vs "Text" (walk the source text's own
+        # sentences verbatim). The controller owns the mode; the long-press on
+        # ⏭ is gone.
 
         # 4. Source text panel (editable, collapsible) - PracticePanel packs
         # itself here, so the on-screen order stays header -> practice text.
         self._practice = PracticePanel(
             self.root, on_collapsed_toggled=self._cb.on_practice_collapsed_toggled)
+        self._practice.set_source_switcher(self._cb.on_phrase_source_changed)
 
         # 5. Hero card - phrase, translation, score row and the face.
         self._hero = HeroCard(
@@ -673,6 +683,7 @@ class TrainerView:
             self.generate_btn.config(state=state(generate))
         if reference is not None:
             self.ref_btn.config(state=state(reference))
+            self.speed_btn.config(state=state(reference))
             self.slow_btn.config(state=state(reference))
         if user is not None:
             self.user_btn.config(state=state(user))

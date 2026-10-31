@@ -30,7 +30,7 @@ def _callbacks():
         play_reference_slow=lambda: None, play_user_recording=lambda: None,
         on_ref_long_press=lambda x, y: None,
         on_slow_long_press=lambda x, y: None,
-        on_next_long_press=lambda x, y: None,
+        on_phrase_source_changed=lambda m: None,
         on_settings_clicked=lambda: None, on_history_clicked=lambda: None,
         on_stats_clicked=lambda: None, on_weakness_clicked=lambda: None,
         on_drill_clicked=lambda: None, on_dictation_clicked=lambda: None,

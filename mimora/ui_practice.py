@@ -7,9 +7,14 @@ The editable source-text editor with its collapse caption, the Paste/Clear
 affordances and the collapsed-state one-line preview. Clipboard paste and
 clearing are view-local widget operations with no application logic, so they
 live here; the controller still reads the text via ``get_text``.
+
+The header also hosts the phrase-source switcher (LLM / Text): an explicit
+alternative to the removed long-press on the Next-phrase button, so the choice
+between generating a fresh phrase through the LLM backend and walking the
+source text's own sentences is always visible.
 """
 import tkinter as tk
-from typing import Callable
+from typing import Callable, Optional
 
 from mimora import config, i18n
 from mimora.ui_theme import (
@@ -37,6 +42,9 @@ class PracticePanel:
     def __init__(self, root, on_collapsed_toggled: Callable[[], None]):
         self.root = root
         self._on_collapsed_toggled = on_collapsed_toggled
+        self._source_buttons: dict[str, FlatButton] = {}
+        self._source_callback: Optional[Callable[[str], None]] = None
+        self._source_mode: Optional[str] = None
 
         self.frame = tk.Frame(root, bg=THEME["bg_main"])
         self.frame.pack(side=tk.TOP, fill=tk.X, padx=24, pady=(10, 8))
@@ -47,6 +55,7 @@ class PracticePanel:
         # here stays deliberately minimal - see the settings_window Field model).
         header = tk.Frame(self.frame, bg=THEME["bg_main"])
         header.pack(fill=tk.X)
+        self._header = header
         # The caption doubles as the collapse toggle for the text box: clicking
         # it hides/shows the editor (Paste/Clear go with it) to free vertical
         # space; the arrow prefix mirrors the state (see toggle). Hover
@@ -112,6 +121,55 @@ class PracticePanel:
         # The editor is packed above by default; hide it now if the persisted
         # state says collapsed (same late-apply idiom as the prosody toggles).
         self.toggle()
+
+    # ------------------------------------------------------------------
+    # Phrase-source switcher (LLM / Text)
+    # ------------------------------------------------------------------
+    def set_source_switcher(self, on_changed: Optional[Callable[[str], None]]):
+        """Build the phrase-source switcher in the header (called once).
+
+        ``on_changed(mode)`` is invoked with ``"llm"`` or ``"practice"`` when
+        the user clicks the other segment; the controller owns the mode and
+        persists it. The active segment is highlighted and read back through
+        :meth:`set_phrase_source` so the view always mirrors the controller.
+        """
+        self._source_callback = on_changed
+        # The switcher lives on the far right of the header row, so the
+        # collapse caption and the Paste/Clear buttons keep their positions.
+        row = tk.Frame(self._header, bg=THEME["bg_main"])
+        row.pack(side=tk.RIGHT)
+        self._source_row = row
+        self._source_buttons = {}
+        for mode, label in (("llm", "LLM"), ("practice", "Text")):
+            btn = FlatButton(
+                row, text=label, font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"),
+                bd=0, padx=10, pady=3, cursor="hand2",
+                command=lambda m=mode: self._on_source_clicked(m))
+            btn.pack(side=tk.LEFT, padx=2)
+            self._source_buttons[mode] = btn
+        Tooltip(row, i18n.tr("Choose where phrases come from"))
+        if self._source_mode is not None:
+            self.set_phrase_source(self._source_mode)
+
+    def set_phrase_source(self, mode: str):
+        """Highlight the active phrase-source segment (controller-driven)."""
+        self._source_mode = mode
+        for key, btn in self._source_buttons.items():
+            active = (key == mode)
+            btn.configure(
+                bg=THEME["accent"] if active else THEME["bg_accent"],
+                fg=THEME["text_bright"] if active else THEME["text_accent"],
+                activebackground=THEME["bg_accent_active"],
+                activeforeground=THEME["text_bright"])
+
+    def get_phrase_source(self) -> Optional[str]:
+        return self._source_mode
+
+    def _on_source_clicked(self, mode: str):
+        if self._source_mode == mode:
+            return  # already active; no re-apply
+        if self._source_callback is not None:
+            self._source_callback(mode)
 
     # ------------------------------------------------------------------
     # Text access

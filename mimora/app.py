@@ -448,7 +448,7 @@ class PronunciationTrainerGUI:
             on_ref_long_press=self._on_ref_long_press,
             on_slow_long_press=self._on_slow_long_press,
             on_generate_phrase=self.on_generate_phrase,
-            on_next_long_press=self._on_next_long_press,
+            on_phrase_source_changed=self._on_phrase_source_changed,
             on_word_clicked=self.on_word_clicked,
             on_word_drill_clicked=self._on_word_drill_clicked,
             on_word_single_drill_clicked=self._on_word_single_drill_clicked,
@@ -457,6 +457,9 @@ class PronunciationTrainerGUI:
             on_history_entry=self.on_history_entry,
             on_replay_take=self.play_take_audio,
         ))
+        # Reflect the persisted phrase source into the new view switcher so
+        # the active segment is highlighted from the start.
+        self.view._practice.set_phrase_source(self._phrase_source_mode)
         # Playback machinery: per-playback stop events + the talking-mouth
         # track (mimora/playback.py). Composed after the view because it
         # drives the face and status line through the view facade.
@@ -1844,13 +1847,20 @@ class PronunciationTrainerGUI:
             self.root.after(0, self.playback.finished, stop_event)
 
     def _on_phrase_source_changed(self, mode: str):
-        """Switch the phrase source between "llm" and "practice" (D)."""
+        """Switch the phrase source between "llm" and "practice" (D).
+
+        The view switcher and the settings window both route here; the view
+        highlight is kept in sync so the active segment always mirrors the
+        controller's mode.
+        """
         if mode not in ("llm", "practice"):
             return
         self._phrase_source_mode = mode
         # Persist so the choice survives a restart (default is "llm").
         config.PHRASE_SOURCE = mode
         self.settings_ctl.persist("phrase_source", mode)
+        if hasattr(self, "view"):
+            self.view._practice.set_phrase_source(mode)
 
     def on_generate_phrase(self):
         if not self.app_ready or self.is_generating:
@@ -2749,9 +2759,10 @@ class PronunciationTrainerGUI:
     def _on_next_long_press(self, x: int, y: int):
         """Long-press ⏭: choose the phrase source (LLM or practice text).
 
-        The active mode is highlighted; choosing one flips the mode via
-        :meth:`_on_phrase_source_changed` and dismisses the popup. Replacing the
-        on-screen toggle, so the control column stays compact.
+        Kept for keyboard/compat callers and the tests; the on-screen
+        affordance is now the explicit LLM/Text switcher in the practice-text
+        panel header (PracticePanel.set_source_switcher), which routes straight
+        into :meth:`_on_phrase_source_changed`.
         """
         win, catcher = self._make_popup(x, y)
         tk.Label(win, text=i18n.tr("Phrase source"),
