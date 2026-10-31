@@ -982,7 +982,29 @@ class WebRuntime:
             "activity": activity,
             "duration_rows": duration_rows,
             "recent_sessions": recent_sessions,
+            "review": self._review_payload(),
         }
+
+    def _review_payload(self) -> Dict[str, Any]:
+        """The review-pool analysis payload for the web dashboard.
+
+        Returns ``{"phrases": {...}, "history": [...]}`` with ``phrases``
+        empty when review is off or unreadable (the frontend then shows a
+        "no data" hint instead of failing). The aggregation helpers are pure
+        (Tk-free), so the web backend can use the exact same functions as the
+        desktop dashboard.
+        """
+        try:
+            from mimora import review_analysis as ra
+            if not self.review_enabled:
+                return {"phrases": {}, "history": []}
+            phrases = self.review_store.data.get("phrases", {}) or {}
+            history = ra.load_history(
+                str(Path(config.CONFIG_DIR) / "review_history"))
+            return {"phrases": phrases, "history": history}
+        except Exception:  # noqa: BLE001
+            logger.exception("Review payload failed:")
+            return {"phrases": {}, "history": []}
 
     def delete_take(self, session_id: str, take_id: str) -> bool:
         try:

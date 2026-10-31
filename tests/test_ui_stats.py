@@ -336,5 +336,108 @@ class HeatmapMonthNavigationTest(unittest.TestCase):
         self.assertEqual(view._heatmap_month, date(2027, 1, 1))
 
 
+class ReviewRenderTest(unittest.TestCase):
+    """Renders the review-pool analysis section with sample data.
+
+    Uses a real withdrawn Tk root (like the export-button tests) because the
+    section builds real widgets; the assertions only check that the section
+    renders without error and shows the key headings.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from mimora.ui_stats import StatsView, StatsCallbacks
+        from tests._tk import make_root
+        cls.root = make_root()
+        cls.cb = StatsCallbacks(
+            load_data=lambda: {"sessions": [], "all_takes": []},
+            export_json=lambda: None,
+            export_csv=lambda: None,
+        )
+        cls.view = StatsView(cls.root, cls.cb)
+
+    @classmethod
+    def tearDownClass(cls):
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
+
+    def _sample_phrases(self):
+        return {
+            "The cat sat.": {
+                "source": "practice", "first_seen": "2026-10-25T09:00:00",
+                "last_reviewed": "2026-10-28T09:00:00",
+                "next_review_at": "2026-11-02T09:00:00",
+                "interval_index": 1, "seen": 3, "passed": True,
+            },
+            "The dog ran.": {
+                "source": "practice", "first_seen": "2026-10-20T09:00:00",
+                "last_reviewed": "2026-10-29T09:00:00",
+                "next_review_at": "2026-10-25T09:00:00",  # overdue
+                "interval_index": 0, "seen": 6, "passed": False,
+            },
+            "A bird flew.": {
+                "source": "llm", "first_seen": "2026-10-27T09:00:00",
+                "last_reviewed": None, "next_review_at": None,
+                "interval_index": 0, "seen": 0, "passed": False,
+            },
+        }
+
+    def _texts(self):
+        out = []
+        def walk(w):
+            try:
+                out.append(w.cget("text"))
+            except Exception:
+                pass
+            for c in w.winfo_children():
+                walk(c)
+        walk(self.view._review)
+        return out
+
+    def test_empty_phrases_shows_hint(self):
+        self.view._render_review({}, [])
+        texts = self._texts()
+        self.assertTrue(any("No review data yet" in t for t in texts))
+
+    def _canvas_texts(self):
+        """Titles drawn on the section's canvases (not tk widgets)."""
+        import tkinter as tk
+        out = []
+        def walk(w):
+            try:
+                if isinstance(w, tk.Canvas):
+                    for item in w.find_all():
+                        try:
+                            out.append(w.itemcget(item, "text"))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            for c in w.winfo_children():
+                walk(c)
+        walk(self.view._review)
+        return out
+
+    def test_review_section_renders_headings(self):
+        self.view._render_review(self._sample_phrases(), [])
+        texts = self._texts()
+        self.assertIn("Review pool", texts)
+        self.assertIn("Overdue phrases", texts)
+        # The overdue phrase appears in the list.
+        self.assertTrue(any("The dog ran." in t for t in texts))
+        # Chart titles are drawn on the canvases (create_text), so read them
+        # back from the canvas items.
+        canvas_texts = self._canvas_texts()
+        self.assertIn("Review stage distribution", canvas_texts)
+        self.assertIn("Due load (next 60 days, cumulative)", canvas_texts)
+
+    def test_kpi_cards_rendered(self):
+        self.view._render_review(self._sample_phrases(), [])
+        texts = self._texts()
+        self.assertIn("Total", texts)
+        self.assertIn("Due today", texts)
+        self.assertIn("Pass rate", texts)
+
+
 if __name__ == "__main__":
     unittest.main()

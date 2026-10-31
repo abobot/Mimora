@@ -1173,6 +1173,7 @@ async function loadDashboard() {
     renderBars(el("stats-dist"), data.distribution);
     renderDurationTable(el("stats-duration"), data.duration_rows);
     loadDashboardHeatmap(data.activity);
+    renderReviewAnalysis(el("stats-review"), data.review || {});
     const recent = el("stats-recent");
     recent.innerHTML = "";
     (data.recent_sessions || []).forEach((s) => {
@@ -1370,6 +1371,78 @@ function renderActivityHeatmap(container, activity, ym) {
 function shiftHeatMonth(delta) {
   heatMonthOffset += delta;
   loadDashboardHeatmap();
+}
+
+/* ---------- 复习池分析 ---------- */
+
+function renderReviewAnalysis(container, review) {
+  container.innerHTML = "";
+  const phrases = (review && review.phrases) || {};
+  const history = (review && review.history) || [];
+  if (!phrases || Object.keys(phrases).length === 0) {
+    container.innerHTML = `<div class="s-hint">暂无复习数据。复习未启用，或尚无任何记录。</div>`;
+    return;
+  }
+  const items = Object.entries(phrases).map(([phrase, st]) => ({
+    phrase, ...(st || {}),
+  }));
+
+  // KPI row.
+  const total = items.length;
+  const dueToday = items.filter((p) => p.next_review_at && new Date(p.next_review_at) <= new Date()).length;
+  const reviewed = items.filter((p) => p.last_reviewed);
+  const passRate = reviewed.length ? (reviewed.filter((p) => p.passed).length / reviewed.length) : null;
+  const avgIndex = total ? items.reduce((s, p) => s + (Number(p.interval_index) || 0), 0) / total : 0;
+  const stubborn = items.filter((p) => p.last_reviewed && !p.passed && (Number(p.seen) || 0) > 5).length;
+  const kpi = [
+    ["总计", total], ["今日到期", dueToday], ["已逾期", dueToday],
+    ["平均阶段", avgIndex.toFixed(1)],
+    ["通过率", passRate === null ? "—" : Math.round(passRate * 100) + "%"],
+    ["钉子户", stubborn],
+  ];
+  const kpiHtml = kpi.map(([label, val]) =>
+    `<div class="stat-card"><span class="s-label">${label}</span><span class="s-value">${val}</span></div>`
+  ).join("");
+  container.insertAdjacentHTML("beforeend", `<div class="review-kpi">${kpiHtml}</div>`);
+
+  // Index distribution bars (0..len-1 + unscored).
+  const idxCounts = {};
+  let unscored = 0;
+  items.forEach((p) => {
+    if (!p.last_reviewed) { unscored += 1; return; }
+    const i = Math.min(Number(p.interval_index) || 0, 6);
+    idxCounts[i] = (idxCounts[i] || 0) + 1;
+  });
+  const idxLabels = [];
+  const idxVals = [];
+  for (let i = 0; i <= 6; i++) { idxLabels.push(String(i)); idxVals.push(idxCounts[i] || 0); }
+  if (unscored) { idxLabels.push("未评分"); idxVals.push(unscored); }
+  const idxBox = document.createElement("div");
+  idxBox.className = "review-chart";
+  container.appendChild(idxBox);
+  renderBars(idxBox, { buckets: idxLabels, counts: idxVals });
+
+  // Due schedule: 60-day cumulative line.
+  const now = new Date();
+  const perDay = {};
+  items.forEach((p) => {
+    if (!p.next_review_at) return;
+    const due = new Date(p.next_review_at);
+    if (due <= now) return;
+    const key = due.toISOString().slice(0, 10);
+    perDay[key] = (perDay[key] || 0) + 1;
+  });
+  const cum = [];
+  let running = dueToday;
+  for (let d = 0; d <= 60; d++) {
+    const day = new Date(now.getTime() + d * 86400000).toISOString().slice(0, 10);
+    running += perDay[day] || 0;
+    cum.push({ date: day, score: running });
+  }
+  const cumBox = document.createElement("div");
+  cumBox.className = "review-chart";
+  container.appendChild(cumBox);
+  renderLineChart(cumBox, cum);
 }
 
 /* ---------- 设置 ---------- */

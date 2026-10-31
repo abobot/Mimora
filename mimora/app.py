@@ -29,6 +29,7 @@ import threading
 import uuid
 import wave
 import datetime as _datetime
+from pathlib import Path
 from typing import Dict, Optional
 import os
 
@@ -1092,12 +1093,42 @@ class PronunciationTrainerGUI:
                     "sessions": self.stats_store.all_sessions(),
                     "all_takes": self.stats_store.all_takes(),
                     "drill_sessions": self.stats_store.all_drill_sessions(),
+                    "review_phrases": self._review_phrases_for_stats(),
+                    "review_history": self._review_history_for_stats(),
                 },
                 export_json=self._stats_export_json,
                 export_csv=self._stats_export_csv,
                 export_report_png=self._stats_export_report_png,
                 export_report_pdf=self._stats_export_report_pdf,
             )))
+
+    def _review_phrases_for_stats(self) -> dict:
+        """The review pool's phrase states (from review.json), best-effort.
+
+        An empty dict means review is disabled or the store could not be
+        read; the stats dashboard then shows the review section as "no data"
+        rather than failing the whole window.
+        """
+        if not getattr(self, "_review_enabled", False):
+            return {}
+        try:
+            if self._review_store is None:
+                self._review_store = ReviewStore()
+                self._review_store.load()
+            return self._review_store.data.get("phrases", {}) or {}
+        except Exception:
+            logging.exception("Could not read review phrases for stats:")
+            return {}
+
+    def _review_history_for_stats(self) -> list:
+        """The accumulated daily pool snapshots (config/review_history/)."""
+        try:
+            from mimora import review_analysis
+            return review_analysis.load_history(
+                str(Path(config.CONFIG_DIR) / "review_history"))
+        except Exception:
+            logging.exception("Could not read review history for stats:")
+            return []
 
     def on_weakness_clicked(self) -> None:
         self._open_or_lift("_weakness_view", lambda: WeaknessView(

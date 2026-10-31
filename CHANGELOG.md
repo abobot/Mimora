@@ -10,6 +10,15 @@ and stay in the user data directory across upgrades.
 
 ### Added
 
+- **Stats dashboard: spaced-repetition pool analysis.** The stats dashboard
+  (desktop and web) now analyses your Ebbinghaus review pool from
+  config/review.json: KPI cards (total, due today, overdue, average interval
+  stage, pass rate, stubborn phrases), the review-stage distribution (with an
+  "unscored" column), the due-load curve over the next 60 days, seen-count vs
+  last result, pool composition by source with pass rate, span vs interval
+  stage, the average-stage history (from daily snapshots under
+  config/review_history/) and the overdue list. Enabled only when spaced
+  repetition is on and phrases are tracked.
 - **Web companion — full desktop feature set.** The web frontend
   (http://127.0.0.1:8788) now mirrors the desktop app beyond the core practice
   loop: dictation mode (hear a sentence, type one word per slot, get scored),

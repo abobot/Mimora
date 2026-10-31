@@ -238,3 +238,59 @@ class ReviewStore:
                 continue
             result.append(dict(state))
         return result
+
+    def snapshot_history(self, history_dir: Optional[str] = None) -> str:
+        """Append today's pool snapshot to ``config/review_history/``.
+
+        The stats dashboard needs a *trajectory* to show how the pool evolves
+        over time (average interval index, pass rate, per-index counts), but
+        ``review.json`` holds only the current state. This method writes one
+        ``<YYYY-MM-DD>.json`` per day so the dashboard can replay the trend
+        once a few days have accumulated. Idempotent per day: re-saving on the
+        same day overwrites that day's snapshot.
+
+        Returns the path written (or the directory path when the snapshot
+        could not be written - callers treat this as best-effort and never
+        fail the practice loop).
+        """
+        import json as _json
+        from mimora import config
+        directory = Path(history_dir) if history_dir else \
+            Path(config.CONFIG_DIR) / "review_history"
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return str(directory)
+        today = _now_dt().date().isoformat()
+        items = self.all_phrases()
+        by_index: Dict[int, int] = {}
+        reviewed = 0
+        passed = 0
+        for state in items:
+            idx = int(state.get("interval_index", 0) or 0)
+            by_index[idx] = by_index.get(idx, 0) + 1
+            if state.get("last_reviewed") is not None:
+                reviewed += 1
+                if state.get("passed"):
+                    passed += 1
+        snapshot = {
+            "date": today,
+            "total": len(items),
+            "avg_index": (sum(by_index.get(i, 0) * i for i in by_index)
+                          / len(items)) if items else 0.0,
+            "pass_rate": (passed / reviewed) if reviewed else None,
+            # JSON object keys are strings; the loader re-reads them with
+            # str keys, so write them as strings here too (a consumer must
+            # int() the key before using it as an index).
+            "by_index": {str(i): n for i, n in by_index.items()},
+            "due": sum(1 for s in items
+                       if (p := _parse_iso(s.get("next_review_at")))
+                       and p <= _now_dt()),
+        }
+        target = directory / f"{today}.json"
+        try:
+            with open(target, "w", encoding="utf-8") as fh:
+                _json.dump(snapshot, fh, ensure_ascii=False, indent=2)
+        except OSError:
+            return str(directory)
+        return str(target)

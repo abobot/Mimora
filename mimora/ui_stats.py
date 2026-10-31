@@ -33,6 +33,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 from mimora import config, i18n, window_icon
+from mimora.review import EBBINGHAUS_INTERVALS_DAYS
 from mimora.ui_theme import (
     FONT_FAMILY,
     FONT_SIZE_BODY,
@@ -547,6 +548,10 @@ class StatsView:
         self._duration = tk.Frame(self._content, bg=THEME["bg_main"])
         self._duration.pack(fill=tk.X, padx=16, pady=4)
 
+        # Review-pool analysis (8 sections from review.json).
+        self._review = tk.Frame(self._content, bg=THEME["bg_main"])
+        self._review.pack(fill=tk.X, padx=16, pady=4)
+
         # Recent sessions list.
         self._recent = tk.Frame(self._content, bg=THEME["bg_main"])
         self._recent.pack(fill=tk.X, padx=16, pady=(0, 12))
@@ -572,6 +577,8 @@ class StatsView:
         self._render_charts(sessions, takes)
         self._render_activity(sessions)
         self._render_duration_table(sessions)
+        self._render_review(data.get("review_phrases") or {},
+                            data.get("review_history") or [])
         self._render_recent(sessions)
 
     # ------------------------------------------------------------------
@@ -721,6 +728,222 @@ class StatsView:
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                      fg=THEME["text_dim"], bg=THEME["bg_panel"]
                      ).pack(side=tk.RIGHT, padx=6)
+
+    def _render_review(self, phrases: Dict[str, Any],
+                       history: List[Dict[str, Any]]) -> None:
+        """Render the review-pool analysis (the 8 sections the user asked
+        for, driven by review.json + config/review_history/).
+
+        All the aggregation happens in :mod:`mimora.review_analysis` (pure,
+        Tk-free); this method only draws. ``phrases`` is the store's
+        ``phrases`` mapping (empty when review is off or unreadable), and
+        ``history`` is the daily snapshots (oldest first).
+        """
+        for child in self._review.winfo_children():
+            child.destroy()
+        import mimora.review_analysis as ra
+        if not phrases:
+            tk.Label(self._review, text=i18n.tr(
+                "No review data yet. Review is off, or nothing is tracked yet."),
+                font=(FONT_FAMILY, FONT_SIZE_BODY, "italic"),
+                fg=THEME["text_dim"], bg=THEME["bg_main"]
+                ).pack(anchor="w")
+            return
+        tk.Label(self._review, text=i18n.tr("Review pool"),
+                 font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                 bg=THEME["bg_main"], fg=THEME["text_emph"]
+                 ).pack(anchor="w", pady=(8, 2))
+
+        # (8) KPI dashboard: one row of small cards.
+        kpi = ra.kpi_dashboard(phrases)
+        kpi_row = tk.Frame(self._review, bg=THEME["bg_main"])
+        kpi_row.pack(fill=tk.X)
+        kpi_items = [
+            (i18n.tr("Total"), f"{kpi['total']}"),
+            (i18n.tr("Due today"), f"{kpi['due_today']}"),
+            (i18n.tr("Overdue"), f"{kpi['overdue']}"),
+            (i18n.tr("Avg index"), f"{kpi['avg_index']:.1f}"),
+            (i18n.tr("Pass rate"),
+             f"{kpi['pass_rate']*100:.0f}%" if kpi['pass_rate'] is not None
+             else "—"),
+            (i18n.tr("Stubborn"), f"{kpi['stubborn']}"),
+        ]
+        for title, value in kpi_items:
+            card = tk.Frame(kpi_row, bg=THEME["bg_panel"], bd=1,
+                            highlightbackground=THEME["border"],
+                            highlightthickness=1)
+            card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True,
+                      padx=3, pady=4)
+            tk.Label(card, text=title,
+                     font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                     bg=THEME["bg_panel"], fg=THEME["text_dim"]
+                     ).pack(pady=(6, 0))
+            tk.Label(card, text=value,
+                     font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                     bg=THEME["bg_panel"], fg=THEME["text_emph"]
+                     ).pack(pady=(0, 6))
+
+        # (1) Index distribution bar chart + unscored column.
+        dist = ra.index_distribution(phrases)
+        counts = dist["counts"]
+        values = [float(counts.get(i, 0))
+                  for i in range(len(EBBINGHAUS_INTERVALS_DAYS))]
+        labels = [str(i) for i in range(len(EBBINGHAUS_INTERVALS_DAYS))]
+        if dist["unscored"]:
+            values.append(float(dist["unscored"]))
+            labels.append(i18n.tr("unscored"))
+        idx_chart = _CanvasChart(self._review, width=430, height=160)
+        idx_chart.canvas.pack(side=tk.LEFT, padx=8, pady=8)
+        idx_chart.draw_bars(values, labels,
+                            title=i18n.tr("Review stage distribution"))
+
+        # (2) Due schedule: 60-day cumulative line.
+        schedule = ra.due_schedule(phrases)
+        due_days = sorted(schedule["cumulative"].items())[:60]
+        cum_vals = [float(v) for _, v in due_days]
+        cum = _CanvasChart(self._review, width=430, height=160)
+        cum.canvas.pack(side=tk.RIGHT, padx=8, pady=8)
+        cum.draw_line(cum_vals,
+                      max_value=max(cum_vals or [1.0]),
+                      color=THEME["bad"],
+                      label=i18n.tr("Due load (next 60 days, cumulative)"))
+
+        # (3) Seen vs passed box plot (min/median/max per group).
+        seen = ra.seen_by_passed(phrases)
+        seen_chart = _CanvasChart(self._review, width=430, height=160)
+        seen_chart.canvas.pack(side=tk.LEFT, padx=8, pady=8)
+        self._draw_seen_box(seen_chart, seen)
+
+        # (4) Pool composition: per-source totals + pass rate.
+        comp = ra.source_composition(phrases)
+        comp_chart = _CanvasChart(self._review, width=430, height=160)
+        comp_chart.canvas.pack(side=tk.RIGHT, padx=8, pady=8)
+        self._draw_composition(comp_chart, comp)
+
+        # (5) Span vs index scatter.
+        spans = ra.span_vs_index(phrases)
+        span_chart = _CanvasChart(self._review, width=430, height=160)
+        span_chart.canvas.pack(side=tk.LEFT, padx=8, pady=8)
+        self._draw_span_scatter(span_chart, spans)
+
+        # (6) History trajectory line (avg index over time).
+        hist_chart = _CanvasChart(self._review, width=430, height=160)
+        hist_chart.canvas.pack(side=tk.RIGHT, padx=8, pady=8)
+        hist_vals = [float(h.get("avg_index") or 0) for h in history]
+        hist_chart.draw_line(
+            hist_vals,
+            max_value=max(hist_vals or [1.0]),
+            color=THEME["info"],
+            label=i18n.tr("Avg interval index over time"))
+
+        # (7) Overdue list: table of the most overdue phrases.
+        overdue = ra.overdue_list(phrases)
+        tk.Label(self._review, text=i18n.tr("Overdue phrases"),
+                 font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"),
+                 bg=THEME["bg_main"], fg=THEME["text_emph"]
+                 ).pack(anchor="w", pady=(8, 2))
+        if not overdue:
+            tk.Label(self._review,
+                     text=i18n.tr("Nothing is overdue. Nice!"),
+                     font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                     fg=THEME["text_dim"], bg=THEME["bg_main"]
+                     ).pack(anchor="w")
+        else:
+            for item in overdue[:12]:
+                row = tk.Frame(self._review, bg=THEME["bg_panel"], bd=0)
+                row.pack(fill=tk.X, pady=1)
+                text = (f"{item.get('phrase', '?')}  ·  "
+                        f"{i18n.tr('{days}d overdue',
+                                   days=item.get('overdue_days', 0))}")
+                tk.Label(row, text=text, anchor="w",
+                         font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                         fg=THEME["text_emph"], bg=THEME["bg_panel"]
+                         ).pack(fill=tk.X, padx=6, pady=2)
+
+    def _draw_seen_box(self, chart, seen: Dict[str, List[int]]) -> None:
+        """Min/median/max 'seen' box for passed vs failed phrases."""
+        c = chart.canvas
+        c.delete("all")
+        pad_l, pad_r, pad_t, pad_b = 40, 8, 12, 28
+        plot_w = chart._width - pad_l - pad_r
+        plot_h = chart._height - pad_t - pad_b
+        groups = [("passed", seen.get("passed", []), THEME["good"]),
+                  ("failed", seen.get("failed", []), THEME["bad"])]
+        max_seen = max([max(v or [0]) for _, v, _ in groups] or [0])
+        max_seen = max(max_seen, 1)
+        for gi, (name, values, color) in enumerate(groups):
+            cx = pad_l + plot_w * (gi + 0.5) / len(groups)
+            if values:
+                lo, hi = min(values), max(values)
+                med = sorted(values)[len(values) // 2]
+                y_lo = pad_t + plot_h * (1 - lo / max_seen)
+                y_hi = pad_t + plot_h * (1 - hi / max_seen)
+                y_med = pad_t + plot_h * (1 - med / max_seen)
+                c.create_rectangle(cx - 14, y_hi, cx + 14, y_lo,
+                                   fill=color, outline=THEME["border"])
+                c.create_line(cx - 14, y_med, cx + 14, y_med,
+                              fill=THEME["text_emph"], width=2)
+            c.create_text(cx, pad_t + plot_h + 4, text=name, anchor="n",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        c.create_text(pad_l, 6, text=i18n.tr("Seen count by last result"),
+                      anchor="nw", fill=THEME["text_emph"],
+                      font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def _draw_composition(self, chart, comp: Dict[str, Any]) -> None:
+        """Per-source stacked bars (total + pass-rate labels)."""
+        c = chart.canvas
+        c.delete("all")
+        pad_l, pad_r, pad_t, pad_b = 40, 8, 12, 28
+        plot_w = chart._width - pad_l - pad_r
+        plot_h = chart._height - pad_t - pad_b
+        sources = [s for s in ("practice", "llm") if s in comp["totals"]]
+        if not sources:
+            return
+        totals = [comp["totals"][s] for s in sources]
+        max_t = max(totals + [1])
+        for i, s in enumerate(sources):
+            cx = pad_l + plot_w * (i + 0.5) / len(sources)
+            v = comp["totals"][s]
+            y = pad_t + plot_h * (1 - v / max_t)
+            c.create_rectangle(cx - 22, y, cx + 22, pad_t + plot_h,
+                               fill=THEME["info"], outline="")
+            rate = comp["pass_rate"].get(s)
+            rate_text = (f"{rate*100:.0f}%" if rate is not None else "—")
+            c.create_text(cx, y - 4, text=f"{v} ({rate_text})", anchor="s",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+            c.create_text(cx, pad_t + plot_h + 4, text=s, anchor="n",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        c.create_text(pad_l, 6, text=i18n.tr("Pool by source (total / pass %)"),
+                      anchor="nw", fill=THEME["text_emph"],
+                      font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def _draw_span_scatter(self, chart,
+                           spans: List[Tuple[int, int, bool, int]]) -> None:
+        """Scatter of span_days (x) vs interval index (y)."""
+        c = chart.canvas
+        c.delete("all")
+        pad_l, pad_r, pad_t, pad_b = 40, 8, 12, 28
+        plot_w = chart._width - pad_l - pad_r
+        plot_h = chart._height - pad_t - pad_b
+        if not spans:
+            c.create_text(chart._width / 2, chart._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        max_x = max(s[0] for s in spans) or 1
+        max_y = max(s[1] for s in spans) or 1
+        for span, idx, passed, _seen in spans:
+            x = pad_l + plot_w * span / max_x
+            y = pad_t + plot_h * (1 - idx / max_y)
+            c.create_oval(x - 3, y - 3, x + 3, y + 3,
+                          fill=THEME["good"] if passed else THEME["bad"],
+                          outline="")
+        c.create_text(pad_l, 6, text=i18n.tr("Span (days) vs interval index"),
+                      anchor="nw", fill=THEME["text_emph"],
+                      font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
 
     def _render_recent(self, sessions: List[Dict]) -> None:
         for child in self._recent.winfo_children():

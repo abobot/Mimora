@@ -341,6 +341,29 @@ _ZH: Dict[str, str] = {
     "{days}d {rem_h}h": "{days} 天 {rem_h} 小时",
 
     # ------------------------------------------------------------------
+    # Review-pool analysis (ui_stats.py _render_review)
+    # ------------------------------------------------------------------
+    "No review data yet. Review is off, or nothing is tracked yet.":
+        "暂无复习数据。复习未启用，或尚无任何记录。",
+    "Review pool": "复习池",
+    "Total": "总计",
+    "Due today": "今日到期",
+    "Overdue": "已逾期",
+    "Avg index": "平均阶段",
+    "Pass rate": "通过率",
+    "Stubborn": "钉子户",
+    "unscored": "未评分",
+    "Review stage distribution": "复习阶段分布",
+    "Due load (next 60 days, cumulative)": "未来 60 天到期负荷（累计）",
+    "Seen count by last result": "按最近结果分组的已见次数",
+    "Pool by source (total / pass %)": "按来源分池（总数 / 通过%）",
+    "Span (days) vs interval index": "跨度（天）对阶段索引",
+    "Avg interval index over time": "平均阶段索引随时间变化",
+    "Overdue phrases": "逾期短语",
+    "Nothing is overdue. Nice!": "没有逾期，很好！",
+    "{days}d overdue": "逾期 {days} 天",
+
+    # ------------------------------------------------------------------
     # Weakness panel (ui_weakness.py)
     # ------------------------------------------------------------------
     "Pronunciation weakness": "发音薄弱项",
