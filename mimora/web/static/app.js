@@ -1341,8 +1341,16 @@ function renderActivityHeatmap(container, activity, ym) {
       const d = new Date(gridStart.getTime() + (w * 7 + r) * dayMs);
       const key = keyOf(d);
       const inMonth2 = d.getFullYear() === year && d.getMonth() === month - 1;
-      const secs = inMonth2 ? (byDate.get(key) || 0) : 0;
       const cell = document.createElement("div");
+      // A day spilling in from the adjacent month is invisible but still
+      // occupies its grid slot, so the week columns stay aligned (the grid
+      // flows column by column; removing a cell would shift the rest).
+      if (!inMonth2) {
+        cell.className = "gh-cell gh-empty";
+        grid.appendChild(cell);
+        continue;
+      }
+      const secs = byDate.get(key) || 0;
       const lvl = levelFor(secs);
       cell.className = "gh-cell lv" + lvl;
       cell.title = `${key} — ${fmtSec(secs)}`;

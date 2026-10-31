@@ -166,7 +166,9 @@ and stay in the user data directory across upgrades.
   Instead of a fixed "last 28 days" window the heatmap now shows **one
   calendar month at a time** and the ‹ Prev / Next › arrows (both platforms)
   move between months; the green scale is recomputed per month from that
-  month's own practice days.
+  month's own practice days. Only the month's own days are drawn — cells that
+  spill in from the adjacent month are left blank, so the calendar never shows
+  another month's days.
 
 ### Fixed
 

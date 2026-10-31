@@ -219,9 +219,9 @@ class HeatmapMonthLayoutTest(unittest.TestCase):
 
     def test_month_with_practice_sets_levels_only_in_month(self):
         # Practice on the 1st (300s) and the 15th (600s); days spilling in
-        # from October are level 0 even though the 1st-of-month week starts
-        # in October. Quantiles of [300, 600] put 300 at level 1 (just above
-        # the lightest green) and 600 at level 4 (the max).
+        # from October are left EMPTY (level -1) even though the 1st-of-month
+        # week starts in October. Quantiles of [300, 600] put 300 at level 1
+        # (just above the lightest green) and 600 at level 4 (the max).
         from mimora.ui_stats import heatmap_month_layout
         from datetime import date
         day_sec = {
@@ -234,9 +234,24 @@ class HeatmapMonthLayoutTest(unittest.TestCase):
         self.assertEqual(by_pos[(0, 6)], 1)
         # 2026-11-15 is a Sunday -> row 6 of week 2 (Mon 11-09).
         self.assertEqual(by_pos[(2, 6)], 4)
-        # The spill days (Oct 26-31, row 0-5 of week 0) are level 0.
+        # The spill days (Oct 26-31, row 0-5 of week 0) are empty (-1).
         for row in range(0, 6):
-            self.assertEqual(by_pos[(0, row)], 0, f"week 0 row {row}")
+            self.assertEqual(by_pos[(0, row)], -1, f"week 0 row {row}")
+        # An in-month day with no practice is level 0.
+        # Week 1 row 0 = Mon 2026-11-02, an in-month empty day.
+        self.assertEqual(by_pos[(1, 0)], 0)
+
+    def test_spill_cells_are_negative_for_any_month(self):
+        # The last week of November 2026 ends on Sun 2026-12-06, so Dec 1-6
+        # spill out of the month and must be empty (-1).
+        from mimora.ui_stats import heatmap_month_layout
+        from datetime import date
+        layout = heatmap_month_layout({}, date(2026, 11, 15))
+        by_pos = {(week, row): lvl for week, row, lvl in layout["cells"]}
+        # Dec 1 2026 is a Tuesday -> row 1 of week 5.
+        self.assertEqual(by_pos[(5, 1)], -1)
+        # Dec 6 2026 is a Sunday -> row 6 of week 5.
+        self.assertEqual(by_pos[(5, 6)], -1)
 
     def test_empty_month_still_draws_grid(self):
         # An empty month still yields cells (all level 0), so the calendar
@@ -245,7 +260,10 @@ class HeatmapMonthLayoutTest(unittest.TestCase):
         from datetime import date
         layout = heatmap_month_layout({}, date(2026, 11, 15))
         self.assertTrue(layout["cells"])
-        self.assertTrue(all(lvl == 0 for _, _, lvl in layout["cells"]))
+        # In-month days are 0; spill days are -1.
+        in_month = [lvl for _, _, lvl in layout["cells"] if lvl >= 0]
+        self.assertTrue(in_month)
+        self.assertTrue(all(lvl == 0 for lvl in in_month))
 
     def test_february_leap_year_has_five_weeks(self):
         # Feb 2028 (leap, 29 days) starts on a Tuesday. The grid anchors to

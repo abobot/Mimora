@@ -294,6 +294,10 @@ class _CanvasChart:
         for week, row, lvl in cells:
             x = grid_x + week * (cell + gap)
             y = grid_y + row * (cell + gap)
+            if lvl < 0:
+                # A day outside the displayed month: leave the cell empty so
+                # the calendar shows only the month's own days.
+                continue
             fill = GITHUB_HEATMAP_LEVELS[lvl]
             c.create_rectangle(x, y, x + cell, y + cell,
                                fill=fill, outline=fill)
@@ -381,12 +385,15 @@ def heatmap_month_layout(day_seconds: Dict[str, int],
     any date in the month (only its year and month matter). The grid is a
     calendar of that month: one **column per week**, rows Mon-Sun, anchored
     to the Monday of the week containing the 1st. Days that spill into the
-    week from the adjacent month are level 0 (no practice). The green scale
-    is quantiles of the month's non-zero days, so each month is scaled
-    independently.
+    week from the adjacent month are **left empty** (level ``-1``, so the
+    renderer draws nothing there — the month shows only its own days). The
+    green scale is quantiles of the month's non-zero days, so each month is
+    scaled independently.
 
     Returns a dict with ``n_weeks`` (int), ``grid_start`` (date) and
-    ``cells`` (list of ``(week, row, level)`` tuples, level 0-4).
+    ``cells`` (list of ``(week, row, level)`` tuples). ``level`` is ``-1``
+    for a day outside the month, ``0`` for an in-month day with no practice,
+    and 1-4 on the green scale otherwise.
     """
     first = month.replace(day=1)
     if first.month == 12:
@@ -425,9 +432,10 @@ def heatmap_month_layout(day_seconds: Dict[str, int],
             d = grid_start + timedelta(days=week * 7 + row)
             if first <= d <= last:
                 v = day_seconds.get(d.strftime("%Y-%m-%d"), 0)
+                cells.append((week, row, level(v)))
             else:
-                v = 0  # spill from the adjacent month
-            cells.append((week, row, level(v)))
+                # Spill from the adjacent month: render nothing.
+                cells.append((week, row, -1))
     return {"n_weeks": n_weeks, "grid_start": grid_start, "cells": cells}
 
 

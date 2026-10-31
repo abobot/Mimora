@@ -420,6 +420,11 @@ body {
   align-items: center;
   justify-content: center;
 }
+/* A cell for a day outside the displayed month: invisible but still taking
+   up its grid slot so the week columns stay aligned. */
+.gh-heatmap .gh-cell.gh-empty {
+  background: transparent;
+}
 .gh-heatmap .gh-cell.lv1 { background: #0e4429; }
 .gh-heatmap .gh-cell.lv2 { background: #006d32; }
 .gh-heatmap .gh-cell.lv3 { background: #26a641; }
