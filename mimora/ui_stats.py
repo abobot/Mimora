@@ -496,18 +496,39 @@ class StatsView:
         ttk.Button(btns, text=i18n.tr("Close"),
                    command=self._window.destroy).pack(side=tk.LEFT, padx=2)
 
+        # The window is taller than the viewport once every section is
+        # rendered (cards, two charts, the heatmap, the duration table and
+        # the recent-sessions list), so the body scrolls vertically. The
+        # header row stays fixed; everything below lives on a canvas-backed
+        # scrollable frame. Without this the bottom tables fell off the
+        # bottom edge of the window.
+        body = tk.Frame(self._window, bg=THEME["bg_main"])
+        body.pack(fill=tk.BOTH, expand=True)
+        self._body_canvas = tk.Canvas(body, bg=THEME["bg_main"],
+                                      highlightthickness=0)
+        vbar = ttk.Scrollbar(body, orient=tk.VERTICAL,
+                             command=self._body_canvas.yview)
+        self._body_canvas.configure(yscrollcommand=vbar.set)
+        vbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._body_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._content = tk.Frame(self._body_canvas, bg=THEME["bg_main"])
+        self._content_id = self._body_canvas.create_window(
+            (0, 0), window=self._content, anchor="nw")
+        self._content.bind("<Configure>", self._on_content_configure)
+        self._body_canvas.bind("<Configure>", self._on_canvas_configure)
+
         # Summary cards.
-        self._cards = tk.Frame(self._window, bg=THEME["bg_main"])
+        self._cards = tk.Frame(self._content, bg=THEME["bg_main"])
         self._cards.pack(fill=tk.X, padx=16, pady=4)
 
         # Charts area.
-        self._charts = tk.Frame(self._window, bg=THEME["bg_main"])
-        self._charts.pack(fill=tk.BOTH, expand=True, padx=16, pady=8)
+        self._charts = tk.Frame(self._content, bg=THEME["bg_main"])
+        self._charts.pack(fill=tk.X, padx=16, pady=8)
 
         # Activity heatmap (calendar of practice minutes) - second chart row.
         # A header holds the prev/next month arrows and the month title; the
         # heatmap itself is redrawn in place when the month changes.
-        activity_head = tk.Frame(self._window, bg=THEME["bg_main"])
+        activity_head = tk.Frame(self._content, bg=THEME["bg_main"])
         activity_head.pack(fill=tk.X, padx=16, pady=(4, 0))
         ttk.Button(activity_head, text=i18n.tr("‹ Prev"),
                    command=self._heatmap_prev_month).pack(side=tk.LEFT)
@@ -519,16 +540,27 @@ class StatsView:
         ttk.Button(activity_head, text=i18n.tr("Next ›"),
                    command=self._heatmap_next_month).pack(side=tk.LEFT)
 
-        self._activity = tk.Frame(self._window, bg=THEME["bg_main"])
+        self._activity = tk.Frame(self._content, bg=THEME["bg_main"])
         self._activity.pack(fill=tk.X, padx=16, pady=4)
 
         # Practice-duration table (per day).
-        self._duration = tk.Frame(self._window, bg=THEME["bg_main"])
+        self._duration = tk.Frame(self._content, bg=THEME["bg_main"])
         self._duration.pack(fill=tk.X, padx=16, pady=4)
 
         # Recent sessions list.
-        self._recent = tk.Frame(self._window, bg=THEME["bg_main"])
+        self._recent = tk.Frame(self._content, bg=THEME["bg_main"])
         self._recent.pack(fill=tk.X, padx=16, pady=(0, 12))
+
+    def _on_content_configure(self, _event=None) -> None:
+        """Keep the scrollable content width matched to the canvas."""
+        self._body_canvas.configure(
+            scrollregion=self._body_canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event) -> None:
+        """Stretch the content window to the canvas width (no horizontal
+        scroll), so every section spans the full available width."""
+        self._body_canvas.itemconfigure(self._content_id,
+                                        width=event.width)
 
     def refresh(self) -> None:
         data = self._cb.load_data()

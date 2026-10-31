@@ -93,6 +93,27 @@ class ExportReportButtonsTest(unittest.TestCase):
         self.assertTrue(hasattr(self.view, "_activity"))
         self.assertTrue(hasattr(self.view, "_duration"))
 
+    def test_body_scrolls_so_bottom_tables_are_reachable(self):
+        # The dashboard stacks more content than a 900x640 window fits, so the
+        # body lives on a scrollable canvas; without this the duration table
+        # and recent-sessions list fall off the bottom edge and are never
+        # visible (the reported bug). The canvas must exist, be scrollable
+        # (a yscrollcommand is wired to a scrollbar), and its scroll region
+        # must extend below the viewport so the bottom sections are reachable.
+        import tkinter as tk
+        self.assertIsInstance(self.view._body_canvas, tk.Canvas)
+        self.assertIsNotNone(self.view._body_canvas.cget("yscrollcommand"))
+        self.view._window.update_idletasks()
+        region = self.view._body_canvas.cget("scrollregion")
+        # "x0 y0 x1 y1" — the region's bottom edge must exceed the canvas
+        # height, meaning the content is taller than the viewport and the
+        # user can scroll to reveal the bottom tables.
+        if region:
+            x0, y0, x1, y1 = (float(v) for v in region.split())
+            height = self.view._body_canvas.winfo_height()
+            self.assertGreater(y1, height,
+                               "content taller than viewport; scroll needed")
+
 
 class NoReportButtonsWithoutHandlersTest(unittest.TestCase):
     @classmethod

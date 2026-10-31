@@ -175,6 +175,11 @@ and stay in the user data directory across upgrades.
 
 ### Fixed
 
+- **Stats dashboard: bottom tables are no longer cut off.** The practice
+  duration table and the recent-sessions list sat below the fixed 640px window
+  with no way to reach them. The dashboard body now lives on a vertically
+  scrollable canvas (header stays fixed), so every section is reachable.
+
 - **Startup crash on Windows: a full OpenBLAS thread pool segfaulted the
   process.** With one OpenBLAS thread per core (16 on a 16-core machine) the
   Wav2Vec2 recognizer crashed `torch_cpu.dll` with a native access violation
