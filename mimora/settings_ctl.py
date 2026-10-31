@@ -48,6 +48,9 @@ LIVE_CONFIG_ATTRS = {
     "native_language": ("NATIVE_LANGUAGE", str),
     "drill_pass_threshold": ("DRILL_PASS_THRESHOLD", float),
     "drill_max_attempts": ("DRILL_MAX_ATTEMPTS", int),
+    "dictation_pass_threshold": ("DICTATION_PASS_THRESHOLD", float),
+    "dictation_max_attempts": ("DICTATION_MAX_ATTEMPTS", int),
+    "dictation_streak_target": ("DICTATION_STREAK_TARGET", int),
     # Fluency axis + pass gate (P0#2/P0#3). All apply live: the axis is read at
     # analysis time and the gate at feedback time, so a toggle takes effect on
     # the next take without a restart.

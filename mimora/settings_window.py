@@ -445,6 +445,14 @@ def build_sections() -> tuple:
                   minimum=1, maximum=100,
                   help=i18n.tr("How many sentences one dictation session runs before "
                                "it reports done.")),
+            Field("dictation_streak_target",
+                  i18n.tr("Consecutive passes to master"), "number",
+                  lambda: config.user_setting("dictation_streak_target",
+                                              config.DICTATION_STREAK_TARGET),
+                  minimum=1, maximum=100,
+                  help=i18n.tr("Consecutive passes needed to mark a dictation "
+                               "session 'mastered'. Also long-pressable on the "
+                               "streak label inside the dictation window.")),
             Field("dictation_random_order",
                   i18n.tr("Random order for dictation sentences"), "bool",
                   lambda: config.user_setting("dictation_random_order",

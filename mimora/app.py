@@ -1417,6 +1417,7 @@ class PronunciationTrainerGUI:
                 get_practice_text=self._get_source_text,
                 on_source_changed=lambda text: engine.set_source_text(text),
                 on_max_attempts_changed=self._dictation_max_attempts_changed,
+                on_streak_target_changed=self._dictation_streak_target_changed,
             ), engine=engine))
 
     def _dictation_max_attempts_changed(self, limit: int) -> None:
@@ -1433,6 +1434,23 @@ class PronunciationTrainerGUI:
         engine = self._dictation_engine
         if engine is not None:
             engine.max_attempts = limit
+        if self._dictation_view is not None:
+            self._dictation_view._refresh_progress_label()
+
+    def _dictation_streak_target_changed(self, target: int) -> None:
+        """Persist a new consecutive-pass target and apply it live.
+
+        The long-press popup on the streak label offers -1/+1 around the
+        current target; this writes the choice to settings.json (so the next
+        dictation session starts with it) and updates the running engine's
+        required streak in place, then refreshes the streak read-out.
+        """
+        target = max(1, min(100, int(target)))
+        self.settings_ctl.persist("dictation_streak_target", target)
+        config.DICTATION_STREAK_TARGET = target
+        engine = self._dictation_engine
+        if engine is not None:
+            engine.mastered_streak_required = target
         if self._dictation_view is not None:
             self._dictation_view._refresh_progress_label()
 

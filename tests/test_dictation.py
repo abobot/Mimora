@@ -8,7 +8,9 @@ the storage-dict shape. Runs with the fast suite - no Tk, no engine load.
 """
 
 import unittest
+from unittest import mock
 
+from mimora import config
 from mimora.dictation.engine import DictationEngine
 from mimora.dictation.scoring import (
     compare_sentences,
@@ -150,6 +152,29 @@ class EngineTest(unittest.TestCase):
         self.assertTrue(engine.mastered)
         engine.record_attempt("y", "y", 50)
         self.assertEqual(engine.mastered_streak(), 0)
+
+    def test_streak_required_reads_config_by_default(self):
+        # The long-pressable streak label persists a target; a fresh engine
+        # must pick it up from config rather than a hardcoded 3.
+        with mock.patch.object(config, "DICTATION_STREAK_TARGET", 5):
+            engine = DictationEngine(source_text="A. B. C.")
+            self.assertEqual(engine.mastered_streak_required, 5)
+            engine.record_attempt("a", "a", 90)
+            engine.record_attempt("b", "b", 90)
+            engine.record_attempt("c", "c", 90)
+            engine.record_attempt("d", "d", 90)
+            self.assertFalse(engine.mastered)  # 4 < 5
+            engine.record_attempt("e", "e", 90)
+            self.assertTrue(engine.mastered)   # 5 >= 5
+
+    def test_streak_required_can_be_overridden_per_session(self):
+        engine = DictationEngine(source_text="A. B. C.",
+                                 mastered_streak_required=2)
+        self.assertEqual(engine.mastered_streak_required, 2)
+        engine.record_attempt("a", "a", 90)
+        self.assertFalse(engine.mastered)
+        engine.record_attempt("b", "b", 90)
+        self.assertTrue(engine.mastered)
 
     def test_done_when_max_attempts_reached(self):
         engine = DictationEngine(pass_threshold=95.0, max_attempts=3,

@@ -104,6 +104,9 @@ class DictationCallbacks:
     on_source_changed: Callable[[str], None]
     # Change the per-session sentence limit (persisted by the controller).
     on_max_attempts_changed: Callable[[int], None]
+    # Change the consecutive-pass target for "mastered" (persisted by the
+    # controller; long-press the streak label in the view).
+    on_streak_target_changed: Callable[[int], None]
 
 
 class DictationView:
@@ -196,10 +199,17 @@ class DictationView:
         self._progress_popup_catcher: Optional[tk.Toplevel] = None
         self._bind_progress_long_press(progress_label)
         self._streak_var = tk.StringVar(value="")
-        tk.Label(progress, textvariable=self._streak_var,
-                 font=(FONT_FAMILY, FONT_SIZE_CAPTION),
-                 bg=THEME["bg_main"], fg=THEME["good"]
-                 ).pack(side=tk.RIGHT)
+        self._streak_popup: Optional[tk.Toplevel] = None
+        self._streak_popup_catcher: Optional[tk.Toplevel] = None
+        self._streak_long_press_after = None
+        self._streak_long_press_fired = False
+        streak_label = tk.Label(progress, textvariable=self._streak_var,
+                                font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                                bg=THEME["bg_main"], fg=THEME["good"],
+                                cursor="hand2")
+        streak_label.pack(side=tk.RIGHT)
+        self._streak_label = streak_label
+        self._bind_streak_long_press(streak_label)
 
         # Playback + hint/show area (the reference is never shown until checked).
         play_frame = tk.Frame(self._window, bg=THEME["bg_main"])
@@ -497,6 +507,135 @@ class DictationView:
                     pass
         self._progress_popup = None
         self._progress_popup_catcher = None
+
+    # ------------------------------------------------------------------
+    # Long-press on the streak label: change the consecutive-pass target
+    # ------------------------------------------------------------------
+
+    def _bind_streak_long_press(self, widget) -> None:
+        """Long-press the streak label to open the target popup."""
+        widget.bind("<ButtonPress-1>", self._on_streak_press, add="+")
+        widget.bind("<ButtonRelease-1>", self._on_streak_release, add="+")
+        widget.bind("<Leave>", self._on_streak_leave, add="+")
+
+    def _on_streak_press(self, event):
+        self._streak_long_press_fired = False
+        if self._streak_long_press_after is not None:
+            try:
+                self._window.after_cancel(self._streak_long_press_after)
+            except tk.TclError:
+                pass
+            self._streak_long_press_after = None
+        self._streak_long_press_after = self._window.after(
+            450, self._fire_streak_long_press)
+        return None
+
+    def _on_streak_release(self, event):
+        if self._streak_long_press_after is not None:
+            try:
+                self._window.after_cancel(self._streak_long_press_after)
+            except tk.TclError:
+                pass
+            self._streak_long_press_after = None
+        self._streak_long_press_fired = False
+        return None
+
+    def _on_streak_leave(self, event):
+        if self._streak_long_press_after is not None:
+            try:
+                self._window.after_cancel(self._streak_long_press_after)
+            except tk.TclError:
+                pass
+            self._streak_long_press_after = None
+        return None
+
+    def _fire_streak_long_press(self):
+        self._streak_long_press_after = None
+        if self._streak_long_press_fired:
+            return
+        self._streak_long_press_fired = True
+        self._open_streak_popup()
+
+    def _open_streak_popup(self) -> None:
+        """Non-modal popup to adjust the consecutive-pass target."""
+        self._dismiss_streak_popup()
+        x = self._streak_label.winfo_rootx()
+        y = self._streak_label.winfo_rooty() + self._streak_label.winfo_height()
+        popup = tk.Toplevel(self._window)
+        catcher = tk.Toplevel(self._window)
+        popup.overrideredirect(True)
+        catcher.overrideredirect(True)
+        catcher.attributes("-alpha", 0.01)
+        catcher.geometry(f"{self._window.winfo_screenwidth()}x"
+                         f"{self._window.winfo_screenheight()}+0+0")
+        catcher.lower()
+        popup.configure(bg=THEME["bg_panel"], highlightthickness=1,
+                        highlightbackground=THEME["border"])
+        popup.geometry(f"+{x}+{y}")
+        popup.transient(self._window)
+        catcher.bind("<ButtonPress-1>", lambda e: self._dismiss_streak_popup())
+        popup.bind("<Escape>", lambda e: self._dismiss_streak_popup())
+
+        target = int(self.engine.mastered_streak_required)
+        tk.Label(popup, text=i18n.tr("Consecutive passes to master"),
+                 font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                 bg=THEME["bg_panel"], fg=THEME["text_dim"]).pack(
+            side=tk.TOP, anchor=tk.W, padx=12, pady=(8, 2))
+        state = {"target": target}
+
+        def _set_target(value: int) -> None:
+            state["target"] = max(1, min(100, value))
+
+        def _rebuild_label() -> None:
+            value_label.config(text=f"{state['target']}")
+
+        value_label = tk.Label(popup, text=f"{state['target']}",
+                               font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                               bg=THEME["bg_panel"], fg=THEME["text_emph"])
+        value_label.pack(side=tk.TOP, pady=(0, 4))
+
+        row = tk.Frame(popup, bg=THEME["bg_panel"])
+        row.pack(side=tk.TOP, padx=12, pady=(0, 4))
+        FlatButton(row, text="-1", command=lambda: (_set_target(state["target"] - 1),
+                                                    _rebuild_label()),
+                   font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_button"],
+                   fg=THEME["text_button"],
+                   activebackground=THEME["bg_button_active"],
+                   activeforeground=THEME["text"],
+                   bd=0, padx=10, pady=2, cursor="hand2").pack(side=tk.LEFT, padx=2)
+        FlatButton(row, text="+1", command=lambda: (_set_target(state["target"] + 1),
+                                                    _rebuild_label()),
+                   font=(FONT_FAMILY, FONT_SIZE_SMALL), bg=THEME["bg_button"],
+                   fg=THEME["text_button"],
+                   activebackground=THEME["bg_button_active"],
+                   activeforeground=THEME["text"],
+                   bd=0, padx=10, pady=2, cursor="hand2").pack(side=tk.LEFT, padx=2)
+
+        def _apply() -> None:
+            self._dismiss_streak_popup()
+            self._cb.on_streak_target_changed(state["target"])
+
+        FlatButton(popup, text=i18n.tr("Apply"), command=_apply,
+                   font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"), bg=THEME["bg_accent"],
+                   fg=THEME["text_accent"],
+                   activebackground=THEME["bg_accent_active"],
+                   activeforeground=THEME["text_bright"],
+                   bd=0, padx=14, pady=3, cursor="hand2").pack(
+            side=tk.TOP, pady=(0, 8))
+
+        self._streak_popup = popup
+        self._streak_popup_catcher = catcher
+        popup.lift()
+
+    def _dismiss_streak_popup(self) -> None:
+        for w in (self._streak_popup_catcher, self._streak_popup):
+            if w is not None:
+                try:
+                    w.destroy()
+                except tk.TclError:
+                    pass
+        self._streak_popup = None
+        self._streak_popup_catcher = None
 
     def _advance_phrase(self) -> None:
         """Advance to the next sentence, clearing input and hiding the answer."""

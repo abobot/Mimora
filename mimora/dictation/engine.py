@@ -104,8 +104,11 @@ class DictationEngine:
         default_factory=lambda: config.DICTATION_PASS_THRESHOLD)
     max_attempts: int = field(
         default_factory=lambda: config.DICTATION_MAX_ATTEMPTS)
-    # Consecutive passes needed to declare the session "mastered".
-    mastered_streak_required: int = 3
+    # Consecutive passes needed to declare the session "mastered". Read from
+    # config by default so the long-pressable streak label and the settings
+    # window stay in sync; a caller can still override it per session.
+    mastered_streak_required: int = field(
+        default_factory=lambda: config.DICTATION_STREAK_TARGET)
     # Pick a random sentence instead of cycling in order (no immediate
     # repeat). Mirrors ``SourceTextPhraseProvider(random_order=...)``.
     random_order: bool = False

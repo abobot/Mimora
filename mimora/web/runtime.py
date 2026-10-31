@@ -430,6 +430,7 @@ class WebRuntime:
             "drill_max_attempts": config.DRILL_MAX_ATTEMPTS,
             "dictation_pass_threshold": config.DICTATION_PASS_THRESHOLD,
             "dictation_max_attempts": config.DICTATION_MAX_ATTEMPTS,
+            "dictation_streak_target": config.DICTATION_STREAK_TARGET,
             "dictation_random_order": config.DICTATION_RANDOM_ORDER,
             "dictation_review_enabled": config.DICTATION_REVIEW_ENABLED,
             "restart_required_keys": sorted(_RESTART_REQUIRED_KEYS),

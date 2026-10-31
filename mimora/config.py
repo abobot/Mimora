@@ -125,6 +125,7 @@ _KNOWN_USER_KEYS = {
     "drill_max_attempts",
     "dictation_pass_threshold",
     "dictation_max_attempts",
+    "dictation_streak_target",
     "dictation_random_order",
     "dictation_review_enabled",
     # UI localization: the interface language (independent of the practice
@@ -205,6 +206,7 @@ USER_SETTING_DEFAULTS = {
     "drill_max_attempts": 10,
     "dictation_pass_threshold": 80.0,
     "dictation_max_attempts": 10,
+    "dictation_streak_target": 3,
     "dictation_random_order": False,
     "dictation_review_enabled": False,
     # UI language. English is the default; Chinese ("zh") is the first
@@ -1442,6 +1444,12 @@ DICTATION_PASS_THRESHOLD = _num("dictation_pass_threshold", 80.0,
 # How many attempts a dictation session runs before it reports done.
 DICTATION_MAX_ATTEMPTS = _num("dictation_max_attempts", 10,
                               minimum=1, maximum=100)
+
+# Consecutive passes needed to declare a dictation session "mastered". The
+# streak label in the dictation view is long-pressable to change this; the
+# choice is persisted ("dictation_streak_target") so it holds across sessions.
+DICTATION_STREAK_TARGET = _num("dictation_streak_target", 3,
+                               minimum=1, maximum=100)
 
 # Pick dictation sentences at random instead of cycling in order
 # ("dictation_random_order"). False (the default) keeps the historical

@@ -147,6 +147,12 @@ and stay in the user data directory across upgrades.
   subset of the wrong words (`spelling_errors`), so the finished report and the
   history browser can focus on the words the user actually wrote wrong rather
   than the ones they omitted.
+- **Consecutive-pass target for dictation is now user-configurable.** The
+  number of consecutive passes that marks a dictation session "mastered" (3 by
+  default) can be changed by long-pressing the 🔥 streak label inside the
+  dictation window, or in the settings window under Dictation. The choice is
+  persisted (`dictation_streak_target`) and applied live to the running
+  session, so it holds across sessions and restarts.
 
 ### Fixed
 

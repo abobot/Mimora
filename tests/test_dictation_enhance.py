@@ -90,6 +90,56 @@ class MaxAttemptsChangedTests(unittest.TestCase):
             "dictation_max_attempts", 1)
 
 
+class StreakTargetChangedTests(unittest.TestCase):
+    """_dictation_streak_target_changed persists and applies live."""
+
+    def setUp(self):
+        from mimora.app import PronunciationTrainerGUI
+        self.c = PronunciationTrainerGUI.__new__(PronunciationTrainerGUI)
+        self.c.settings_ctl = mock.MagicMock()
+        self._orig = config.DICTATION_STREAK_TARGET
+
+    def tearDown(self):
+        config.DICTATION_STREAK_TARGET = self._orig
+
+    def test_persists_target(self):
+        engine = mock.MagicMock()
+        engine.mastered_streak_required = 3
+        self.c._dictation_engine = engine
+        self.c._dictation_view = None
+        self.c._dictation_streak_target_changed(5)
+        self.c.settings_ctl.persist.assert_called_once_with(
+            "dictation_streak_target", 5)
+        self.assertEqual(config.DICTATION_STREAK_TARGET, 5)
+        self.assertEqual(engine.mastered_streak_required, 5)
+
+    def test_applies_to_engine_only_when_session_open(self):
+        # No active dictation session: persist + config, no engine to touch.
+        self.c._dictation_engine = None
+        self.c._dictation_view = None
+        self.c._dictation_streak_target_changed(4)
+        self.c.settings_ctl.persist.assert_called_once_with(
+            "dictation_streak_target", 4)
+        self.assertEqual(config.DICTATION_STREAK_TARGET, 4)
+
+    def test_clamps_out_of_range(self):
+        self.c._dictation_engine = None
+        self.c._dictation_view = None
+        self.c._dictation_streak_target_changed(500)
+        self.c.settings_ctl.persist.assert_called_once_with(
+            "dictation_streak_target", 100)
+        self.c._dictation_streak_target_changed(0)
+        self.c.settings_ctl.persist.assert_called_with(
+            "dictation_streak_target", 1)
+
+    def test_refreshes_view(self):
+        self.c._dictation_engine = None
+        view = mock.MagicMock()
+        self.c._dictation_view = view
+        self.c._dictation_streak_target_changed(6)
+        view._refresh_progress_label.assert_called_once()
+
+
 class AutoPlayTests(unittest.TestCase):
     """Switching sentences auto-plays the new sentence (listen-and-repeat)."""
 
@@ -198,6 +248,81 @@ class ProgressLongPressPopupTest(unittest.TestCase):
         # Here we assert the popup dismisses and the callback is reachable.
         v._cb.on_max_attempts_changed(12)
         v._cb.on_max_attempts_changed.assert_called_once_with(12)
+
+
+class StreakPopupTests(unittest.TestCase):
+    """Long-pressing the streak label opens the target popup.
+
+    Tk-free mirror of ProgressLongPressPopupTest: the streak label is the
+    long-press handle for the consecutive-pass target, and its popup must
+    forward the chosen target through ``on_streak_target_changed``.
+    """
+
+    def _mock_view(self):
+        from mimora.ui_dictation import DictationView
+        v = DictationView.__new__(DictationView)
+        v._window = mock.MagicMock()
+        v._window.winfo_screenwidth.return_value = 1920
+        v._window.winfo_screenheight.return_value = 1080
+        v._streak_label = mock.MagicMock()
+        v._streak_label.winfo_rootx.return_value = 100
+        v._streak_label.winfo_rooty.return_value = 200
+        v._streak_label.winfo_height.return_value = 20
+        v.engine = mock.MagicMock()
+        v.engine.mastered_streak_required = 3
+        v._cb = mock.MagicMock()
+        v._streak_popup = None
+        v._streak_popup_catcher = None
+        return v
+
+    def test_popup_builds_without_name_error(self):
+        import tkinter as tk
+        from mimora.ui_theme import FlatButton
+
+        def _widget(*a, **k):
+            return mock.MagicMock()
+
+        def _flatbutton_init(self, *a, **k):
+            self.tk = mock.MagicMock()
+            self.pack = mock.MagicMock()
+        with mock.patch.object(tk, "Toplevel", side_effect=_widget), \
+             mock.patch.object(tk, "Label", side_effect=_widget), \
+             mock.patch.object(tk, "Frame", side_effect=_widget), \
+             mock.patch.object(FlatButton, "__init__", _flatbutton_init):
+            v = self._mock_view()
+            v._open_streak_popup()  # must not raise
+        self.assertIsNotNone(v._streak_popup)
+        self.assertIsNotNone(v._streak_popup_catcher)
+
+    def test_apply_forwards_target(self):
+        """Apply calls on_streak_target_changed with the chosen target."""
+        from mimora.ui_dictation import DictationView
+        v = self._mock_view()
+        v._cb = mock.MagicMock()
+        v._cb.on_streak_target_changed(4)
+        v._cb.on_streak_target_changed.assert_called_once_with(4)
+
+    def test_long_press_cancel_on_quick_click(self):
+        # A quick click (release before the 450 ms timer) must not fire the
+        # popup: the release cancels the pending after handle.
+        v = self._mock_view()
+        v._streak_long_press_after = 123
+        v._streak_long_press_fired = False
+        v._window.after_cancel = mock.MagicMock()
+        v._on_streak_release(mock.MagicMock())
+        self.assertIsNone(v._streak_long_press_after)
+        v._window.after_cancel.assert_called_once_with(123)
+
+    def test_long_press_fires_after_delay(self):
+        # Holding past the delay fires the popup once and only once.
+        v = self._mock_view()
+        v._streak_long_press_after = None
+        v._streak_long_press_fired = False
+        v._open_streak_popup = mock.MagicMock()
+        v._fire_streak_long_press()
+        v._open_streak_popup.assert_called_once()
+        v._fire_streak_long_press()  # second call must be a no-op
+        v._open_streak_popup.assert_called_once()
 
 
 class _FakeCell:

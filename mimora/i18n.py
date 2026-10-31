@@ -629,6 +629,7 @@ _ZH: Dict[str, str] = {
     "Daily target, minutes": "每日目标，分钟",
     "Drill takes per session": "每次练习的尝试数",
     "Dictation sentences per session": "每次听写的句子数",
+    "Consecutive passes to master": "连续通过次数达标即掌握",
     "Random order for dictation sentences": "听写句子随机顺序",
     "Spaced repetition for dictation (Ebbinghaus)": "听写间隔复习（艾宾浩斯）",
     "Warm up models at startup": "启动时预热模型",
@@ -680,6 +681,8 @@ _ZH: Dict[str, str] = {
         "当最近 3 次尝试得分均不低于此值时，听写会话标记为“已掌握”。",
     "How many sentences one dictation session runs before it reports done.":
         "一次听写会话在报告完成前运行多少句子。",
+    "Consecutive passes needed to mark a dictation session 'mastered'. Also long-pressable on the streak label inside the dictation window.":
+        "连续通过多少次即把听写会话标记为“已掌握”。也可在听写窗口长按连续计数标签修改。",
     "Pick a random dictation sentence instead of cycling in order. Takes effect on the next dictation session.":
         "随机选择听写句子而非按顺序循环。下次听写会话生效。",
     "Re-present dictation sentences you have scored on the Ebbinghaus forgetting-curve schedule (1, 2, 4, 7, 15, 30, 60 days), so one you wrote correctly appears less often. Takes effect on the next dictation session.":
