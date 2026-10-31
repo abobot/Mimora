@@ -1295,6 +1295,16 @@ _DARK_THEME = {
     "mic_recording_bg": "#3a0c10",
     "mic_processing_bg": "#36220f",
     "mic_speaking_bg": "#0f2c1d",
+    # GitHub-style heatmap palette (activity calendar): five 0-4 intensity
+    # levels plus the text color to draw on each. Index 0 is the empty day;
+    # index 4 is the most intense. These are lists, not hex strings, so the
+    # schema loader must accept them (see the type check below).
+    "heatmap_levels": ["#1e1e24", "#0e4429", "#006d32", "#26a641", "#39d353"],
+    "heatmap_text": ["#c9d1d9", "#ffffff", "#ffffff", "#ffffff", "#0d1117"],
+    # Chart axes/labels in the stats dashboard (kept separate so a theme can
+    # tune chart ink without touching body text).
+    "chart_grid": "#2a2a30",
+    "chart_axis": "#555560",
 }
 
 
@@ -1356,6 +1366,9 @@ else:
                   file=sys.stderr)
         elif isinstance(_value, str) and _value.strip():
             THEME[_key] = _value
+        elif isinstance(_value, list) and len(_value) > 0 and all(
+                isinstance(v, str) and v.strip() for v in _value):
+            THEME[_key] = list(_value)  # palette keys: heatmap levels/text
         else:
             print(f"[config] {_THEME_FILE.name}: {_key} must be a color string, "
                   f"got {_value!r}; using {_DARK_THEME[_key]!r}", file=sys.stderr)

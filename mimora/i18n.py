@@ -316,6 +316,7 @@ _ZH: Dict[str, str] = {
     "Close": "关闭",
     "Practice time": "练习时长",
     "Sessions": "会话数",
+    "Trends": "趋势",
     "Takes": "尝试数",
     "Unique phrases": "不同句子",
     "Avg score": "平均分",

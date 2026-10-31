@@ -42,5 +42,13 @@
   "mic_loading_outline": "#9a9aa6",
   "mic_recording_bg": "#fbe2e4",
   "mic_processing_bg": "#faeedd",
-  "mic_speaking_bg": "#e0f3e7"
+  "mic_speaking_bg": "#e0f3e7",
+
+  "_heatmap": "GitHub-style activity calendar palette. heatmap_levels = five 0-4 intensity levels (0 = empty day); heatmap_text = the label color to draw on each level (the lightest level needs dark text).",
+  "heatmap_levels": ["#eceef2", "#a5d6a7", "#66bb6a", "#2e7d32", "#1b5e20"],
+  "heatmap_text": ["#5c5c66", "#1b5e20", "#ffffff", "#ffffff", "#ffffff"],
+
+  "_charts": "Chart ink in the stats dashboard: grid lines and axis labels, separate from body text so a theme can tune chart contrast without touching labels.",
+  "chart_grid": "#dcdce4",
+  "chart_axis": "#5c5c66"
 }

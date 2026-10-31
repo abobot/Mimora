@@ -122,7 +122,8 @@ class _CanvasChart:
         # Grid lines.
         for i in range(5):
             y = pad_t + plot_h * i / 4
-            c.create_line(pad_l, y, pad_l + plot_w, y, fill=THEME["border"])
+            c.create_line(pad_l, y, pad_l + plot_w, y,
+                          fill=THEME["chart_grid"])
         # y-axis labels.
         for i in range(5):
             y = pad_t + plot_h * i / 4
@@ -317,12 +318,12 @@ class _CanvasChart:
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
 
 
-GITHUB_HEATMAP_LEVELS = ["#2d333b", "#0e4429", "#006d32", "#26a641", "#39d353"]
+GITHUB_HEATMAP_LEVELS = THEME["heatmap_levels"]
 
 # Text colour for the day-of-month number inside a heatmap cell, indexed by
 # the same 0-4 level as GITHUB_HEATMAP_LEVELS. The lightest green (level 4)
 # needs dark text for contrast; everything else reads best in white.
-_HEAT_TEXT_COLORS = ["#c9d1d9", "#ffffff", "#ffffff", "#ffffff", "#0d1117"]
+_HEAT_TEXT_COLORS = THEME["heatmap_text"]
 
 # Month and weekday labels for the heatmap axis. These are passed through
 # i18n.tr() so a non-English UI shows the abbreviated names in its own
@@ -497,12 +498,11 @@ class StatsView:
         ttk.Button(btns, text=i18n.tr("Close"),
                    command=self._window.destroy).pack(side=tk.LEFT, padx=2)
 
-        # The window is taller than the viewport once every section is
-        # rendered (cards, two charts, the heatmap, the duration table and
-        # the recent-sessions list), so the body scrolls vertically. The
-        # header row stays fixed; everything below lives on a canvas-backed
-        # scrollable frame. Without this the bottom tables fell off the
-        # bottom edge of the window.
+        # The dashboard splits into four tabs (Overview / Trends /
+        # Review pool / Sessions) instead of one long scroll. The body still
+        # scrolls vertically because the Review pool tab alone is taller than
+        # the viewport once its 2-column chart grid is drawn; the tab bar
+        # stays fixed at the top of the body.
         body = tk.Frame(self._window, bg=THEME["bg_main"])
         body.pack(fill=tk.BOTH, expand=True)
         self._body_canvas = tk.Canvas(body, bg=THEME["bg_main"],
@@ -518,19 +518,26 @@ class StatsView:
         self._content.bind("<Configure>", self._on_content_configure)
         self._body_canvas.bind("<Configure>", self._on_canvas_configure)
 
-        # Summary cards.
-        self._cards = tk.Frame(self._content, bg=THEME["bg_main"])
-        self._cards.pack(fill=tk.X, padx=16, pady=4)
+        self._nb = ttk.Notebook(self._content)
+        self._nb.pack(fill=tk.X, padx=16, pady=(8, 4))
+        self._tab_overview = tk.Frame(self._nb, bg=THEME["bg_main"])
+        self._tab_trends = tk.Frame(self._nb, bg=THEME["bg_main"])
+        self._tab_review = tk.Frame(self._nb, bg=THEME["bg_main"])
+        self._tab_sessions = tk.Frame(self._nb, bg=THEME["bg_main"])
+        self._nb.add(self._tab_overview, text=i18n.tr("Overview"))
+        self._nb.add(self._tab_trends, text=i18n.tr("Trends"))
+        self._nb.add(self._tab_review, text=i18n.tr("Review pool"))
+        self._nb.add(self._tab_sessions, text=i18n.tr("Sessions"))
 
-        # Charts area.
-        self._charts = tk.Frame(self._content, bg=THEME["bg_main"])
-        self._charts.pack(fill=tk.X, padx=16, pady=8)
+        # Overview tab: summary cards + the two headline charts.
+        self._cards = tk.Frame(self._tab_overview, bg=THEME["bg_main"])
+        self._cards.pack(fill=tk.X, padx=8, pady=4)
+        self._charts = tk.Frame(self._tab_overview, bg=THEME["bg_main"])
+        self._charts.pack(fill=tk.X, padx=8, pady=8)
 
-        # Activity heatmap (calendar of practice minutes) - second chart row.
-        # A header holds the prev/next month arrows and the month title; the
-        # heatmap itself is redrawn in place when the month changes.
-        activity_head = tk.Frame(self._content, bg=THEME["bg_main"])
-        activity_head.pack(fill=tk.X, padx=16, pady=(4, 0))
+        # Trends tab: activity heatmap (with month arrows) + duration table.
+        activity_head = tk.Frame(self._tab_trends, bg=THEME["bg_main"])
+        activity_head.pack(fill=tk.X, padx=8, pady=(4, 0))
         ttk.Button(activity_head, text=i18n.tr("‹ Prev"),
                    command=self._heatmap_prev_month).pack(side=tk.LEFT)
         self._heatmap_month_var = tk.StringVar()
@@ -541,20 +548,18 @@ class StatsView:
         ttk.Button(activity_head, text=i18n.tr("Next ›"),
                    command=self._heatmap_next_month).pack(side=tk.LEFT)
 
-        self._activity = tk.Frame(self._content, bg=THEME["bg_main"])
-        self._activity.pack(fill=tk.X, padx=16, pady=4)
+        self._activity = tk.Frame(self._tab_trends, bg=THEME["bg_main"])
+        self._activity.pack(fill=tk.X, padx=8, pady=4)
+        self._duration = tk.Frame(self._tab_trends, bg=THEME["bg_main"])
+        self._duration.pack(fill=tk.X, padx=8, pady=4)
 
-        # Practice-duration table (per day).
-        self._duration = tk.Frame(self._content, bg=THEME["bg_main"])
-        self._duration.pack(fill=tk.X, padx=16, pady=4)
+        # Review pool tab: the 8-section analysis in a 2-column chart grid.
+        self._review = tk.Frame(self._tab_review, bg=THEME["bg_main"])
+        self._review.pack(fill=tk.X, padx=8, pady=4)
 
-        # Review-pool analysis (8 sections from review.json).
-        self._review = tk.Frame(self._content, bg=THEME["bg_main"])
-        self._review.pack(fill=tk.X, padx=16, pady=4)
-
-        # Recent sessions list.
-        self._recent = tk.Frame(self._content, bg=THEME["bg_main"])
-        self._recent.pack(fill=tk.X, padx=16, pady=(0, 12))
+        # Sessions tab: recent sessions list.
+        self._recent = tk.Frame(self._tab_sessions, bg=THEME["bg_main"])
+        self._recent.pack(fill=tk.X, padx=8, pady=4)
 
     def _on_content_configure(self, _event=None) -> None:
         """Keep the scrollable content width matched to the canvas."""
@@ -580,6 +585,17 @@ class StatsView:
         self._render_review(data.get("review_phrases") or {},
                             data.get("review_history") or [])
         self._render_recent(sessions)
+
+    def _show_tab(self, tab: str) -> None:
+        """Switch the visible tab and re-scroll to its top.
+
+        Tabs are pre-created in ``_build_ui``; selecting one just raises it.
+        The scroll region is re-synced by the content's <Configure> bind, so
+        the canvas adjusts to the newly visible tab's height automatically.
+        """
+        index = {"overview": 0, "trends": 1, "review": 2, "sessions": 3}[tab]
+        self._nb.select(index)
+        self._body_canvas.yview_moveto(0.0)
 
     # ------------------------------------------------------------------
     # Sections
@@ -610,7 +626,13 @@ class StatsView:
             card = tk.Frame(self._cards, bg=THEME["bg_panel"], bd=1,
                             highlightbackground=THEME["border"],
                             highlightthickness=1)
-            card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4, pady=4)
+            # Summary cards wrap at 4 per row instead of an unbounded
+            # side=LEFT row: 7 cards would otherwise compress each to a sliver
+            # on a narrow window, and the values (durations, counts) need
+            # readable width. Rows grow down; all columns share one weight.
+            card.grid(row=i // 4, column=i % 4, sticky="nsew",
+                      padx=4, pady=4)
+            self._cards.columnconfigure(i % 4, weight=1, uniform="cards")
             tk.Label(card, text=title, font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                      bg=THEME["bg_panel"], fg=THEME["text_dim"]
                      ).pack(pady=(8, 0))
@@ -754,7 +776,9 @@ class StatsView:
                  bg=THEME["bg_main"], fg=THEME["text_emph"]
                  ).pack(anchor="w", pady=(8, 2))
 
-        # (8) KPI dashboard: one row of small cards.
+        # (8) KPI dashboard: small cards wrapping at 4 per row (same rule as
+        # the summary cards above - an unbounded side=LEFT row would squeeze
+        # six KPI values into unreadable width on a narrow window).
         kpi = ra.kpi_dashboard(phrases)
         kpi_row = tk.Frame(self._review, bg=THEME["bg_main"])
         kpi_row.pack(fill=tk.X)
@@ -768,12 +792,13 @@ class StatsView:
              else "—"),
             (i18n.tr("Stubborn"), f"{kpi['stubborn']}"),
         ]
-        for title, value in kpi_items:
+        for i, (title, value) in enumerate(kpi_items):
             card = tk.Frame(kpi_row, bg=THEME["bg_panel"], bd=1,
                             highlightbackground=THEME["border"],
                             highlightthickness=1)
-            card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True,
+            card.grid(row=i // 4, column=i % 4, sticky="nsew",
                       padx=3, pady=4)
+            kpi_row.columnconfigure(i % 4, weight=1, uniform="kpi")
             tk.Label(card, text=title,
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                      bg=THEME["bg_panel"], fg=THEME["text_dim"]
@@ -782,6 +807,20 @@ class StatsView:
                      font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
                      bg=THEME["bg_panel"], fg=THEME["text_emph"]
                      ).pack(pady=(0, 6))
+
+        # The 8 sections: one KPI row, six charts in a 2-column grid, and the
+        # overdue list. Charts are gridded instead of side=LEFT/RIGHT packed so
+        # a wide window keeps two columns (each ~430px) and a narrow one still
+        # lays them out without overflow - the grid reflows on <Configure>.
+        self._review_grid = tk.Frame(self._review, bg=THEME["bg_main"])
+        self._review_grid.pack(fill=tk.X)
+
+        def _chart_cell(parent, row, col):
+            """Create a cell frame for one chart and grid it."""
+            cell = tk.Frame(parent, bg=THEME["bg_main"])
+            cell.grid(row=row, column=col, sticky="nsew", padx=4, pady=4)
+            parent.columnconfigure(col, weight=1, uniform="review")
+            return cell
 
         # (1) Index distribution bar chart + unscored column.
         dist = ra.index_distribution(phrases)
@@ -792,8 +831,9 @@ class StatsView:
         if dist["unscored"]:
             values.append(float(dist["unscored"]))
             labels.append(i18n.tr("unscored"))
-        idx_chart = _CanvasChart(self._review, width=430, height=160)
-        idx_chart.canvas.pack(side=tk.LEFT, padx=8, pady=8)
+        idx_chart = _CanvasChart(_chart_cell(self._review_grid, 0, 0),
+                                 width=430, height=160)
+        idx_chart.canvas.pack(padx=4, pady=4)
         idx_chart.draw_bars(values, labels,
                             title=i18n.tr("Review stage distribution"))
 
@@ -801,8 +841,9 @@ class StatsView:
         schedule = ra.due_schedule(phrases)
         due_days = sorted(schedule["cumulative"].items())[:60]
         cum_vals = [float(v) for _, v in due_days]
-        cum = _CanvasChart(self._review, width=430, height=160)
-        cum.canvas.pack(side=tk.RIGHT, padx=8, pady=8)
+        cum = _CanvasChart(_chart_cell(self._review_grid, 0, 1),
+                           width=430, height=160)
+        cum.canvas.pack(padx=4, pady=4)
         cum.draw_line(cum_vals,
                       max_value=max(cum_vals or [1.0]),
                       color=THEME["bad"],
@@ -810,25 +851,29 @@ class StatsView:
 
         # (3) Seen vs passed box plot (min/median/max per group).
         seen = ra.seen_by_passed(phrases)
-        seen_chart = _CanvasChart(self._review, width=430, height=160)
-        seen_chart.canvas.pack(side=tk.LEFT, padx=8, pady=8)
+        seen_chart = _CanvasChart(_chart_cell(self._review_grid, 1, 0),
+                                  width=430, height=160)
+        seen_chart.canvas.pack(padx=4, pady=4)
         self._draw_seen_box(seen_chart, seen)
 
         # (4) Pool composition: per-source totals + pass rate.
         comp = ra.source_composition(phrases)
-        comp_chart = _CanvasChart(self._review, width=430, height=160)
-        comp_chart.canvas.pack(side=tk.RIGHT, padx=8, pady=8)
+        comp_chart = _CanvasChart(_chart_cell(self._review_grid, 1, 1),
+                                  width=430, height=160)
+        comp_chart.canvas.pack(padx=4, pady=4)
         self._draw_composition(comp_chart, comp)
 
         # (5) Span vs index scatter.
         spans = ra.span_vs_index(phrases)
-        span_chart = _CanvasChart(self._review, width=430, height=160)
-        span_chart.canvas.pack(side=tk.LEFT, padx=8, pady=8)
+        span_chart = _CanvasChart(_chart_cell(self._review_grid, 2, 0),
+                                  width=430, height=160)
+        span_chart.canvas.pack(padx=4, pady=4)
         self._draw_span_scatter(span_chart, spans)
 
         # (6) History trajectory line (avg index over time).
-        hist_chart = _CanvasChart(self._review, width=430, height=160)
-        hist_chart.canvas.pack(side=tk.RIGHT, padx=8, pady=8)
+        hist_chart = _CanvasChart(_chart_cell(self._review_grid, 2, 1),
+                                  width=430, height=160)
+        hist_chart.canvas.pack(padx=4, pady=4)
         hist_vals = [float(h.get("avg_index") or 0) for h in history]
         hist_chart.draw_line(
             hist_vals,

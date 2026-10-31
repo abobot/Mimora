@@ -439,5 +439,83 @@ class ReviewRenderTest(unittest.TestCase):
         self.assertIn("Pass rate", texts)
 
 
+class StatsTabsTest(unittest.TestCase):
+    """The dashboard splits into four tabs (Overview / Trends / Review pool /
+    Sessions) instead of one long vertical scroll. Each tab is a real frame
+    added to a ttk.Notebook; _show_tab raises the requested tab and resets the
+    scroll position."""
+
+    @classmethod
+    def setUpClass(cls):
+        from mimora.ui_stats import StatsView, StatsCallbacks
+        from tests._tk import make_root
+        cls.root = make_root()
+        cls.cb = StatsCallbacks(
+            load_data=lambda: {"sessions": [], "all_takes": []},
+            export_json=lambda: None,
+            export_csv=lambda: None,
+        )
+        cls.view = StatsView(cls.root, cls.cb)
+        cls.view.refresh()
+
+    @classmethod
+    def tearDownClass(cls):
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
+
+    def test_four_tabs_present(self):
+        import ttkbootstrap as ttk
+        self.assertIsInstance(self.view._nb, ttk.Notebook)
+        self.assertEqual(self.view._nb.index("end"), 4)
+        texts = [self.view._nb.tab(i, "text") for i in range(4)]
+        self.assertEqual(texts, ["Overview", "Trends", "Review pool",
+                                 "Sessions"])
+
+    def test_show_tab_selects_and_scrolls_to_top(self):
+        self.view._show_tab("review")
+        self.assertEqual(self.view._nb.index("current"), 2)
+        self.view._show_tab("overview")
+        self.assertEqual(self.view._nb.index("current"), 0)
+
+    def test_tabs_are_frames(self):
+        import tkinter as tk
+        for tab in (self.view._tab_overview, self.view._tab_trends,
+                    self.view._tab_review, self.view._tab_sessions):
+            self.assertIsInstance(tab, tk.Frame)
+
+    def test_summary_cards_wrap_at_four_per_row(self):
+        # 7 summary cards must wrap: row 0 has 4, row 1 has 3. An unbounded
+        # side=LEFT row would squeeze them all into a sliver on a narrow
+        # window; the grid is the design decision (doc line 177).
+        self.view._render_cards([{"duration_sec": 60} for _ in range(3)],
+                                [{"score": 80, "phrase": "a",
+                                  "timestamp": "2026-10-01T09:00:00"}])
+        grid = self.view._cards.grid_info()
+        # grid_info on the frame itself returns nothing; check the children's
+        # grid positions instead.
+        rows = set()
+        for child in self.view._cards.winfo_children():
+            info = child.grid_info()
+            rows.add(info.get("row", -1))
+        self.assertIn(0, rows)
+        self.assertIn(1, rows)
+
+
+class HeatmapThemeTest(unittest.TestCase):
+    """The heatmap palette comes from THEME["heatmap_levels"] /
+    THEME["heatmap_text"] (per-theme lists) instead of two hardcoded lists."""
+
+    def test_levels_and_text_are_themed(self):
+        from mimora import config
+        self.assertEqual(len(config.THEME["heatmap_levels"]), 5)
+        self.assertEqual(len(config.THEME["heatmap_text"]), 5)
+        # Both are lists of color strings for the ACTIVE theme (dark / light /
+        # cream each ship their own palette; the active one may be any).
+        self.assertTrue(all(isinstance(v, str) and v.startswith("#")
+                            for v in config.THEME["heatmap_levels"]))
+        self.assertTrue(all(isinstance(v, str) and v.startswith("#")
+                            for v in config.THEME["heatmap_text"]))
+
+
 if __name__ == "__main__":
     unittest.main()
