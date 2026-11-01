@@ -10,6 +10,14 @@ and stay in the user data directory across upgrades.
 
 ### Added
 
+- **Stats dashboard: dictation analysis tab.** The stats dashboard gains a
+  fifth Dictation tab with four charts over the dictation sessions: the
+  wrong-vs-extra word balance, the most-misspelled words, the first-to-last
+  score slope per session and the mastery outcome donut. The aggregation lives
+  in a new pure `mimora/dictation_analysis.py` that re-derives the per-word
+  states from the take texts via the same `compare_sentences` alignment the
+  live scoring uses, so older sessions that predate the stored word
+  diagnostics are counted exactly as the user saw them.
 - **UI redesign: semantic design tokens and theme contrast audit.** A new
   `mimora/ui_tokens.py` centralises every colour *meaning* that panels used to
   interpret independently (score bands, word quality levels, weakness statuses),
