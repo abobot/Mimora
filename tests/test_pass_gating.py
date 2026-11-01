@@ -250,5 +250,76 @@ class GateTests(unittest.TestCase):
         self.assertEqual(fired[0][1][0], "drilled word")
 
 
+class ControlRowLayoutTests(unittest.TestCase):
+    """The control row's columns must not collapse to Tk's 1px default width.
+
+    pack_propagate(False) in _control_column disables child-driven sizing in
+    both dimensions. The P1 redesign only ever set an explicit height, so the
+    width stayed at 1px and every control (🔊 ▾ 🐢 🎤 📼 ⏭) was clipped out of
+    view. The fix sizes each column after the first layout pass
+    (_apply_control_column_widths); this test guards that the columns end up
+    with their real content width and every control is visible.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import tkinter as tk
+        from mimora.ui import TrainerView, ViewCallbacks
+
+        # The control-row geometry only computes on a VISIBLE root; a withdrawn
+        # root (make_root) stays 1px and never lays the columns out, which is
+        # exactly the state the bug produced. Build a real, sized root here.
+        cls.root = tk.Tk()
+        cls.root.geometry("600x800")
+        callbacks = ViewCallbacks(
+            on_gui_btn_press=lambda: None, on_gui_btn_release=lambda: None,
+            on_generate_phrase=lambda: None, play_reference=lambda: None,
+            play_reference_slow=lambda: None, play_user_recording=lambda: None,
+            on_ref_long_press=lambda x, y: None,
+            on_slow_long_press=lambda x, y: None,
+            on_phrase_source_changed=lambda m: None,
+            on_settings_clicked=lambda: None, on_history_clicked=lambda: None,
+            on_stats_clicked=lambda: None, on_weakness_clicked=lambda: None,
+            on_drill_clicked=lambda: None, on_dictation_clicked=lambda: None,
+            on_practice_collapsed_toggled=lambda: None, on_show_face_toggled=lambda: None,
+            on_prosody_toggled=lambda: None, on_test_reference=lambda: None,
+            on_sound_example=lambda w: None, on_word_clicked=lambda w: None,
+            on_word_drill_clicked=lambda w: None,
+            on_word_single_drill_clicked=lambda w: None,
+            on_take_scored=lambda *a, **k: None,
+            on_history_entry=lambda e: None, on_replay_take=lambda a, b: None,
+        )
+        cls.view = TrainerView(cls.root, callbacks)
+        # _apply_control_column_widths runs via after_idle; force the idle
+        # callbacks so the columns are sized before the assertions.
+        cls.root.update_idletasks()
+        cls.root.update()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.root.destroy()
+
+    def test_control_columns_have_real_width(self):
+        # Every control column must be wider than 1px (the clipped default).
+        for col in self.view._control_columns:
+            self.assertGreater(col.winfo_width(), 1, "control column collapsed")
+
+    def test_all_controls_are_mapped_and_visible(self):
+        for widget in (self.view.ref_btn, self.view.speed_btn, self.view.slow_btn,
+                       self.view.btn_canvas, self.view.user_btn,
+                       self.view.generate_btn):
+            self.assertEqual(widget.winfo_ismapped(), 1, widget)
+            self.assertGreater(widget.winfo_width(), 1, widget)
+
+    def test_reference_column_fits_all_three_buttons(self):
+        # The 🔊 ▾ 🐢 trio must all be inside the reference column's width.
+        ref_col = self.view.ref_btn.master.master
+        col_w = ref_col.winfo_width()
+        for widget in (self.view.ref_btn, self.view.speed_btn, self.view.slow_btn):
+            # Each button's right edge must not exceed the column's right edge.
+            self.assertLessEqual(
+                widget.winfo_x() + widget.winfo_width(), col_w, widget)
+
+
 if __name__ == "__main__":
     unittest.main()

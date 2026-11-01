@@ -230,12 +230,20 @@ class TrainerView:
         """
         self.root = root
         self._cb = callbacks
+        # Control columns are registered here (see _control_column) and sized
+        # once after build_ui, because their content width is only known after
+        # a real layout pass (see _apply_control_column_widths).
+        self._control_columns = []
         self.setup_styles()
         self.build_ui()
         # Second palette pass: any ttk widget created in build_ui makes
         # ttkbootstrap build its default style, which can override the colors
         # applied in setup_styles (see _apply_ttk_palette).
         self._apply_ttk_palette()
+        # Size the control columns after the packer has measured their content
+        # (at build time a nested frame reports reqwidth=1, which would clip
+        # every control; see _apply_control_column_widths).
+        self.root.after_idle(self._apply_control_column_widths)
 
     # ------------------------------------------------------------------
     # Styles
@@ -310,12 +318,37 @@ class TrainerView:
         # the four captions line up regardless of the button heights.
         col.pack(side=tk.LEFT, anchor=tk.CENTER, padx=8)
         col.configure(height=self._CONTROL_COLUMN_HEIGHT)
+        # pack_propagate(False) stops the frame sizing to its children in BOTH
+        # dimensions. The width must be applied after a real layout pass
+        # (_apply_control_column_widths), or the column collapses to Tk's 1px
+        # default width and every control inside is clipped out of view. An
+        # eager measure is unreliable: a nested frame reports reqwidth=1 until
+        # the packer has laid it out once.
         col.pack_propagate(False)
+        self._control_columns.append(col)
         if caption:
             tk.Label(col, text=caption, font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                      fg=THEME["text_muted"], bg=THEME["bg_main"]).pack(
                 side=tk.BOTTOM, pady=(2, 0))
         return col
+
+    def _apply_control_column_widths(self):
+        """Size the control columns once their real content width is known.
+
+        Called via after_idle after build_ui, so the packer has computed each
+        child's true requested width (at build time a nested frame still
+        reports reqwidth=1). The widest direct child is the column's content
+        width; the forced height and the bottom caption are preserved.
+        """
+        self.root.update_idletasks()
+        for col in self._control_columns:
+            widest = 0
+            for child in col.winfo_children():
+                width = child.winfo_reqwidth()
+                if width > widest:
+                    widest = width
+            if widest:
+                col.configure(width=widest)
 
     def build_ui(self):
         # Window background (shows through wherever no widget covers it). The
