@@ -505,9 +505,11 @@ class StatsTabsTest(unittest.TestCase):
 
 
 class DictationTabTest(unittest.TestCase):
-    """The dictation tab renders four charts from the dictation_sessions:
-    wrong-vs-extra balance, spelling frequencies, first→last slope and the
-    mastery donut. Empty input renders an empty-state label instead."""
+    """The dictation tab renders the full dashboard: a KPI row plus a chart
+    grid (attempts histogram, pass-rate curve, error kinds by week, top wrong
+    words, first→last dumbbell, score distribution, word-by-week heatmap,
+    per-session attempt series and the mastery donut). Empty input renders an
+    empty-state label instead."""
 
     @classmethod
     def setUpClass(cls):
@@ -519,21 +521,26 @@ class DictationTabTest(unittest.TestCase):
                                "dictation_sessions": [
                                    {"id": "a", "first_score": 50.0,
                                     "last_score": 90.0, "outcome": "mastered",
+                                    "ended_at": "2026-10-28T03:11:24+08:00",
                                     "takes": [
                                         {"user_text": "the quik",
                                          "reference_text": "The quick brown fox.",
-                                         "score": 50.0, "passed": False},
+                                         "score": 50.0, "passed": False,
+                                         "attempt": 1},
                                         {"user_text": "the quick brown fox",
                                          "reference_text": "The quick brown fox.",
-                                         "score": 100.0, "passed": True},
+                                         "score": 100.0, "passed": True,
+                                         "attempt": 2},
                                     ]},
                                    {"id": "b", "first_score": 10.0,
                                     "last_score": 10.0,
                                     "outcome": "unfinished",
+                                    "ended_at": "2026-10-29T03:11:24+08:00",
                                     "takes": [
                                         {"user_text": "",
                                          "reference_text": "Hello world.",
-                                         "score": 0.0, "passed": False},
+                                         "score": 0.0, "passed": False,
+                                         "attempt": 1},
                                     ]},
                                ]},
             export_json=lambda: None,
@@ -559,9 +566,17 @@ class DictationTabTest(unittest.TestCase):
         walk(self.view._dictation)
         return out
 
-    def test_dictation_tab_renders_four_charts(self):
-        # 2x2 grid of charts: balance, spelling, slope, donut.
-        self.assertEqual(len(self._dictation_canvases()), 4)
+    def test_dictation_tab_renders_dashboard(self):
+        # KPI row + 2-col grid: histogram, pass-rate, error kinds, wrong words,
+        # dumbbell, score distribution, heatmap, attempt series, donut.
+        self.assertEqual(len(self._dictation_canvases()), 10)
+
+    def test_dictation_kpi_row_present(self):
+        kpi = self._dictation_canvases()[0]
+        texts = [kpi.itemcget(i, "text") for i in kpi.find_all()
+                 if kpi.type(i) == "text"]
+        self.assertTrue(any("Mastery" in t for t in texts))
+        self.assertTrue(any("50%" in t for t in texts))  # 1 mastered of 2
 
     def test_dictation_slope_draws_both_sessions(self):
         slope = None
@@ -572,11 +587,212 @@ class DictationTabTest(unittest.TestCase):
                 break
         self.assertIsNotNone(slope, "no line-chart canvas found")
 
+    def test_dictation_error_kinds_stacked(self):
+        stacked = None
+        for cv in self._dictation_canvases():
+            texts = [cv.itemcget(i, "text") for i in cv.find_all()
+                     if cv.type(i) == "text"]
+            if any("Error kinds" in t for t in texts):
+                stacked = cv
+                break
+        self.assertIsNotNone(stacked, "no stacked error-kind chart")
+        # Both sessions contribute missed words; spelling from the quik take.
+        self.assertGreater(len(stacked.find_all()), 0)
+
+    def test_dictation_top_wrong_words_hbars(self):
+        hbar = None
+        for cv in self._dictation_canvases():
+            texts = [cv.itemcget(i, "text") for i in cv.find_all()
+                     if cv.type(i) == "text"]
+            if any("Top wrong words" in t for t in texts):
+                hbar = cv
+                break
+        self.assertIsNotNone(hbar, "no top-wrong-words chart")
+        texts = [hbar.itemcget(i, "text") for i in hbar.find_all()
+                 if hbar.type(i) == "text"]
+        self.assertTrue(any("brown" in t for t in texts))
+
+    def test_dictation_heatmap_matrix(self):
+        heat = None
+        for cv in self._dictation_canvases():
+            texts = [cv.itemcget(i, "text") for i in cv.find_all()
+                     if cv.type(i) == "text"]
+            if any("Wrong words by week" in t for t in texts):
+                heat = cv
+                break
+        self.assertIsNotNone(heat, "no word-by-week heatmap")
+        # The grid draws at least one rectangle per word row.
+        rects = [i for i in heat.find_all() if heat.type(i) == "rectangle"]
+        self.assertGreater(len(rects), 0)
+
+    def test_dictation_score_distribution_stacked(self):
+        score = None
+        for cv in self._dictation_canvases():
+            texts = [cv.itemcget(i, "text") for i in cv.find_all()
+                     if cv.type(i) == "text"]
+            if any("Score distribution" in t for t in texts):
+                score = cv
+                break
+        self.assertIsNotNone(score, "no score distribution chart")
+        # Passed (green) and failed (red) segments both drawn.
+        fills = [score.itemcget(i, "fill") for i in score.find_all()
+                 if score.type(i) == "rectangle"]
+        self.assertTrue(any(f for f in fills if f), "no bars drawn")
+
+    def test_dictation_attempt_series(self):
+        series = None
+        for cv in self._dictation_canvases():
+            texts = [cv.itemcget(i, "text") for i in cv.find_all()
+                     if cv.type(i) == "text"]
+            if any("Score per attempt" in t for t in texts):
+                series = cv
+                break
+        self.assertIsNotNone(series, "no per-session attempt series")
+
     def test_dictation_donut_has_mastery_arc(self):
         # The donut draws an arc only when mastered > 0 (one session mastered).
-        donut = self._dictation_canvases()[-1]
+        donut = None
+        for cv in self._dictation_canvases():
+            if any(cv.type(i) == "arc" for i in cv.find_all()):
+                donut = cv
+                break
+        self.assertIsNotNone(donut, "no donut canvas found")
         arcs = [i for i in donut.find_all() if donut.type(i) == "arc"]
         self.assertEqual(len(arcs), 1)
+
+    def test_dictation_dumbbell_labels_aligned(self):
+        # The dumbbell draws one row per session (both sessions). The first
+        # session (50->90) is a non-degenerate line; the second (10,10) is a
+        # degenerate point drawn as an outlined oval, not a line.
+        dumbbell = None
+        for cv in self._dictation_canvases():
+            texts = [cv.itemcget(i, "text") for i in cv.find_all()
+                     if cv.type(i) == "text"]
+            if any("First → last" in t for t in texts):
+                dumbbell = cv
+                break
+        self.assertIsNotNone(dumbbell, "no dumbbell canvas found")
+        lines = [i for i in dumbbell.find_all() if dumbbell.type(i) == "line"]
+        ovals = [i for i in dumbbell.find_all() if dumbbell.type(i) == "oval"]
+        self.assertEqual(len(lines), 1)
+        self.assertGreaterEqual(len(ovals), 1)
+
+    def test_dictation_pass_rate_curve(self):
+        rate = None
+        for cv in self._dictation_canvases():
+            texts = [cv.itemcget(i, "text") for i in cv.find_all()
+                     if cv.type(i) == "text"]
+            if any("Pass rate by attempt" in t for t in texts):
+                rate = cv
+                break
+        self.assertIsNotNone(rate, "no pass-rate curve")
+        # The curve draws a line between attempt 1 (0.0) and attempt 2 (1.0).
+        lines = [i for i in rate.find_all() if rate.type(i) == "line"]
+        self.assertGreaterEqual(len(lines), 1)
+
+
+class DictationChartMethodsTest(unittest.TestCase):
+    """Direct tests of the new _CanvasChart draw methods used by the dictation
+    dashboard (stacked bars, horizontal bars, stacked histogram, line series,
+    heatmap matrix, dumbbell, KPI cards). A withdrawn root is enough — the
+    methods only paint on the canvas, they never read window geometry."""
+
+    @classmethod
+    def setUpClass(cls):
+        from mimora.ui_stats import _CanvasChart
+        from tests._tk import make_root
+        cls.root = make_root()
+        cls.chart = _CanvasChart(cls.root, width=430, height=170)
+
+    @classmethod
+    def tearDownClass(cls):
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
+
+    def test_stacked_bars_skip_all_zero_segments(self):
+        from mimora.ui_theme import THEME
+        self.chart.draw_stacked_bars(
+            [("Missed", [2.0]), ("Extra", [0.0]), ("Spelling", [1.0])],
+            ["2026-10-26"], title="Error kinds")
+        items = self.chart.canvas.find_all()
+        # Stacked bars draw at least one rectangle (missed+spelling), and the
+        # all-zero "Extra" segment must NOT draw a phantom band.
+        self.assertGreater(len(items), 0)
+
+    def test_hbars_draw_bar_per_item(self):
+        self.chart.draw_hbars([("the", 82.0), ("brown", 40.0)], title="Top")
+        rects = [i for i in self.chart.canvas.find_all()
+                 if self.chart.canvas.type(i) == "rectangle"]
+        self.assertEqual(len(rects), 2)
+
+    def test_stacked_histogram_splits_passed_failed(self):
+        self.chart.draw_stacked_histogram(
+            [("0", 0, 2), ("90", 1, 0)], title="Scores")
+        fills = [self.chart.canvas.itemcget(i, "fill")
+                 for i in self.chart.canvas.find_all()
+                 if self.chart.canvas.type(i) == "rectangle"]
+        # One green (passed) + one red (failed) segment.
+        from mimora.ui_theme import THEME
+        self.assertIn(THEME["good"], fills)
+        self.assertIn(THEME["bad"], fills)
+
+    def test_line_series_draws_points_and_legend(self):
+        self.chart.draw_line_series(
+            [("Pass rate", [0.5, 1.0, 0.25], "#5cd98a")],
+            ["1", "2", "3"], max_value=1.0, title="Rate")
+        texts = [self.chart.canvas.itemcget(i, "text")
+                 for i in self.chart.canvas.find_all()
+                 if self.chart.canvas.type(i) == "text"]
+        self.assertTrue(any("Pass rate" in t for t in texts))
+
+    def test_line_series_legend_omittable(self):
+        self.chart.draw_line_series(
+            [("s1", [1.0, 2.0], "#5cd98a")], ["a", "b"],
+            title="Series", legend=False)
+        texts = [self.chart.canvas.itemcget(i, "text")
+                 for i in self.chart.canvas.find_all()
+                 if self.chart.canvas.type(i) == "text"]
+        # With legend off, the series name is not drawn (title only).
+        self.assertFalse(any("s1" == t for t in texts))
+
+    def test_heatmap_matrix_colours_cells(self):
+        self.chart.draw_heatmap_matrix(
+            ["the", "brown"], ["2026-10-26", "2026-11-02"],
+            [[2, 1], [1, 0]], ["#111111", "#222222"], title="Wrong by week")
+        rects = [i for i in self.chart.canvas.find_all()
+                 if self.chart.canvas.type(i) == "rectangle"]
+        self.assertEqual(len(rects), 4)  # 2 words x 2 weeks
+
+    def test_dumbbell_degenerate_draws_single_dot(self):
+        self.chart.draw_dumbbell([("a", 50.0, 50.0)], title="First → last")
+        # A degenerate point (first == last) is an oval, not a line.
+        lines = [i for i in self.chart.canvas.find_all()
+                 if self.chart.canvas.type(i) == "line"]
+        self.assertEqual(len(lines), 0)
+
+    def test_kpi_cards_wrap_at_four(self):
+        self.chart.draw_kpi_cards([
+            ("Mastery", "13%"), ("Avg attempts", "4.7"),
+            ("Avg gain", "-1.0"), ("Sessions", "15"),
+            ("Fifth", "x"),
+        ])
+        rects = [i for i in self.chart.canvas.find_all()
+                 if self.chart.canvas.type(i) == "rectangle"]
+        self.assertEqual(len(rects), 5)  # five card outlines
+
+    def test_empty_inputs_render_no_data(self):
+        for draw in (lambda: self.chart.draw_stacked_bars([], []),
+                     lambda: self.chart.draw_hbars([]),
+                     lambda: self.chart.draw_stacked_histogram([]),
+                     lambda: self.chart.draw_line_series([], []),
+                     lambda: self.chart.draw_heatmap_matrix(
+                         [], [], [], ["#111111", "#222222"]),
+                     lambda: self.chart.draw_dumbbell([])):
+            draw()
+            texts = [self.chart.canvas.itemcget(i, "text")
+                     for i in self.chart.canvas.find_all()
+                     if self.chart.canvas.type(i) == "text"]
+            self.assertTrue(any(t == "No data" for t in texts))
 
 class DictationEmptyStateTest(unittest.TestCase):
     """A view with no dictation sessions shows an empty-state label instead of

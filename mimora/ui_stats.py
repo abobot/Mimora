@@ -172,7 +172,7 @@ class _CanvasChart:
         # Grid.
         for i in range(5):
             y = pad_t + plot_h * i / 4
-            c.create_line(pad_l, y, pad_l + plot_w, y, fill=THEME["border"])
+            c.create_line(pad_l, y, pad_l + plot_w, y, fill=THEME["chart_grid"])
         for i in range(5):
             y = pad_t + plot_h * i / 4
             val = max_value * (1 - i / 4)
@@ -205,6 +205,378 @@ class _CanvasChart:
             c.create_text(pad_l, 6, text=title, anchor="nw",
                           fill=THEME["text_emph"],
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def draw_stacked_bars(self, series: List[Tuple[str, List[float]]],
+                          labels: List[str],
+                          title: str = "") -> None:
+        """Draw a stacked bar chart.
+
+        ``series`` is a list of ``(key, [values...])`` where each entry is one
+        stack segment (drawn bottom-up in list order) and the values are
+        aligned with ``labels`` (one bar per label). A segment with all-zero
+        values is skipped so a never-present error kind does not draw a
+        phantom band. The value label above each bar shows the stack total.
+        """
+        c = self.canvas
+        c.delete("all")
+        pad_l, pad_r, pad_t, pad_b = 32, 8, 12, 28
+        plot_w = self._width - pad_l - pad_r
+        plot_h = self._height - pad_t - pad_b
+        totals = [sum(vals) for _, vals in series]
+        max_value = max(max(totals or [0.0]), 1.0)
+        # Grid.
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            c.create_line(pad_l, y, pad_l + plot_w, y, fill=THEME["chart_grid"])
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            val = max_value * (1 - i / 4)
+            c.create_text(pad_l - 4, y, text=f"{val:.0f}", anchor="e",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if not labels:
+            c.create_text(self._width / 2, self._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        n = len(labels)
+        bar_w = plot_w / n * 0.7
+        for i, label in enumerate(labels):
+            x = pad_l + plot_w * (i + 0.5) / n
+            # Stack bottom-up.
+            y_bottom = pad_t + plot_h
+            for _, vals in series:
+                v = vals[i] if i < len(vals) else 0.0
+                if v <= 0:
+                    continue
+                h = plot_h * v / max_value
+                y_top = y_bottom - h
+                c.create_rectangle(x - bar_w / 2, y_top,
+                                   x + bar_w / 2, y_bottom,
+                                   fill=THEME["good"], outline="")
+                y_bottom = y_top
+            # Stack total above the bar.
+            if totals[i] > 0:
+                y = pad_t + plot_h * (1 - totals[i] / max_value)
+                c.create_text(x, y - 4, text=f"{totals[i]:.0f}", anchor="s",
+                              fill=THEME["text_emph"],
+                              font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+            # Label below bar.
+            c.create_text(x, pad_t + plot_h + 4, text=label, anchor="n",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if title:
+            c.create_text(pad_l, 6, text=title, anchor="nw",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def draw_hbars(self, items: List[Tuple[str, float]],
+                   title: str = "", color: Optional[str] = None) -> None:
+        """Draw a horizontal bar chart (one bar per label, best first).
+
+        ``items`` is a list of ``(label, value)`` with the largest value
+        first. The bar for ``items[0]`` is drawn at the TOP of the plot, so
+        a Top-N list reads top-down from the most frequent. The label is
+        drawn to the left of the bar; the value to the right of it.
+        """
+        c = self.canvas
+        c.delete("all")
+        color = color or THEME["good"]
+        pad_l, pad_r, pad_t, pad_b = 72, 40, 12, 12
+        plot_w = self._width - pad_l - pad_r
+        plot_h = self._height - pad_t - pad_b
+        if not items:
+            c.create_text(self._width / 2, self._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        max_value = max(max(v for _, v in items), 1.0)
+        n = len(items)
+        bar_h = plot_h / n * 0.6
+        for i, (label, v) in enumerate(items):
+            y = pad_t + plot_h * (i + 0.5) / n
+            w = plot_w * v / max_value
+            c.create_rectangle(pad_l, y - bar_h / 2, pad_l + w, y + bar_h / 2,
+                               fill=color, outline="")
+            # Label left of the bar (ellipsised by the caller if needed).
+            c.create_text(pad_l - 6, y, text=label, anchor="e",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+            # Value right of the bar.
+            c.create_text(pad_l + w + 6, y, text=f"{v:.0f}", anchor="w",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if title:
+            c.create_text(pad_l, 6, text=title, anchor="nw",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def draw_stacked_histogram(self, bins: List[Tuple[str, int, int]],
+                               title: str = "") -> None:
+        """Draw a stacked pass/fail histogram of take scores.
+
+        ``bins`` is ``[(bin_label, passed_count, failed_count)]`` from
+        :func:`mimora.dictation_analysis.score_distribution` - the score axis
+        split into equal bins, each split by the take-level ``passed`` flag.
+        A failed (red) segment sits under a passed (green) segment, so the
+        pass threshold shows as the colour boundary between the bins.
+        """
+        c = self.canvas
+        c.delete("all")
+        pad_l, pad_r, pad_t, pad_b = 32, 8, 12, 28
+        plot_w = self._width - pad_l - pad_r
+        plot_h = self._height - pad_t - pad_b
+        totals = [p + f for _, p, f in bins]
+        max_value = max(max(totals or [0.0]), 1.0)
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            c.create_line(pad_l, y, pad_l + plot_w, y, fill=THEME["chart_grid"])
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            val = max_value * (1 - i / 4)
+            c.create_text(pad_l - 4, y, text=f"{val:.0f}", anchor="e",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if not bins:
+            c.create_text(self._width / 2, self._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        n = len(bins)
+        bar_w = plot_w / n * 0.7
+        for i, (label, p, f) in enumerate(bins):
+            x = pad_l + plot_w * (i + 0.5) / n
+            y_bottom = pad_t + plot_h
+            # Failed (red) segment first, then passed (green) above it.
+            if f:
+                h = plot_h * f / max_value
+                c.create_rectangle(x - bar_w / 2, y_bottom - h,
+                                   x + bar_w / 2, y_bottom,
+                                   fill=THEME["bad"], outline="")
+                y_bottom -= h
+            if p:
+                h = plot_h * p / max_value
+                c.create_rectangle(x - bar_w / 2, y_bottom - h,
+                                   x + bar_w / 2, y_bottom,
+                                   fill=THEME["good"], outline="")
+            if totals[i] > 0:
+                y = pad_t + plot_h * (1 - totals[i] / max_value)
+                c.create_text(x, y - 4, text=f"{totals[i]:.0f}", anchor="s",
+                              fill=THEME["text_emph"],
+                              font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+            c.create_text(x, pad_t + plot_h + 4, text=label, anchor="n",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if title:
+            c.create_text(pad_l, 6, text=title, anchor="nw",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def draw_line_series(self, series: List[Tuple[str, List[float], str]],
+                         labels: List[str],
+                         max_value: float = 100.0,
+                         title: str = "",
+                         legend: bool = True) -> None:
+        """Draw one or more coloured line series over shared x labels.
+
+        ``series`` is ``[(name, [values...], color)]`` and each value list is
+        aligned with ``labels``. Points are drawn as small dots; the series
+        names are rendered as a compact legend along the top-right (set
+        ``legend=False`` to omit it — for many series the legend would
+        overflow). Used for the per-attempt pass-rate curve (one series) and
+        the error-type three-line trend.
+        """
+        c = self.canvas
+        c.delete("all")
+        pad_l, pad_r, pad_t, pad_b = 32, 8, 12, 28
+        plot_w = self._width - pad_l - pad_r
+        plot_h = self._height - pad_t - pad_b
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            c.create_line(pad_l, y, pad_l + plot_w, y, fill=THEME["chart_grid"])
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            val = max_value * (1 - i / 4)
+            c.create_text(pad_l - 4, y, text=f"{val:.0f}", anchor="e",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if not labels or not any(s[1] for s in series):
+            c.create_text(self._width / 2, self._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        n = len(labels)
+        for name, values, color in series:
+            points = []
+            for i, v in enumerate(values):
+                if i >= n:
+                    break
+                x = pad_l + plot_w * i / max(n - 1, 1)
+                y = pad_t + plot_h * (1 - min(v, max_value) / max_value)
+                points.append((x, y))
+            if len(points) >= 2:
+                flat = [coord for pt in points for coord in pt]
+                c.create_line(*flat, fill=color, width=2)
+            for x, y in points:
+                c.create_oval(x - 2.5, y - 2.5, x + 2.5, y + 2.5,
+                              fill=color, outline="")
+        # Legend along the top-right (omitted for many-series charts).
+        if legend:
+            legend_x = self._width - pad_r
+            for name, _, color in series:
+                c.create_line(legend_x - 40, 12, legend_x - 24, 12,
+                              fill=color, width=2)
+                c.create_text(legend_x - 20, 12, text=name, anchor="e",
+                              fill=THEME["text_dim"],
+                              font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+                legend_x -= 20 + len(name) * 7 + 20
+        if title:
+            c.create_text(pad_l, 6, text=title, anchor="nw",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def draw_heatmap_matrix(self, rows: List[str], cols: List[str],
+                            matrix: List[List[int]],
+                            palette: List[str],
+                            title: str = "") -> None:
+        """Draw a generic cell heatmap (rows x cols) with a colour scale.
+
+        ``matrix[i][j]`` is the value for ``rows[i]`` in ``cols[j]``; each
+        cell is coloured by the quantile of the non-zero values mapped to
+        ``palette`` (an N-entry colour list, 0 = empty). Row labels sit to
+        the left, column labels above, and the value is drawn inside cells
+        that are non-zero.
+        """
+        c = self.canvas
+        c.delete("all")
+        pad_l, pad_r, pad_t, pad_b = 76, 8, 22, 12
+        cell = 18
+        gap = 2
+        if not rows or not cols or not matrix:
+            c.create_text(self._width / 2, self._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        plot_w = self._width - pad_l - pad_r
+        plot_h = self._height - pad_t - pad_b
+        # Scale cells down if the grid would overflow the canvas.
+        cell_w = min(cell, max(6, (plot_w - len(cols) * gap) // len(cols)))
+        cell_h = min(cell, max(6, (plot_h - len(rows) * gap) // len(rows)))
+        # Quantile thresholds over non-zero values.
+        nonzero = sorted(v for row in matrix for v in row if v > 0)
+        n_levels = len(palette)
+
+        def level(v: float) -> int:
+            if v <= 0:
+                return 0
+            if not nonzero:
+                return 1
+            # Rank among non-zero values -> 1..n_levels-1.
+            pos = sum(1 for x in nonzero if x < v) / len(nonzero)
+            return min(n_levels - 1, 1 + int(pos * (n_levels - 1)))
+
+        x0 = pad_l
+        for j, col in enumerate(cols):
+            x = x0 + j * (cell_w + gap)
+            # Column label (week) above the grid.
+            c.create_text(x + cell_w / 2, pad_t - 6, text=col, anchor="n",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        for i, row in enumerate(rows):
+            y = pad_t + i * (cell_h + gap)
+            # Row label (word) to the left.
+            c.create_text(pad_l - 6, y + cell_h / 2, text=row, anchor="e",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+            for j in range(len(cols)):
+                v = matrix[i][j] if j < len(matrix[i]) else 0
+                lvl = level(v)
+                fill = palette[lvl] if lvl < len(palette) else palette[-1]
+                x = x0 + j * (cell_w + gap)
+                c.create_rectangle(x, y, x + cell_w, y + cell_h,
+                                   fill=fill, outline=fill)
+                if v > 0:
+                    c.create_text(x + cell_w / 2, y + cell_h / 2,
+                                  text=str(v), fill=THEME["text_bright"],
+                                  font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if title:
+            c.create_text(pad_l, 6, text=title, anchor="nw",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def draw_dumbbell(self, items: List[Tuple[str, float, float]],
+                      title: str = "") -> None:
+        """Draw a dumbbell / slope chart.
+
+        ``items`` is ``[(label, value_a, value_b)]`` in display order; each
+        row is one horizontal line from ``value_a`` to ``value_b`` (both
+        clamped 0-100), coloured green when ``value_b >= value_a`` (progress)
+        and red otherwise. A degenerate point (``value_a == value_b``) draws
+        as a single outlined circle so it reads as "no change" rather than a
+        flat line.
+        """
+        c = self.canvas
+        c.delete("all")
+        pad_l, pad_r, pad_t, pad_b = 72, 40, 12, 12
+        plot_w = self._width - pad_l - pad_r
+        plot_h = self._height - pad_t - pad_b
+        if not items:
+            c.create_text(self._width / 2, self._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        n = len(items)
+        for i, (label, a, b) in enumerate(items):
+            y = pad_t + plot_h * (i + 0.5) / n
+            xa = pad_l + plot_w * min(max(a, 0.0), 100.0) / 100.0
+            xb = pad_l + plot_w * min(max(b, 0.0), 100.0) / 100.0
+            color = THEME["good"] if b >= a else THEME["bad"]
+            if abs(xa - xb) < 1.0:
+                # Degenerate: a single outlined dot (no change).
+                c.create_oval(xa - 4, y - 4, xa + 4, y + 4,
+                              fill=THEME["bg_main"], outline=color, width=2)
+            else:
+                c.create_line(xa, y, xb, y, fill=color, width=2)
+                c.create_oval(xa - 3, y - 3, xa + 3, y + 3,
+                              fill=color, outline="")
+                c.create_oval(xb - 3, y - 3, xb + 3, y + 3,
+                              fill=color, outline="")
+            c.create_text(pad_l - 6, y, text=label, anchor="e",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if title:
+            c.create_text(pad_l, 6, text=title, anchor="nw",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def draw_kpi_cards(self, cards: List[Tuple[str, str]]) -> None:
+        """Draw a compact KPI card row: label above, value below.
+
+        ``cards`` is ``[(label, value_string)]`` in display order. The cards
+        are laid out left-to-right and wrap to the next row when they exceed
+        the canvas width, so a 4-card row fits on the dashboard without a
+        scroll.
+        """
+        c = self.canvas
+        c.delete("all")
+        pad = 8
+        card_w = (self._width - pad * 2 - 12) // 4
+        card_h = 40
+        x = pad
+        y = pad
+        for i, (label, value) in enumerate(cards):
+            if i > 0 and i % 4 == 0:
+                x = pad
+                y += card_h + 6
+            c.create_rectangle(x, y, x + card_w, y + card_h,
+                               fill=THEME["bg_card"], outline=THEME["border"])
+            c.create_text(x + card_w / 2, y + 12, text=label,
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+            c.create_text(x + card_w / 2, y + 28, text=value,
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"))
+            x += card_w + 6
 
     def draw_heatmap(self, values: List[float], cell: int = 24,
                      label: str = "") -> None:
@@ -1030,8 +1402,15 @@ class StatsView:
                      ).pack(fill=tk.X, padx=6, pady=2)
 
     def _render_dictation(self, sessions: List[Dict]) -> None:
-        """Render the dictation tab: word-error balance, spelling errors,
-        first→last progress slope and mastery donut.
+        """Render the dictation tab.
+
+        The layout follows the dashboard design: a KPI row on top (mastery,
+        average attempts, average first→last gain, session count), then a
+        two-column grid of charts - the attempts histogram with the pass-rate
+        curve, the three error kinds stacked by week, the top-N wrong words,
+        the first→last dumbbell, the score distribution with the pass split,
+        and the word-by-week heatmap. The mastery donut and per-session
+        attempt series fill the second row.
 
         All the aggregation happens in :mod:`mimora.dictation_analysis`
         (pure, Tk-free); this method only draws. ``sessions`` is the store's
@@ -1052,8 +1431,17 @@ class StatsView:
                  bg=THEME["bg_main"], fg=THEME["text_emph"]
                  ).pack(anchor="w", pady=(8, 2))
 
-        # Two-column chart grid (same pattern as the review tab's grid), so a
-        # wide window keeps two columns and a narrow one still lays them out.
+        # KPI row: mastery rate, average attempts, average gain, sessions.
+        kpi = _CanvasChart(self._dictation, width=430, height=60)
+        kpi.canvas.pack(padx=4, pady=(4, 0), fill=tk.X)
+        kpi.draw_kpi_cards([
+            (i18n.tr("Mastery"), f"{da.mastery_rate(sessions):.0%}"),
+            (i18n.tr("Avg attempts"), f"{da.average_attempts(sessions):.1f}"),
+            (i18n.tr("Avg gain"), f"{da.average_gain(sessions):+.1f}"),
+            (i18n.tr("Sessions"), f"{len(sessions)}"),
+        ])
+
+        # Two-column chart grid (same pattern as the review tab's grid).
         grid = tk.Frame(self._dictation, bg=THEME["bg_main"])
         grid.pack(fill=tk.X)
 
@@ -1063,82 +1451,103 @@ class StatsView:
             grid.columnconfigure(col, weight=1, uniform="dictation")
             return c
 
-        # (1) Wrong vs extra word balance: two bars side by side.
-        balance = da.wrong_vs_extra_counts(sessions)
-        bal = _CanvasChart(cell(0, 0), width=430, height=160)
-        bal.canvas.pack(padx=4, pady=4)
-        bal.draw_bars(
-            [float(balance.get("wrong", 0)), float(balance.get("extra", 0))],
-            [i18n.tr("Wrong"), i18n.tr("Extra")],
-            color=THEME["bad"],
-            title=i18n.tr("Wrong vs extra words"))
+        # (1) Attempts histogram (session count) with the pass-rate curve
+        # overlaid on a shared attempt-number x-axis.
+        hist = da.attempts_histogram(sessions)
+        attempt_nums = [str(n) for n, _ in hist]
+        counts = [float(c) for _, c in hist]
+        hist_chart = _CanvasChart(cell(0, 0), width=430, height=170)
+        hist_chart.canvas.pack(padx=4, pady=4)
+        hist_chart.draw_bars(
+            counts, attempt_nums, color=THEME["accent"],
+            title=i18n.tr("Attempts per session"))
+        rate_chart = _CanvasChart(cell(0, 1), width=430, height=170)
+        rate_chart.canvas.pack(padx=4, pady=4)
+        rate = da.pass_rate_by_attempt(sessions)
+        rate_chart.draw_line_series(
+            [(i18n.tr("Pass rate"),
+              [float(r) for _, r in rate], THEME["good"])],
+            [str(n) for n, _ in rate],
+            max_value=1.0,
+            title=i18n.tr("Pass rate by attempt"))
 
-        # (2) Spelling errors: frequency bar of the most-misspelled words.
-        spelled = da.spelling_frequencies(sessions)
-        spell = _CanvasChart(cell(0, 1), width=430, height=160)
-        spell.canvas.pack(padx=4, pady=4)
-        if spelled:
-            spell.draw_bars(
-                [float(c) for _, c in spelled],
-                [w for w, _ in spelled],
-                color=THEME["warn"],
-                title=i18n.tr("Most misspelled words"))
-        else:
-            spell.draw_bars([], [],
-                            title=i18n.tr("Most misspelled words"))
+        # (2) Error kinds stacked by week (missed / extra / spelling).
+        trend = da.error_type_trend(sessions)
+        weeks = [w for w, _ in trend]
+        stacked = _CanvasChart(cell(1, 0), width=430, height=170)
+        stacked.canvas.pack(padx=4, pady=4)
+        stacked.draw_stacked_bars(
+            [
+                (i18n.tr("Missed"), [float(b["missed"]) for _, b in trend]),
+                (i18n.tr("Extra"), [float(b["extra"]) for _, b in trend]),
+                (i18n.tr("Spelling"), [float(b["spelling"]) for _, b in trend]),
+            ],
+            weeks,
+            title=i18n.tr("Error kinds by week"))
 
-        # (3) First→last progress slope (dumbbell): one line per session.
-        progress = _CanvasChart(cell(1, 0), width=430, height=160)
-        progress.canvas.pack(padx=4, pady=4)
-        self._draw_dictation_slope(progress, da.progress_pairs(sessions))
+        # (3) Top-N wrong words: horizontal bars, best first.
+        wrong = da.top_wrong_words(sessions, limit=12)
+        hbar = _CanvasChart(cell(1, 1), width=430, height=170)
+        hbar.canvas.pack(padx=4, pady=4)
+        hbar.draw_hbars([(w, float(c)) for w, c in wrong],
+                        title=i18n.tr("Top wrong words"),
+                        color=THEME["bad"])
 
-        # (4) Outcome distribution donut: mastered vs unfinished.
+        # (4) First→last dumbbell per session (labelled by a short session id).
+        # progress_pairs and session_dates both cover every session in stored
+        # order, so zipping them aligns id -> (first, last) correctly.
+        pairs = da.progress_pairs(sessions)
+        date_ids = [sid for sid, _ in da.session_dates(sessions)]
+        label_map = {sid: sid.replace("dt-", "")[:10]
+                     for sid, _ in da.session_dates(sessions)}
+        dumbbell = _CanvasChart(cell(2, 0), width=430, height=170)
+        dumbbell.canvas.pack(padx=4, pady=4)
+        dumbbell_items = []
+        for i, (sid, (first, last)) in enumerate(zip(date_ids, pairs)):
+            dumbbell_items.append((label_map.get(sid, str(i + 1)),
+                                   first, last))
+        dumbbell.draw_dumbbell(dumbbell_items,
+                               title=i18n.tr("First → last score per session"))
+
+        # (5) Score distribution with the pass split (stacked green/red).
+        dist = da.score_distribution(sessions)
+        score_chart = _CanvasChart(cell(2, 1), width=430, height=170)
+        score_chart.canvas.pack(padx=4, pady=4)
+        score_chart.draw_stacked_histogram(dist,
+                                           title=i18n.tr("Score distribution"))
+
+        # (6) Word-by-week heatmap: rows = top wrong words, cols = weeks.
+        words, hw_weeks, matrix = da.word_by_week_heatmap(sessions)
+        heat = _CanvasChart(cell(3, 0), width=430, height=170)
+        heat.canvas.pack(padx=4, pady=4)
+        heat.draw_heatmap_matrix(words, hw_weeks, matrix,
+                                 GITHUB_HEATMAP_LEVELS,
+                                 title=i18n.tr("Wrong words by week"))
+
+        # (7) Per-session attempt series (a line per session, coloured by
+        # mastery), rendered without a legend to avoid overflow.
+        series = da.attempt_series(sessions)
+        series_chart = _CanvasChart(cell(3, 1), width=430, height=170)
+        series_chart.canvas.pack(padx=4, pady=4)
+        series_lines = []
+        for sid, scores, mastered in series:
+            series_lines.append((
+                sid,
+                [float(s) for s in scores],
+                THEME["good"] if mastered else THEME["accent"],
+            ))
+        series_chart.draw_line_series(
+            series_lines,
+            [str(i + 1) for i in range(max((len(s[1]) for s in series), default=0))],
+            max_value=100.0,
+            title=i18n.tr("Score per attempt, per session"),
+            legend=False)
+
+        # (8) Outcome distribution donut: mastered vs unfinished.
         outcome = da.outcome_distribution(sessions)
-        donut = _CanvasChart(cell(1, 1), width=430, height=160)
+        donut = _CanvasChart(cell(4, 0), width=430, height=170)
         donut.canvas.pack(padx=4, pady=4)
         self._draw_dictation_donut(donut, outcome)
-
-    def _draw_dictation_slope(self, chart, pairs: List[Tuple[float, float]]) -> None:
-        """Dumbbell / slope chart of first→last score per dictation session.
-
-        Each session is one horizontal line at its own y: a left dot at the
-        first score, a right dot at the last score, the line coloured by
-        whether the session improved (green) or regressed (red). With many
-        sessions the lines stack, but the shape still reads as a "did the
-        user get better within each session" sweep.
-        """
-        c = chart.canvas
-        c.delete("all")
-        pad_l, pad_r, pad_t, pad_b = 32, 8, 12, 28
-        plot_w = chart._width - pad_l - pad_r
-        plot_h = chart._height - pad_t - pad_b
-        if not pairs:
-            c.create_text(chart._width / 2, chart._height / 2,
-                          text=i18n.tr("No data"), fill=THEME["text_dim"],
-                          font=(FONT_FAMILY, FONT_SIZE_BODY))
-            return
-        n = len(pairs)
-        for i, (first, last) in enumerate(pairs):
-            # Spread sessions top-to-bottom; clamp scores to the plot.
-            y = pad_t + plot_h * (i + 0.5) / n
-            x0 = pad_l + plot_w * min(max(first, 0.0), 100.0) / 100.0
-            x1 = pad_l + plot_w * min(max(last, 0.0), 100.0) / 100.0
-            color = THEME["good"] if last >= first else THEME["bad"]
-            c.create_line(x0, y, x1, y, fill=color, width=2)
-            c.create_oval(x0 - 3, y - 3, x0 + 3, y + 3,
-                          fill=color, outline="")
-            c.create_oval(x1 - 3, y - 3, x1 + 3, y + 3,
-                          fill=color, outline="")
-        # Axis labels.
-        for i in range(5):
-            y = pad_t + plot_h * i / 4
-            val = 100.0 * (1 - i / 4)
-            c.create_text(pad_l - 4, y, text=f"{val:.0f}", anchor="e",
-                          fill=THEME["text_dim"],
-                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
-        c.create_text(pad_l, 6, text=i18n.tr("First → last score per session"),
-                      anchor="nw", fill=THEME["text_emph"],
-                      font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
 
     def _draw_dictation_donut(self, chart, outcome: Dict[str, int]) -> None:
         """Donut of mastery outcomes: mastered vs unfinished sessions."""

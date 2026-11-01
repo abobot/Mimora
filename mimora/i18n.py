@@ -511,6 +511,21 @@ _ZH: Dict[str, str] = {
     "First → last score per session": "每次会话的首分 → 末分",
     "mastered": "已掌握",
     "unfinished": "未完成",
+    # Full dashboard (ui_stats.py): KPI row + chart grid.
+    "Mastery": "掌握率",
+    "Avg attempts": "平均尝试次数",
+    "Avg gain": "平均进步",
+    "Attempts per session": "每次会话的尝试次数",
+    "Pass rate": "通过率",
+    "Pass rate by attempt": "各次尝试的通过率",
+    "Error kinds by week": "每周错误类型",
+    "Missed": "漏写",
+    "Spelling": "拼错",
+    "Top wrong words": "高频错词",
+    "Score distribution": "分数分布",
+    "Wrong words by week": "错词×周",
+    "Score per attempt, per session": "每次会话的逐次得分",
+    "Sessions": "会话数",
 
     # ------------------------------------------------------------------
     # Drill mode (ui_drill.py)
