@@ -234,5 +234,59 @@ class CorruptFileRecoveryTest(unittest.TestCase):
         self.assertFalse(os.path.exists(bad))
 
 
+class AtomicReplaceRetryTest(unittest.TestCase):
+    """The atomic swap retries a transient WinError 5 before giving up."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="mimora-stats-atomic-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.path = os.path.join(self.tmp, "stats.json")
+
+    def test_transient_replace_retries_and_lands(self):
+        from unittest import mock
+
+        store = StatsStore(path=self.path)
+        store.load()
+        store.record_take("hello", 80.0, transcript="hello",
+                          audio_duration_sec=1.0)
+
+        real_replace = os.replace
+        calls = {"n": 0}
+
+        def flaky(src, dst):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise PermissionError("WinError 5: transient lock")
+            return real_replace(src, dst)
+
+        with mock.patch("mimora.persistence.stats.os.replace", flaky):
+            store.save()
+        # The retry eventually replaced the primary with the new data.
+        fresh = StatsStore(path=self.path)
+        fresh.load()
+        self.assertEqual(len(fresh.all_sessions()[0]["takes"]), 1)
+        self.assertGreaterEqual(calls["n"], 3)
+
+    def test_persistent_replace_failure_propagates(self):
+        from unittest import mock
+
+        store = StatsStore(path=self.path)
+        store.load()
+        store.record_take("hello", 80.0, transcript="hello",
+                          audio_duration_sec=1.0)
+
+        def always_fail(src, dst):
+            raise PermissionError("WinError 5: lock held")
+
+        with mock.patch("mimora.persistence.stats.os.replace", always_fail):
+            with self.assertRaises(PermissionError):
+                store.save()
+        # The primary is untouched (still holds the take recorded above) and
+        # the failed save did not duplicate it.
+        fresh = StatsStore(path=self.path)
+        fresh.load()
+        self.assertEqual(len(fresh.all_sessions()[0]["takes"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

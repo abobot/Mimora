@@ -395,6 +395,12 @@ def ensure_hf_models(repos: Optional[Sequence[models_info.HfRepo]] = None, *,
             log.info("Already cached: %s", repo_id)
             continue
         log.info("Fetching %s, %d MB [%s] ...", repo.label, repo.size_mb, repo_id)
+        # A completed-but-empty (or truncated) blob makes hf_repo_cached
+        # return False, but snapshot_download would STILL skip the file: it
+        # treats the snapshot entry as present (os.path.isfile follows the
+        # symlink), so nothing would ever replace the bad blob. Purge the
+        # corrupt snapshot+blob first, so the download actually re-fetches it.
+        _purge_corrupt_snapshot_files(repo_id)
         try:
             snapshot_download(repo_id=repo_id, **progress_arg)
             _sweep_incomplete_blobs(repo_id)
@@ -407,6 +413,56 @@ def ensure_hf_models(repos: Optional[Sequence[models_info.HfRepo]] = None, *,
         raise ModelFetchError(
             f"Could not download: {', '.join(failures)}. Check the network / "
             f"proxy and re-run; finished repos are not fetched again.")
+
+
+def _purge_corrupt_snapshot_files(repo_id: str) -> None:
+    """Delete snapshot files whose blob is missing or empty.
+
+    Called before a download of a repo that ``hf_repo_cached`` reported as
+    NOT cached. A completed-but-empty (or truncated) blob makes the predicate
+    return False, but ``snapshot_download`` would still treat the snapshot
+    entry as present - ``os.path.isfile`` follows the symlink to the blob and
+    answers True - so the file would never be re-fetched and the repo stays
+    broken forever. Deleting the snapshot entry (and, when nothing else links
+    it, the empty blob) makes the download actually re-fetch the file.
+
+    Best-effort: a file another process holds simply stays, and the download
+    then runs against the same bad entry - no worse than before.
+    """
+    repo_dir = hf_hub_dir() / ("models--" + repo_id.replace("/", "--"))
+    snapshots = repo_dir / "snapshots"
+    if not snapshots.is_dir():
+        return
+    try:
+        current = next(snapshots.iterdir())
+    except (OSError, StopIteration):
+        return
+    for f in current.iterdir():
+        try:
+            if f.stat().st_size != 0:
+                continue  # healthy; leave it for the download to reuse
+        except OSError:
+            # Broken symlink (missing blob): same corrupt state, purge it.
+            pass
+        # The snapshot entry is a symlink into blobs/; unlink it, then the
+        # blob it pointed at if no other snapshot file still references it.
+        try:
+            target = f.resolve(strict=True)
+        except OSError:
+            target = None
+        try:
+            f.unlink()
+            log.info("Removed corrupt snapshot file: %s", f.name)
+        except OSError as exc:
+            log.info("Could not remove corrupt snapshot file %s (%s); the "
+                     "repo may keep being reported as not cached.", f.name, exc)
+            continue
+        if target is not None and target.parent.name == "blobs":
+            try:
+                target.unlink()
+                log.info("Removed the empty blob it pointed at: %s", target.name)
+            except OSError:
+                pass
 
 
 def _sweep_incomplete_blobs(repo_id: str) -> None:
