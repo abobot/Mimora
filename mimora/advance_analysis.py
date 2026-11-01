@@ -15,10 +15,13 @@ The eight advance sections map to these functions:
 0. :func:`kpi_overview` - the cross-file headline numbers.
 1. :func:`word_flow` - practice error words -> drilled -> mastered (sankey).
 2. :func:`phoneme_weakness` - weak phonemes vs drill-target coverage.
-3. *dropped* - the drill/practice score-consistency scatter was analysed and
-   found structurally trivial (every drill take IS the practice take it
-   references; see the module note on ``word_flow``), so section 3 is folded
-   into the funnel instead.
+3. :func:`drill_take_origin` - how drill takes link back to a practice take.
+   The originally-planned drill/practice score-consistency scatter was
+   analysed and found structurally trivial (every drill take IS the practice
+   take it references; see the module note on ``word_flow``), so instead of a
+   score comparison section 3 reports the *linkage*: a take is either linked
+   to a still-present practice take, linked to one that has since been
+   deleted, or was never scored at all.
 4. :func:`activity_timeline` - per-day practice/drill/dictation counts.
 5. :func:`audio_coverage_matrix` - practice vs drill with/without audio.
 6. :func:`phrase_funnel` - practice -> errors -> review -> drill -> pass.
@@ -50,6 +53,8 @@ from __future__ import annotations
 import re
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
+
+from mimora import time_utils
 
 #: Display order of the three activity types (used by the timeline charts).
 ACTIVITY_ORDER = ("practice", "drill", "dictation")
@@ -128,7 +133,10 @@ def _activity_date(session: Dict[str, Any], kind: str) -> Optional[str]:
     ts = (session.get(key) or session.get("ended_at") or "").strip()
     if not ts:
         return None
-    return ts[:10]
+    # Parse, never slice: ``ts[:10]`` on a non-zero-padded timestamp yields
+    # "2026-1-5", which does not match the "2026-01-05" a parser produces and
+    # so disagrees with the drill/dictation tabs' date keys.
+    return time_utils.iso_date(ts)
 
 
 def _distinct_error_words(takes: List[Dict[str, Any]]) -> set:
@@ -293,28 +301,43 @@ def drill_take_origin(drill_sessions: List[Dict[str, Any]],
 
     Every drill take that was scored through the main loop points its
     ``audio_session_id``/``audio_take_id`` at the practice take that produced
-    the phrase; a take that never got scored (or was deleted) has no
-    reference. Returns::
+    the phrase; a take that never got scored has no reference at all. The
+    reference can also point at a practice take that has since been deleted
+    (the user cleared history), which is NOT the same as never being scored.
+    Returns::
 
-        {"referenced": n, "unreferenced": n}
+        {"referenced": n, "reference_deleted": n, "never_scored": n}
 
     This replaces the originally-planned drill-vs-practice score-consistency
     scatter: because a drill take IS the practice take it references (same
     phrase, same score), there is no independent grade to compare, and the
     meaningful question is simply how much of the drill history links back
-    to a concrete practice take.
+    to a concrete, still-present practice take.
+
+    ``reference_deleted`` is split from ``never_scored`` so a chart does not
+    imply a drill was never scored when its reference was merely removed:
+    the drill *was* scored, but the practice take it recorded is gone.
     """
     practice = {(t.get("session_id"), t.get("id")) for t in takes}
     referenced = 0
-    unreferenced = 0
+    reference_deleted = 0
+    never_scored = 0
     for ds in drill_sessions:
         for dt in (ds.get("takes") or []):
-            key = (dt.get("audio_session_id"), dt.get("audio_take_id"))
-            if key and key in practice:
+            sid = dt.get("audio_session_id")
+            tid = dt.get("audio_take_id")
+            # An absent ref means the take was never scored (both parts must be
+            # present; a bare (None, None) tuple is still truthy, so test the
+            # components, not the tuple).
+            if not sid or not tid:
+                never_scored += 1
+            elif (sid, tid) in practice:
                 referenced += 1
             else:
-                unreferenced += 1
-    return {"referenced": referenced, "unreferenced": unreferenced}
+                reference_deleted += 1
+    return {"referenced": referenced,
+            "reference_deleted": reference_deleted,
+            "never_scored": never_scored}
 
 
 # ---------------------------------------------------------------------------
@@ -560,7 +583,9 @@ def activity_correlation(sessions: List[Dict[str, Any]],
         num = sum((x - ma) * (y - mb) for x, y in zip(a, b))
         da = sum((x - ma) ** 2 for x in a)
         db = sum((y - mb) ** 2 for y in b)
-        if da <= 0 or db <= 0:
+        # A tiny-but-nonzero variance (float rounding) would blow the ratio up
+        # to an arbitrary huge value; treat anything under 1e-12 as constant.
+        if da <= 1e-12 or db <= 1e-12:
             return None
         return num / (da ** 0.5 * db ** 0.5)
 

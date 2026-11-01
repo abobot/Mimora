@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from tkinter import messagebox
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from mimora import config, i18n, window_icon
+from mimora import config, i18n, time_utils, window_icon
 from mimora.analysis import (
     ZH_INTERFERENCE,
     aggregate_error_words,
@@ -109,21 +109,14 @@ def _filter_takes_by_range(raw_takes: List[Any], range_key: str
         return raw_takes
     days = spec.get("days")
     if days is not None:
-        cutoff = datetime.datetime.now().astimezone() - datetime.timedelta(days=days)
+        now = datetime.datetime.now().astimezone()
+        cutoff = now - datetime.timedelta(days=days)
         out = []
         for item in raw_takes:
             take = item[1] if isinstance(item, tuple) and len(item) == 2 else item
-            ts = take.get("timestamp")
-            try:
-                if ts:
-                    parsed = datetime.datetime.fromisoformat(ts)
-                    if parsed.tzinfo is None:
-                        parsed = parsed.replace(
-                            tzinfo=datetime.datetime.now().astimezone().tzinfo)
-                    if parsed >= cutoff:
-                        out.append(item)
-            except (TypeError, ValueError):
-                continue
+            parsed = time_utils.parse_ts(take.get("timestamp"))
+            if parsed is not None and parsed >= cutoff:
+                out.append(item)
         return out
     count = spec.get("count")
     if count is not None:

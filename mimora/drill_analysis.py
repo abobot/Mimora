@@ -35,9 +35,10 @@ cross-session per-target charts merge them by ``value`` - see
 
 from __future__ import annotations
 
-import datetime as _dt
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
+
+from mimora import time_utils
 
 #: Target types in display order (the order the per-type charts use).
 TYPE_ORDER = ("phoneme", "word", "single_word", "free_form")
@@ -54,27 +55,18 @@ def _value_of(session: Dict[str, Any]) -> str:
 
 
 def _iso_date(ts: str) -> Optional[str]:
-    """The ``YYYY-MM-DD`` date of an ISO timestamp (None if unparseable)."""
-    text = (ts or "").strip()
-    if not text:
-        return None
-    try:
-        if "T" in text or "+" in text:
-            parsed = _dt.datetime.fromisoformat(text)
-        else:
-            parsed = _dt.date.fromisoformat(text)
-    except (ValueError, TypeError):
-        return None
-    if isinstance(parsed, _dt.datetime):
-        return parsed.date().isoformat()
-    return parsed.isoformat()
+    """The ``YYYY-MM-DD`` date of an ISO timestamp (None if unparseable).
+
+    Delegates to :func:`mimora.time_utils.iso_date` - the single shared
+    implementation (kept as a thin local name so existing callers and tests do
+    not change).
+    """
+    return time_utils.iso_date(ts)
 
 
 def _week_start(iso_date: str) -> str:
     """The Monday of the week containing ``iso_date`` (ISO date string)."""
-    d = _dt.date.fromisoformat(iso_date)
-    monday = d - _dt.timedelta(days=d.weekday())
-    return monday.isoformat()
+    return time_utils.week_start(iso_date)
 
 
 def mastery_by_type(

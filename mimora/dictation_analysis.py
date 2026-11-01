@@ -18,11 +18,39 @@ trivially unit-testable and never drags Tk into the report path.
 
 from __future__ import annotations
 
-import datetime as _dt
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
+from mimora import time_utils
 from mimora.dictation.scoring import compare_sentences
+
+
+def _all_take_details(sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """One pass over every take, caching its ``compare_sentences`` result.
+
+    ``wrong_vs_extra_counts``, ``spelling_frequencies``, ``error_type_trend``,
+    ``error_type_totals``, ``top_wrong_words`` and ``word_by_week_heatmap`` all
+    need the per-take word-level states; without this cache each one re-runs
+    the O(n·m) alignment over every take (six times per take when the dashboard
+    renders the Dictation tab). Computed once per public call - the functions
+    are pure and stateless, so no cross-call cache is needed.
+
+    Returns ``[{"session": s, "take": t, "details": details}]`` for every take
+    whose ``reference_text`` is non-empty (the functions each skip takes with
+    no reference, so the shared pass applies the same filter once).
+    """
+    out: List[Dict[str, Any]] = []
+    for s in sessions:
+        for t in s.get("takes") or []:
+            ref = t.get("reference_text") or ""
+            if not ref:
+                continue
+            out.append({
+                "session": s,
+                "take": t,
+                "details": compare_sentences(t.get("user_text") or "", ref),
+            })
+    return out
 
 
 def wrong_vs_extra_counts(sessions: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -35,15 +63,11 @@ def wrong_vs_extra_counts(sessions: List[Dict[str, Any]]) -> Dict[str, int]:
     """
     wrong = 0
     extra = 0
-    for session in sessions:
-        for take in session.get("takes") or []:
-            ref = take.get("reference_text") or ""
-            if not ref:
-                continue
-            details = compare_sentences(take.get("user_text") or "", ref)
-            wrong += sum(1 for st in details.get("status") or []
-                         if st["state"] in ("missed", "wrong"))
-            extra += len(details.get("extra_words") or [])
+    for entry in _all_take_details(sessions):
+        details = entry["details"]
+        wrong += sum(1 for st in details.get("status") or []
+                     if st["state"] in ("missed", "wrong"))
+        extra += len(details.get("extra_words") or [])
     return {"wrong": wrong, "extra": extra}
 
 
@@ -56,15 +80,10 @@ def spelling_frequencies(sessions: List[Dict[str, Any]],
     ``(word, count)`` pairs, most frequent first.
     """
     freq: Counter = Counter()
-    for session in sessions:
-        for take in session.get("takes") or []:
-            ref = take.get("reference_text") or ""
-            if not ref:
-                continue
-            details = compare_sentences(take.get("user_text") or "", ref)
-            for st in details.get("status") or []:
-                if st["state"] == "wrong":
-                    freq[st["word"]] += 1
+    for entry in _all_take_details(sessions):
+        for st in entry["details"].get("status") or []:
+            if st["state"] == "wrong":
+                freq[st["word"]] += 1
     return freq.most_common(limit)
 
 
@@ -161,21 +180,13 @@ def session_dates(sessions: List[Dict[str, Any]],
 
 
 def _iso_date(ts: str) -> Optional[str]:
-    """The ``YYYY-MM-DD`` date of an ISO timestamp (None if unparseable)."""
-    text = (ts or "").strip()
-    if not text:
-        return None
-    try:
-        # ISO with a +08:00 offset parses directly; tolerate a bare date.
-        if "T" in text or "+" in text:
-            parsed = _dt.datetime.fromisoformat(text)
-        else:
-            parsed = _dt.date.fromisoformat(text)
-    except (ValueError, TypeError):
-        return None
-    if isinstance(parsed, _dt.datetime):
-        return parsed.date().isoformat()
-    return parsed.isoformat()
+    """The ``YYYY-MM-DD`` date of an ISO timestamp (None if unparseable).
+
+    Delegates to :func:`mimora.time_utils.iso_date` - the single shared
+    implementation (kept as a thin local name so existing callers and tests do
+    not change).
+    """
+    return time_utils.iso_date(ts)
 
 
 def mastery_by_week(sessions: List[Dict[str, Any]],
@@ -206,9 +217,7 @@ def mastery_by_week(sessions: List[Dict[str, Any]],
 
 def _week_start(iso_date: str) -> str:
     """The Monday of the week containing ``iso_date`` (ISO date string)."""
-    d = _dt.date.fromisoformat(iso_date)
-    monday = d - _dt.timedelta(days=d.weekday())
-    return monday.isoformat()
+    return time_utils.week_start(iso_date)
 
 
 def attempts_histogram(sessions: List[Dict[str, Any]],
@@ -254,24 +263,21 @@ def error_type_trend(sessions: List[Dict[str, Any]],
     across all takes in that week; weeks with no session are omitted.
     """
     by_week: Dict[str, Dict[str, int]] = {}
-    for s in sessions:
+    for entry in _all_take_details(sessions):
+        s = entry["session"]
         ended = s.get("ended_at") or s.get("started_at") or ""
         date = _iso_date(ended)
         if not date:
             continue
         week = _week_start(date)
         bucket = by_week.setdefault(week, {"missed": 0, "extra": 0, "spelling": 0})
-        for t in s.get("takes") or []:
-            ref = t.get("reference_text") or ""
-            if not ref:
-                continue
-            details = compare_sentences(t.get("user_text") or "", ref)
-            for st in details.get("status") or []:
-                if st["state"] == "missed":
-                    bucket["missed"] += 1
-                elif st["state"] == "wrong":
-                    bucket["spelling"] += 1
-            bucket["extra"] += len(details.get("extra_words") or [])
+        details = entry["details"]
+        for st in details.get("status") or []:
+            if st["state"] == "missed":
+                bucket["missed"] += 1
+            elif st["state"] == "wrong":
+                bucket["spelling"] += 1
+        bucket["extra"] += len(details.get("extra_words") or [])
     result = [(week, by_week[week]) for week in sorted(by_week)]
     return result
 
@@ -279,18 +285,14 @@ def error_type_trend(sessions: List[Dict[str, Any]],
 def error_type_totals(sessions: List[Dict[str, Any]]) -> Dict[str, int]:
     """Grand totals of the three error kinds (missed / extra / spelling)."""
     totals = {"missed": 0, "extra": 0, "spelling": 0}
-    for s in sessions:
-        for t in s.get("takes") or []:
-            ref = t.get("reference_text") or ""
-            if not ref:
-                continue
-            details = compare_sentences(t.get("user_text") or "", ref)
-            for st in details.get("status") or []:
-                if st["state"] == "missed":
-                    totals["missed"] += 1
-                elif st["state"] == "wrong":
-                    totals["spelling"] += 1
-            totals["extra"] += len(details.get("extra_words") or [])
+    for entry in _all_take_details(sessions):
+        details = entry["details"]
+        for st in details.get("status") or []:
+            if st["state"] == "missed":
+                totals["missed"] += 1
+            elif st["state"] == "wrong":
+                totals["spelling"] += 1
+        totals["extra"] += len(details.get("extra_words") or [])
     return totals
 
 
@@ -303,15 +305,10 @@ def top_wrong_words(sessions: List[Dict[str, Any]],
     the top ``limit`` as ``(word, count)``.
     """
     freq: Counter = Counter()
-    for s in sessions:
-        for t in s.get("takes") or []:
-            ref = t.get("reference_text") or ""
-            if not ref:
-                continue
-            details = compare_sentences(t.get("user_text") or "", ref)
-            for st in details.get("status") or []:
-                if st["state"] in ("missed", "wrong"):
-                    freq[st["word"]] += 1
+    for entry in _all_take_details(sessions):
+        for st in entry["details"].get("status") or []:
+            if st["state"] in ("missed", "wrong"):
+                freq[st["word"]] += 1
     return freq.most_common(limit)
 
 
@@ -328,22 +325,18 @@ def word_by_week_heatmap(sessions: List[Dict[str, Any]],
     # Word -> per-week counters, and the set of weeks.
     per_word: Dict[str, Counter] = {}
     weeks: set = set()
-    for s in sessions:
+    for entry in _all_take_details(sessions):
+        s = entry["session"]
         ended = s.get("ended_at") or s.get("started_at") or ""
         date = _iso_date(ended)
         if not date:
             continue
         week = _week_start(date)
         weeks.add(week)
-        for t in s.get("takes") or []:
-            ref = t.get("reference_text") or ""
-            if not ref:
-                continue
-            details = compare_sentences(t.get("user_text") or "", ref)
-            for st in details.get("status") or []:
-                if st["state"] in ("missed", "wrong"):
-                    counter = per_word.setdefault(st["word"], Counter())
-                    counter[week] += 1
+        for st in entry["details"].get("status") or []:
+            if st["state"] in ("missed", "wrong"):
+                counter = per_word.setdefault(st["word"], Counter())
+                counter[week] += 1
     ranked = sorted(per_word.items(),
                     key=lambda kv: sum(kv[1].values()), reverse=True)[:top_n]
     week_list = sorted(weeks)

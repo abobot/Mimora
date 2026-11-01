@@ -1,3 +1,6 @@
+==2026-11-01 21:50==
+  -[done] 第三轮代码审查反馈修复：drill_take_origin 三态拆分（referenced/reference_deleted/never_scored）、drill_ipa_no_practice 消费、dictation compare_sentences 缓存、pearson 小方差阈值、ISO 日期解析统一到 time_utils.py、phoneme_averages 单次调用、ui_weakness 时间窗用 parse_ts (2026-11-01 22:18)
+
 ==2026-11-01 21:15==
   -[done] 代码审查反馈修复：P0 单词表排序双重反转 / 评分色统一走 ui_tokens；P1 图表原语拆到 ui_chart.py、ui_stats 函数内导入上提、hero 死代码清理；P2 重复 tk 导入、桑基冗余多边形、长按注释 (2026-11-01 21:25)
 
