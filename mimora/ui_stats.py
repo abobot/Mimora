@@ -40,6 +40,8 @@ from mimora.ui_theme import (
     FONT_SIZE_CAPTION,
     FONT_SIZE_SUBTITLE,
     THEME,
+    WHEEL_EVENTS,
+    wheel_scroll_units,
 )
 import ttkbootstrap as ttk
 
@@ -958,6 +960,14 @@ class StatsView:
         self._content.bind("<Configure>", self._on_content_configure)
         self._body_canvas.bind("<Configure>", self._on_canvas_configure)
 
+        # One binding on the Toplevel serves every child (a widget's
+        # bindtags include its toplevel), so the wheel scrolls the dashboard
+        # body anywhere in the window. All WHEEL_EVENTS are bound:
+        # <MouseWheel> for Windows/macOS, Button-4/5 for X11 (see
+        # ui_theme.wheel_scroll_units).
+        for sequence in WHEEL_EVENTS:
+            self._window.bind(sequence, self._on_wheel)
+
         self._nb = ttk.Notebook(self._content)
         self._nb.pack(fill=tk.X, padx=16, pady=(8, 4))
         self._tab_overview = tk.Frame(self._nb, bg=THEME["bg_main"])
@@ -1022,6 +1032,18 @@ class StatsView:
         """Keep the scrollable content width matched to the canvas."""
         self._body_canvas.configure(
             scrollregion=self._body_canvas.bbox("all"))
+
+    def _on_wheel(self, event) -> None:
+        """Scroll the dashboard body with the mouse wheel.
+
+        Bound on the Toplevel (see the comment in ``_build_ui``); a widget's
+        bindtags include its toplevel, so this fires no matter which child
+        the cursor is over. Delegates to the shared cross-platform unit
+        conversion in ``ui_theme.wheel_scroll_units``.
+        """
+        units = wheel_scroll_units(event)
+        if units:
+            self._body_canvas.yview_scroll(units, "units")
 
     def _on_canvas_configure(self, event) -> None:
         """Stretch the content window to the canvas width (no horizontal

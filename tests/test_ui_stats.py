@@ -140,6 +140,36 @@ class ExportReportButtonsTest(unittest.TestCase):
             self.assertGreater(y1, height,
                                "content taller than viewport; scroll needed")
 
+    def test_mouse_wheel_scrolls_the_body(self):
+        # The reported bug: the stats dashboard has a scrollable body but no
+        # mouse-wheel binding, so the wheel did nothing anywhere in the
+        # window. The Toplevel carries one binding per WHEEL_EVENTS sequence
+        # (a widget's bindtags include its toplevel), so every child inherits
+        # it; the handler must translate the wheel into a canvas yview_scroll.
+        import tkinter as tk
+        from unittest import mock
+        from mimora.ui_theme import WHEEL_EVENTS, wheel_scroll_units
+
+        for seq in WHEEL_EVENTS:
+            self.assertTrue(
+                self.view._window.bind(seq),
+                f"{seq} must be bound on the Toplevel",
+            )
+
+        # The handler is the actual wheel→scroll translation. Exercise it
+        # directly against a mock so the assertion does not depend on the
+        # window being tall enough to scroll (empty sessions are short).
+        event = tk.Event()
+        event.delta = 120
+        event.num = 0
+        with mock.patch.object(self.view._body_canvas,
+                               "yview_scroll") as scroll:
+            self.view._on_wheel(event)
+        scroll.assert_called_once()
+        called_with = scroll.call_args[0]
+        self.assertEqual(called_with[0], wheel_scroll_units(event))
+        self.assertEqual(called_with[1], "units")
+
 
 class NoReportButtonsWithoutHandlersTest(unittest.TestCase):
     @classmethod
