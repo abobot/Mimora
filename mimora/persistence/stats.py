@@ -50,6 +50,14 @@ from mimora import paths
 # an older reader; ``migrations.migrate_to_latest`` handles the upgrades.
 STATS_SCHEMA_VERSION = "1.0"
 
+# A transient Windows lock (Nextcloud's file watcher, antivirus, a scan) can
+# make os.replace fail with PermissionError/WinError 5 even though the file is
+# writable. The atomic swap is retried a few times with a short pause before
+# the failure propagates; total added latency for a persistent lock is bounded
+# by _ATOMIC_REPLACE_ATTEMPTS * _ATOMIC_RETRY_DELAY_SEC.
+_ATOMIC_REPLACE_ATTEMPTS = 3
+_ATOMIC_RETRY_DELAY_SEC = 0.15
+
 # Session id format: ``s-<UTC ISO seconds>-<4-hex>``. Two reasons for the
 # random tail: a crash-recover that restarts in the same second must not
 # collide, and the id is what a user pastes into a bug report so two lines
@@ -357,7 +365,14 @@ class StatsStore:
     # -- saving --------------------------------------------------------------
 
     def _write_atomic(self, target: Path) -> None:
-        """Serialize ``self.data`` to ``target`` via same-dir tmp + os.replace."""
+        """Serialize ``self.data`` to ``target`` via same-dir tmp + os.replace.
+
+        The ``os.replace`` step is retried a bounded number of times on an
+        ``OSError``: on Windows a sync client (Nextcloud) or antivirus briefly
+        holds the file, which surfaces as WinError 5 even though the write
+        would succeed a moment later. A persistent failure still propagates
+        after the retries are exhausted.
+        """
         tmp = target.with_suffix(target.suffix + ".tmp")
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(self.data, fh, ensure_ascii=False, indent=2)
@@ -368,7 +383,15 @@ class StatsStore:
             except OSError:
                 # fsync is best-effort; some filesystems report EOPNOTSUPP.
                 pass
-        os.replace(tmp, target)
+        for attempt in range(_ATOMIC_REPLACE_ATTEMPTS):
+            try:
+                os.replace(tmp, target)
+                return
+            except OSError:
+                if attempt + 1 < _ATOMIC_REPLACE_ATTEMPTS:
+                    time.sleep(_ATOMIC_RETRY_DELAY_SEC)
+                else:
+                    raise
 
     def save(self, backup: bool = True) -> None:
         """Persist the in-memory data.
