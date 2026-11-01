@@ -44,6 +44,22 @@ and stay in the user data directory across upgrades.
   shape the charts (no stored duration, so investment is measured in attempts;
   `word` and `single_word` targets are the same semantic target and are merged
   in per-target charts; `free_form` targets are excluded from them).
+- **Stats dashboard: advance (cross-file) analysis tab.** The stats dashboard
+  gains a seventh Advance tab that joins the four activity stores — practice
+  takes, review pool, drill sessions and dictation sessions — into one view: a
+  KPI row (practice takes, distinct error words, review pool size, drill and
+  dictation session counts, audio coverage, mastered drills), the
+  error-word → drill → mastery sankey, the weak-phoneme coverage bars, the
+  drill-take origin split, the practice/drill/dictation activity-by-day stacked
+  timeline, the audio-coverage matrix, the phrase-level funnel
+  (practice → with errors → in review → drilled → passed) and the day-level
+  activity co-occurrence correlations. A new pure
+  `mimora/advance_analysis.py` holds the aggregation plus the phrase/word/IPA
+  normalizers the cross-file joins need, and it documents the join gotchas
+  (review.json is keyed by phrase text, drill take audio refs point to the
+  practice take that produced the phrase, so a drill take is the practice take
+  itself and there is no independent grade to compare). The chart primitives
+  gain a sankey and a y=x-reference scatter painter.
 - **UI redesign: semantic design tokens and theme contrast audit.** A new
   `mimora/ui_tokens.py` centralises every colour *meaning* that panels used to
   interpret independently (score bands, word quality levels, weakness statuses),

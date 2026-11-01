@@ -505,6 +505,158 @@ class _CanvasChart:
                           fill=THEME["text_emph"],
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
 
+    def draw_sankey(self, nodes: List[Tuple[str, Any, float, int]],
+                    links: List[Tuple[str, str, float]],
+                    title: str = "") -> None:
+        """Draw a compact Sankey-style flow diagram.
+
+        ``nodes`` is ``[(node_id, label, value, column)]`` and ``links`` is
+        ``[(src_id, dst_id, value)]`` - the shape
+        :func:`mimora.advance_analysis.word_flow_nodes` returns. Each column
+        is a stage; the nodes in it are stacked top-down proportionally to
+        their ``value``, and each link is a filled trapezoid from its source
+        node to its target node (drawn with an interpolated colour between
+        the two column fills). Node values are the label suffix; a link's
+        value is drawn on the ribbon only when it is large enough to fit.
+        """
+        c = self.canvas
+        c.delete("all")
+        if not nodes or not links:
+            c.create_text(self._width / 2, self._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        pad_l, pad_r, pad_t, pad_b = 8, 8, 12, 24
+        plot_w = self._width - pad_l - pad_r
+        plot_h = self._height - pad_t - pad_b
+        columns: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+        for node_id, label, value, column in nodes:
+            columns[column].append({
+                "id": node_id, "label": label, "value": value,
+                "column": column,
+            })
+        col_ids = sorted(columns)
+        n_cols = max(len(col_ids), 1)
+        gap = 60
+        node_w = min(90, (plot_w - gap * (n_cols - 1)) // n_cols)
+        # Per-column colour ramp (info -> accent -> good).
+        palette = [THEME["info"], THEME["accent"], THEME["good"]]
+        col_x: Dict[int, int] = {}
+        for i, col in enumerate(col_ids):
+            col_x[col] = pad_l + i * (node_w + gap)
+        # Stack nodes within a column, proportional to value.
+        node_rects: Dict[str, Tuple[float, float, float, float]] = {}
+        for col in col_ids:
+            total = sum(n["value"] for n in columns[col]) or 1.0
+            y = pad_t
+            for n in columns[col]:
+                h = plot_h * n["value"] / total
+                node_rects[n["id"]] = (
+                    col_x[col], y, col_x[col] + node_w, y + h)
+                y += h
+        # Draw links first (under the nodes), then node boxes on top.
+        for src, dst, value in links:
+            if src not in node_rects or dst not in node_rects:
+                continue
+            sx0, sy0, sx1, sy1 = node_rects[src]
+            dx0, dy0, dx1, dy1 = node_rects[dst]
+            # Link occupies the vertical slice of the source node
+            # proportional to its value share of that node's total out-flow.
+            src_out = sum(v for s, _, v in links if s == src) or value
+            out_share = value / src_out if src_out else 0.0
+            src_h = sy1 - sy0
+            src_top = sy0 + src_h * (1 - out_share)
+            # Destination takes the matching share of its in-flow.
+            dst_in = sum(v for _, d, v in links if d == dst) or value
+            in_share = value / dst_in if dst_in else 0.0
+            dst_h = dy1 - dy0
+            dst_top = dy1 - dst_h * in_share
+            c.create_polygon(
+                sx1, sy0 + src_h * 0.0, sx1, sy0 + src_h,
+                dx0, dy0, dx0, dy1,
+                fill=palette[0], outline="")
+            # Ribbon between source right edge and target left edge.
+            c.create_polygon(
+                sx1, src_top, sx1, src_top + src_h * out_share,
+                dx0, dst_top, dx0, dst_top + dst_h * in_share,
+                fill=palette[1], outline="")
+        for node_id, label, value, column in nodes:
+            x0, y0, x1, y1 = node_rects[node_id]
+            color = palette[min(column, len(palette) - 1)]
+            c.create_rectangle(x0, y0, x1, y1, fill=color, outline="")
+            mid_y = (y0 + y1) / 2
+            if y1 - y0 > 14:
+                c.create_text(x0 + node_w / 2, mid_y - 5, text=label,
+                              anchor="n", fill=THEME["text_bright"],
+                              font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+                c.create_text(x0 + node_w / 2, mid_y + 3, text=f"{value:.0f}",
+                              anchor="n", fill=THEME["text_bright"],
+                              font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+        if title:
+            c.create_text(pad_l, 6, text=title, anchor="nw",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def draw_scatter_diagonal(self, points: List[Tuple[float, float]],
+                              title: str = "",
+                              x_label: str = "",
+                              y_label: str = "",
+                              max_value: float = 100.0) -> None:
+        """Draw a scatter plot with the y=x diagonal reference line.
+
+        Used by the advance tab to compare a drill take's score against the
+        practice take it references (both 0-100). The diagonal runs from
+        bottom-left to top-right at the same scale on both axes, so a point
+        exactly on the line is "consistent"; above it the drill scored higher
+        than the practice take, below it lower. Axis scales are shared
+        (0..``max_value``) so the diagonal is a true 45-degree line.
+        """
+        c = self.canvas
+        c.delete("all")
+        pad_l, pad_r, pad_t, pad_b = 36, 8, 12, 28
+        plot_w = self._width - pad_l - pad_r
+        plot_h = self._height - pad_t - pad_b
+        if not points:
+            c.create_text(self._width / 2, self._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            c.create_line(pad_l, y, pad_l + plot_w, y, fill=THEME["chart_grid"])
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            val = max_value * (1 - i / 4)
+            c.create_text(pad_l - 4, y, text=f"{val:.0f}", anchor="e",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        for i in range(5):
+            x = pad_l + plot_w * i / 4
+            val = max_value * i / 4
+            c.create_text(x, pad_t + plot_h + 4, text=f"{val:.0f}", anchor="n",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        # Diagonal (y=x) reference line, dashed grey.
+        c.create_line(pad_l, pad_t + plot_h, pad_l + plot_w, pad_t,
+                      fill=THEME["text_dim"], dash=(4, 4))
+        for x, y in points:
+            px = pad_l + plot_w * min(x, max_value) / max_value
+            py = pad_t + plot_h * (1 - min(y, max_value) / max_value)
+            c.create_oval(px - 3, py - 3, px + 3, py + 3,
+                          fill=THEME["accent"], outline="")
+        if x_label:
+            c.create_text(pad_l + plot_w / 2, pad_t + plot_h + 16,
+                          text=x_label, anchor="n", fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if y_label:
+            c.create_text(8, pad_t + plot_h / 2, text=y_label, angle=90,
+                          anchor="n", fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if title:
+            c.create_text(pad_l, 6, text=title, anchor="nw",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
     def draw_heatmap_matrix(self, rows: List[str], cols: List[str],
                             matrix: List[List[int]],
                             palette: List[str],
@@ -976,12 +1128,14 @@ class StatsView:
         self._tab_sessions = tk.Frame(self._nb, bg=THEME["bg_main"])
         self._tab_dictation = tk.Frame(self._nb, bg=THEME["bg_main"])
         self._tab_drill = tk.Frame(self._nb, bg=THEME["bg_main"])
+        self._tab_advance = tk.Frame(self._nb, bg=THEME["bg_main"])
         self._nb.add(self._tab_overview, text=i18n.tr("Overview"))
         self._nb.add(self._tab_trends, text=i18n.tr("Trends"))
         self._nb.add(self._tab_review, text=i18n.tr("Review pool"))
         self._nb.add(self._tab_sessions, text=i18n.tr("Sessions"))
         self._nb.add(self._tab_dictation, text=i18n.tr("Dictation"))
         self._nb.add(self._tab_drill, text=i18n.tr("Drill"))
+        self._nb.add(self._tab_advance, text=i18n.tr("Advance"))
 
         # Overview tab: summary cards + the two headline charts.
         self._cards = tk.Frame(self._tab_overview, bg=THEME["bg_main"])
@@ -1028,6 +1182,12 @@ class StatsView:
         self._drill = tk.Frame(self._tab_drill, bg=THEME["bg_main"])
         self._drill.pack(fill=tk.X, padx=8, pady=4)
 
+        # Advance tab: the cross-file sections (practice/drill/dictation/
+        # review joins) in the same 2-column grid. Added last because it is
+        # the newest analysis; its charts reuse the shared _CanvasChart.
+        self._advance = tk.Frame(self._tab_advance, bg=THEME["bg_main"])
+        self._advance.pack(fill=tk.X, padx=8, pady=4)
+
     def _on_content_configure(self, _event=None) -> None:
         """Keep the scrollable content width matched to the canvas."""
         self._body_canvas.configure(
@@ -1066,6 +1226,11 @@ class StatsView:
         self._render_recent(sessions)
         self._render_dictation(data.get("dictation_sessions") or [])
         self._render_drill(data.get("drill_sessions") or [])
+        self._render_advance(
+            sessions, takes,
+            data.get("drill_sessions") or [],
+            data.get("dictation_sessions") or [],
+            data.get("review_phrases") or {})
 
     def _show_tab(self, tab: str) -> None:
         """Switch the visible tab and re-scroll to its top.
@@ -1075,7 +1240,7 @@ class StatsView:
         the canvas adjusts to the newly visible tab's height automatically.
         """
         index = {"overview": 0, "trends": 1, "review": 2, "sessions": 3,
-                 "dictation": 4, "drill": 5}[tab]
+                 "dictation": 4, "drill": 5, "advance": 6}[tab]
         self._nb.select(index)
         self._body_canvas.yview_moveto(0.0)
 
@@ -1894,6 +2059,183 @@ class StatsView:
                    "unfinished": len(sessions) - overall_mastered}
         donut = chart(cell(5, 1))
         self._draw_dictation_donut(donut, outcome)
+
+    def _render_advance(self, sessions: List[Dict], takes: List[Dict],
+                        drill_sessions: List[Dict],
+                        dictation_sessions: List[Dict],
+                        review_phrases: Dict[str, Any]) -> None:
+        """Render the advance tab (cross-file analysis).
+
+        The advance tab joins the practice takes, drill sessions, dictation
+        sessions and the review pool into the sections the user asked for:
+        key overview (0), error-word flow (1), phoneme weakness (2), drill
+        take origin (3, the score-consistency question answered structurally),
+        activity timeline (4), audio coverage (5), phrase funnel (6), day
+        correlation (7) and the join gotchas (8). All aggregation happens in
+        :mod:`mimora.advance_analysis` (pure, Tk-free); this method only
+        draws.
+        """
+        for child in self._advance.winfo_children():
+            child.destroy()
+        import mimora.advance_analysis as aa
+        if not sessions and not drill_sessions and not dictation_sessions:
+            tk.Label(self._advance, text=i18n.tr(
+                "No activity yet. Practice, drill or dictate to populate the "
+                "advance analysis."),
+                font=(FONT_FAMILY, FONT_SIZE_BODY, "italic"),
+                fg=THEME["text_dim"], bg=THEME["bg_main"]
+                ).pack(anchor="w")
+            return
+        tk.Label(self._advance, text=i18n.tr("Advance"),
+                 font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                 bg=THEME["bg_main"], fg=THEME["text_emph"]
+                 ).pack(anchor="w", pady=(8, 2))
+
+        # (0) Key overview KPI cards.
+        kpi = aa.kpi_overview(takes, drill_sessions, dictation_sessions,
+                              review_phrases)
+        coverage = kpi["audio_coverage"]
+        kpi_row = tk.Frame(self._advance, bg=THEME["bg_main"])
+        kpi_row.pack(fill=tk.X)
+        kpi_items = [
+            (i18n.tr("Practice takes"), f"{kpi['practice_takes']}"),
+            (i18n.tr("Error words"), f"{kpi['error_words']}"),
+            (i18n.tr("Review pool"), f"{kpi['review_pool']}"),
+            (i18n.tr("Drill sessions"), f"{kpi['drill_sessions']}"),
+            (i18n.tr("Dictation sessions"), f"{kpi['dictation_sessions']}"),
+            (i18n.tr("Audio coverage"),
+             f"{coverage:.0%}" if coverage is not None else "—"),
+            (i18n.tr("Mastered drills"), f"{kpi['mastered_drills']}"),
+        ]
+        for i, (title, value) in enumerate(kpi_items):
+            card = tk.Frame(kpi_row, bg=THEME["bg_panel"], bd=1,
+                            highlightbackground=THEME["border"],
+                            highlightthickness=1)
+            card.grid(row=i // 4, column=i % 4, sticky="nsew",
+                      padx=3, pady=4)
+            kpi_row.columnconfigure(i % 4, weight=1, uniform="advance_kpi")
+            tk.Label(card, text=title,
+                     font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                     bg=THEME["bg_panel"], fg=THEME["text_dim"]
+                     ).pack(pady=(6, 0))
+            tk.Label(card, text=value,
+                     font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                     bg=THEME["bg_panel"], fg=THEME["text_emph"]
+                     ).pack(pady=(0, 6))
+
+        # Chart grid (same 2-column pattern as the drill tab).
+        grid = tk.Frame(self._advance, bg=THEME["bg_main"])
+        grid.pack(fill=tk.X)
+
+        def cell(row, col):
+            c = tk.Frame(grid, bg=THEME["bg_main"])
+            c.grid(row=row, column=col, sticky="nsew", padx=4, pady=4)
+            grid.columnconfigure(col, weight=1, uniform="advance")
+            return c
+
+        def chart(cell_frame, height=170):
+            ch = _CanvasChart(cell_frame, width=430, height=height)
+            ch.canvas.pack(padx=4, pady=4)
+            return ch
+
+        # (1) Error-word flow sankey.
+        wf = aa.word_flow(takes, drill_sessions)
+        nodes, links = aa.word_flow_nodes(wf)
+        flow = chart(cell(0, 0), height=190)
+        flow.draw_sankey(nodes, links,
+                         title=i18n.tr("Error words → drill → mastery"))
+
+        # (2) Phoneme weakness vs drill coverage (top weak phonemes).
+        pw = aa.phoneme_weakness(takes, drill_sessions)
+        weak_items = [(f"/{ipa}/", avg * 100.0)
+                      for ipa, avg, _, _ in pw["weak"][:8]]
+        weak = chart(cell(0, 1))
+        weak.draw_hbars(weak_items,
+                        title=i18n.tr("Weak phonemes (coverage: {d}/{w})"
+                                      .format(d=pw["drilled_count"],
+                                              w=pw["weak_count"])),
+                        color=THEME["info"])
+
+        # (3) Drill take origin (the score-consistency question answered
+        # structurally: a drill take IS the practice take it references).
+        origin = aa.drill_take_origin(drill_sessions, takes)
+        origin_chart = chart(cell(1, 0))
+        origin_chart.draw_stacked_bars(
+            [
+                (i18n.tr("Linked"), [float(origin["referenced"])]),
+                (i18n.tr("Unlinked"), [float(origin["unreferenced"])]),
+            ],
+            [i18n.tr("Drill takes")],
+            title=i18n.tr("Drill takes linked to practice"))
+
+        # (4) Activity timeline: per-day session counts, 3 types.
+        tl = aa.activity_timeline(sessions, drill_sessions, dictation_sessions)
+        timeline = chart(cell(1, 1))
+        timeline.draw_stacked_bars(
+            [
+                ("Practice",
+                 [float(v) for v in tl["practice"]]),
+                ("Drill",
+                 [float(v) for v in tl["drill"]]),
+                ("Dictation",
+                 [float(v) for v in tl["dictation"]]),
+            ],
+            [d[5:] for d in tl["days"]],
+            title=i18n.tr("Activity by day"))
+
+        # (5) Audio coverage matrix: practice vs drill with/without.
+        acm = aa.audio_coverage_matrix(takes, drill_sessions)
+        audio = chart(cell(2, 0))
+        audio.draw_stacked_bars(
+            [
+                (i18n.tr("With audio"),
+                 [float(acm["practice"]["with"]),
+                  float(acm["drill"]["with"])]),
+                (i18n.tr("No audio"),
+                 [float(acm["practice"]["without"]),
+                  float(acm["drill"]["without"])]),
+            ],
+            [i18n.tr("Practice"), i18n.tr("Drill")],
+            title=i18n.tr("Audio coverage"))
+
+        # (6) Phrase funnel (practice → errors → review → drill → pass).
+        funnel = aa.phrase_funnel(takes, drill_sessions, review_phrases)
+        stages = funnel["stages"]
+        labels = [i18n.tr(label) for label, _ in stages]
+        funnel_chart = chart(cell(2, 1))
+        funnel_chart.draw_bars(
+            [float(count) for _, count in stages],
+            labels,
+            title=i18n.tr("Phrase funnel"))
+
+        # (7) Day correlation between activity types.
+        corr = aa.activity_correlation(sessions, drill_sessions,
+                                       dictation_sessions)
+        corr_items = [
+            (i18n.tr("Practice-Drill"),
+             corr["practice_drill"] * 100.0 if corr["practice_drill"] is not None else 0.0),
+            (i18n.tr("Practice-Dictation"),
+             corr["practice_dictation"] * 100.0 if corr["practice_dictation"] is not None else 0.0),
+            (i18n.tr("Drill-Dictation"),
+             corr["drill_dictation"] * 100.0 if corr["drill_dictation"] is not None else 0.0),
+        ]
+        corr_chart = chart(cell(3, 0))
+        corr_chart.draw_hbars(corr_items,
+                              title=i18n.tr("Day correlation ({d} days)"
+                                            .format(d=corr["days"])),
+                              color=THEME["accent"])
+
+        # (8) Join gotchas note (rendered as a short list).
+        note = tk.Label(self._advance,
+                        text=i18n.tr("Join notes") + ":",
+                        font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"),
+                        bg=THEME["bg_main"], fg=THEME["text_emph"])
+        note.pack(anchor="w", pady=(8, 2))
+        for gotcha in aa.JOIN_GOTCHAS:
+            tk.Label(self._advance, text="• " + i18n.tr(gotcha),
+                     font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                     fg=THEME["text_dim"], bg=THEME["bg_main"]
+                     ).pack(anchor="w")
 
     # ------------------------------------------------------------------
     # Actions

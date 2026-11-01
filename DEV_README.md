@@ -62,6 +62,7 @@ Get-Content "C:\Users\abobot\AppData\Roaming\Mimora\logs\main.log" -Tail 50
 |------|------|
 | `mimora/persistence/` | 持久化存储（stats.json、音频文件） |
 | `mimora/analysis/` | 错误词聚合、音素分析、建议引擎 |
+| `mimora/advance_analysis.py` | 跨文件关联分析（advance 看板数据） |
 | `mimora/drill/` | Drill 练习引擎 |
 | `mimora/ui_history_browse.py` | 历史浏览界面 |
 | `mimora/ui_stats.py` | 统计面板 |

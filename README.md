@@ -440,7 +440,9 @@ The web app mirrors the desktop feature set: the practice loop, **dictation**
 practice of one target word or phoneme), the **weakness panel** (error words,
 phonemes and suggestions), **history browsing** (sessions, drill and dictation
 sessions, delete, JSON export), the **stats dashboard** (daily average, score
-distribution, activity, streak), an editable **source text** and a **settings**
+distribution, activity, streak, plus the **Advance** tab that joins practice,
+review, drill and dictation into error-word flow, phoneme coverage, activity
+timeline and audio coverage), an editable **source text** and a **settings**
 view (live-applied; restart-required keys are reported). The settings view also
 lets you change the **UI language** (`ui_language`, en/zh, restart required).
 
