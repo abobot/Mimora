@@ -500,6 +500,19 @@ _ZH: Dict[str, str] = {
     "Outcome: 🔁 Try again next time": "结果：🔁 下次再试",
 
     # ------------------------------------------------------------------
+    # Dictation stats tab (ui_stats.py)
+    # ------------------------------------------------------------------
+    "No dictation sessions yet. Open the Dictation mode to start one.":
+        "还没有听写会话。打开听写模式开始一次。",
+    "Wrong vs extra words": "错误词 vs 多余词",
+    "Wrong": "错误",
+    "Extra": "多余",
+    "Most misspelled words": "最常拼错的词",
+    "First → last score per session": "每次会话的首分 → 末分",
+    "mastered": "已掌握",
+    "unfinished": "未完成",
+
+    # ------------------------------------------------------------------
     # Drill mode (ui_drill.py)
     # ------------------------------------------------------------------
     "Drill · {value}": "练习 · {value}",

@@ -1097,6 +1097,7 @@ class PronunciationTrainerGUI:
                     "sessions": self.stats_store.all_sessions(),
                     "all_takes": self.stats_store.all_takes(),
                     "drill_sessions": self.stats_store.all_drill_sessions(),
+                    "dictation_sessions": self.stats_store.all_dictation_sessions(),
                     "review_phrases": self._review_phrases_for_stats(),
                     "review_history": self._review_history_for_stats(),
                 },

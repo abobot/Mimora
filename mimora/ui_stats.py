@@ -524,10 +524,12 @@ class StatsView:
         self._tab_trends = tk.Frame(self._nb, bg=THEME["bg_main"])
         self._tab_review = tk.Frame(self._nb, bg=THEME["bg_main"])
         self._tab_sessions = tk.Frame(self._nb, bg=THEME["bg_main"])
+        self._tab_dictation = tk.Frame(self._nb, bg=THEME["bg_main"])
         self._nb.add(self._tab_overview, text=i18n.tr("Overview"))
         self._nb.add(self._tab_trends, text=i18n.tr("Trends"))
         self._nb.add(self._tab_review, text=i18n.tr("Review pool"))
         self._nb.add(self._tab_sessions, text=i18n.tr("Sessions"))
+        self._nb.add(self._tab_dictation, text=i18n.tr("Dictation"))
 
         # Overview tab: summary cards + the two headline charts.
         self._cards = tk.Frame(self._tab_overview, bg=THEME["bg_main"])
@@ -561,6 +563,13 @@ class StatsView:
         self._recent = tk.Frame(self._tab_sessions, bg=THEME["bg_main"])
         self._recent.pack(fill=tk.X, padx=8, pady=4)
 
+        # Dictation tab: word-error balance, spelling errors, progress
+        # slope and mastery donut. Charts sit in a 2-column grid like the
+        # review tab, so a wide window keeps two columns and a narrow one
+        # still lays them out without overflow.
+        self._dictation = tk.Frame(self._tab_dictation, bg=THEME["bg_main"])
+        self._dictation.pack(fill=tk.X, padx=8, pady=4)
+
     def _on_content_configure(self, _event=None) -> None:
         """Keep the scrollable content width matched to the canvas."""
         self._body_canvas.configure(
@@ -585,6 +594,7 @@ class StatsView:
         self._render_review(data.get("review_phrases") or {},
                             data.get("review_history") or [])
         self._render_recent(sessions)
+        self._render_dictation(data.get("dictation_sessions") or [])
 
     def _show_tab(self, tab: str) -> None:
         """Switch the visible tab and re-scroll to its top.
@@ -593,7 +603,8 @@ class StatsView:
         The scroll region is re-synced by the content's <Configure> bind, so
         the canvas adjusts to the newly visible tab's height automatically.
         """
-        index = {"overview": 0, "trends": 1, "review": 2, "sessions": 3}[tab]
+        index = {"overview": 0, "trends": 1, "review": 2, "sessions": 3,
+                 "dictation": 4}[tab]
         self._nb.select(index)
         self._body_canvas.yview_moveto(0.0)
 
@@ -1017,6 +1028,158 @@ class StatsView:
                      font=(FONT_FAMILY, FONT_SIZE_CAPTION),
                      fg=THEME["text_emph"], bg=THEME["bg_panel"]
                      ).pack(fill=tk.X, padx=6, pady=2)
+
+    def _render_dictation(self, sessions: List[Dict]) -> None:
+        """Render the dictation tab: word-error balance, spelling errors,
+        first→last progress slope and mastery donut.
+
+        All the aggregation happens in :mod:`mimora.dictation_analysis`
+        (pure, Tk-free); this method only draws. ``sessions`` is the store's
+        ``dictation_sessions`` list (empty when none have been recorded).
+        """
+        for child in self._dictation.winfo_children():
+            child.destroy()
+        import mimora.dictation_analysis as da
+        if not sessions:
+            tk.Label(self._dictation, text=i18n.tr(
+                "No dictation sessions yet. Open the Dictation mode to start one."),
+                font=(FONT_FAMILY, FONT_SIZE_BODY, "italic"),
+                fg=THEME["text_dim"], bg=THEME["bg_main"]
+                ).pack(anchor="w")
+            return
+        tk.Label(self._dictation, text=i18n.tr("Dictation"),
+                 font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                 bg=THEME["bg_main"], fg=THEME["text_emph"]
+                 ).pack(anchor="w", pady=(8, 2))
+
+        # Two-column chart grid (same pattern as the review tab's grid), so a
+        # wide window keeps two columns and a narrow one still lays them out.
+        grid = tk.Frame(self._dictation, bg=THEME["bg_main"])
+        grid.pack(fill=tk.X)
+
+        def cell(row, col):
+            c = tk.Frame(grid, bg=THEME["bg_main"])
+            c.grid(row=row, column=col, sticky="nsew", padx=4, pady=4)
+            grid.columnconfigure(col, weight=1, uniform="dictation")
+            return c
+
+        # (1) Wrong vs extra word balance: two bars side by side.
+        balance = da.wrong_vs_extra_counts(sessions)
+        bal = _CanvasChart(cell(0, 0), width=430, height=160)
+        bal.canvas.pack(padx=4, pady=4)
+        bal.draw_bars(
+            [float(balance.get("wrong", 0)), float(balance.get("extra", 0))],
+            [i18n.tr("Wrong"), i18n.tr("Extra")],
+            color=THEME["bad"],
+            title=i18n.tr("Wrong vs extra words"))
+
+        # (2) Spelling errors: frequency bar of the most-misspelled words.
+        spelled = da.spelling_frequencies(sessions)
+        spell = _CanvasChart(cell(0, 1), width=430, height=160)
+        spell.canvas.pack(padx=4, pady=4)
+        if spelled:
+            spell.draw_bars(
+                [float(c) for _, c in spelled],
+                [w for w, _ in spelled],
+                color=THEME["warn"],
+                title=i18n.tr("Most misspelled words"))
+        else:
+            spell.draw_bars([], [],
+                            title=i18n.tr("Most misspelled words"))
+
+        # (3) First→last progress slope (dumbbell): one line per session.
+        progress = _CanvasChart(cell(1, 0), width=430, height=160)
+        progress.canvas.pack(padx=4, pady=4)
+        self._draw_dictation_slope(progress, da.progress_pairs(sessions))
+
+        # (4) Outcome distribution donut: mastered vs unfinished.
+        outcome = da.outcome_distribution(sessions)
+        donut = _CanvasChart(cell(1, 1), width=430, height=160)
+        donut.canvas.pack(padx=4, pady=4)
+        self._draw_dictation_donut(donut, outcome)
+
+    def _draw_dictation_slope(self, chart, pairs: List[Tuple[float, float]]) -> None:
+        """Dumbbell / slope chart of first→last score per dictation session.
+
+        Each session is one horizontal line at its own y: a left dot at the
+        first score, a right dot at the last score, the line coloured by
+        whether the session improved (green) or regressed (red). With many
+        sessions the lines stack, but the shape still reads as a "did the
+        user get better within each session" sweep.
+        """
+        c = chart.canvas
+        c.delete("all")
+        pad_l, pad_r, pad_t, pad_b = 32, 8, 12, 28
+        plot_w = chart._width - pad_l - pad_r
+        plot_h = chart._height - pad_t - pad_b
+        if not pairs:
+            c.create_text(chart._width / 2, chart._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        n = len(pairs)
+        for i, (first, last) in enumerate(pairs):
+            # Spread sessions top-to-bottom; clamp scores to the plot.
+            y = pad_t + plot_h * (i + 0.5) / n
+            x0 = pad_l + plot_w * min(max(first, 0.0), 100.0) / 100.0
+            x1 = pad_l + plot_w * min(max(last, 0.0), 100.0) / 100.0
+            color = THEME["good"] if last >= first else THEME["bad"]
+            c.create_line(x0, y, x1, y, fill=color, width=2)
+            c.create_oval(x0 - 3, y - 3, x0 + 3, y + 3,
+                          fill=color, outline="")
+            c.create_oval(x1 - 3, y - 3, x1 + 3, y + 3,
+                          fill=color, outline="")
+        # Axis labels.
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            val = 100.0 * (1 - i / 4)
+            c.create_text(pad_l - 4, y, text=f"{val:.0f}", anchor="e",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        c.create_text(pad_l, 6, text=i18n.tr("First → last score per session"),
+                      anchor="nw", fill=THEME["text_emph"],
+                      font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def _draw_dictation_donut(self, chart, outcome: Dict[str, int]) -> None:
+        """Donut of mastery outcomes: mastered vs unfinished sessions."""
+        c = chart.canvas
+        c.delete("all")
+        mastered = int(outcome.get("mastered", 0))
+        unfinished = int(outcome.get("unfinished", 0))
+        total = mastered + unfinished
+        if total == 0:
+            c.create_text(chart._width / 2, chart._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        cx = chart._width / 2
+        cy = chart._height / 2 - 6
+        r = min(chart._width, chart._height) / 2 - 18
+        # Background ring = unfinished (muted); foreground arc = mastered.
+        c.create_oval(cx - r, cy - r, cx + r, cy + r,
+                      fill=THEME["bg_card"], outline=THEME["border"])
+        if mastered:
+            c.create_arc(cx - r, cy - r, cx + r, cy + r,
+                         start=90, extent=-360.0 * mastered / total,
+                         fill=THEME["good"], outline="")
+        # Punch the donut hole.
+        hr = r * 0.62
+        c.create_oval(cx - hr, cy - hr, cx + hr, cy + hr,
+                      fill=THEME["bg_main"], outline="")
+        # Centre label: mastery percentage.
+        pct = mastered / total * 100
+        c.create_text(cx, cy - 6, text=f"{pct:.0f}%",
+                      fill=THEME["text_emph"],
+                      font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"))
+        c.create_text(cx, cy + 12, text=i18n.tr("mastered"),
+                      fill=THEME["text_dim"],
+                      font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        # Legend, centred under the ring.
+        c.create_text(chart._width / 2, chart._height - 8,
+                      text=f"{i18n.tr('mastered')}: {mastered}   "
+                           f"{i18n.tr('unfinished')}: {unfinished}",
+                      anchor="s", fill=THEME["text_dim"],
+                      font=(FONT_FAMILY, FONT_SIZE_CAPTION))
 
     # ------------------------------------------------------------------
     # Actions

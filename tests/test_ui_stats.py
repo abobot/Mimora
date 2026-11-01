@@ -440,10 +440,10 @@ class ReviewRenderTest(unittest.TestCase):
 
 
 class StatsTabsTest(unittest.TestCase):
-    """The dashboard splits into four tabs (Overview / Trends / Review pool /
-    Sessions) instead of one long vertical scroll. Each tab is a real frame
-    added to a ttk.Notebook; _show_tab raises the requested tab and resets the
-    scroll position."""
+    """The dashboard splits into five tabs (Overview / Trends / Review pool /
+    Sessions / Dictation) instead of one long vertical scroll. Each tab is a
+    real frame added to a ttk.Notebook; _show_tab raises the requested tab and
+    resets the scroll position."""
 
     @classmethod
     def setUpClass(cls):
@@ -463,24 +463,27 @@ class StatsTabsTest(unittest.TestCase):
         from tests._tk import destroy_root
         destroy_root(cls.root)
 
-    def test_four_tabs_present(self):
+    def test_five_tabs_present(self):
         import ttkbootstrap as ttk
         self.assertIsInstance(self.view._nb, ttk.Notebook)
-        self.assertEqual(self.view._nb.index("end"), 4)
-        texts = [self.view._nb.tab(i, "text") for i in range(4)]
+        self.assertEqual(self.view._nb.index("end"), 5)
+        texts = [self.view._nb.tab(i, "text") for i in range(5)]
         self.assertEqual(texts, ["Overview", "Trends", "Review pool",
-                                 "Sessions"])
+                                 "Sessions", "Dictation"])
 
     def test_show_tab_selects_and_scrolls_to_top(self):
         self.view._show_tab("review")
         self.assertEqual(self.view._nb.index("current"), 2)
         self.view._show_tab("overview")
         self.assertEqual(self.view._nb.index("current"), 0)
+        self.view._show_tab("dictation")
+        self.assertEqual(self.view._nb.index("current"), 4)
 
     def test_tabs_are_frames(self):
         import tkinter as tk
         for tab in (self.view._tab_overview, self.view._tab_trends,
-                    self.view._tab_review, self.view._tab_sessions):
+                    self.view._tab_review, self.view._tab_sessions,
+                    self.view._tab_dictation):
             self.assertIsInstance(tab, tk.Frame)
 
     def test_summary_cards_wrap_at_four_per_row(self):
@@ -499,6 +502,119 @@ class StatsTabsTest(unittest.TestCase):
             rows.add(info.get("row", -1))
         self.assertIn(0, rows)
         self.assertIn(1, rows)
+
+
+class DictationTabTest(unittest.TestCase):
+    """The dictation tab renders four charts from the dictation_sessions:
+    wrong-vs-extra balance, spelling frequencies, first→last slope and the
+    mastery donut. Empty input renders an empty-state label instead."""
+
+    @classmethod
+    def setUpClass(cls):
+        from mimora.ui_stats import StatsView, StatsCallbacks
+        from tests._tk import make_root
+        cls.root = make_root()
+        cls.cb = StatsCallbacks(
+            load_data=lambda: {"sessions": [], "all_takes": [],
+                               "dictation_sessions": [
+                                   {"id": "a", "first_score": 50.0,
+                                    "last_score": 90.0, "outcome": "mastered",
+                                    "takes": [
+                                        {"user_text": "the quik",
+                                         "reference_text": "The quick brown fox.",
+                                         "score": 50.0, "passed": False},
+                                        {"user_text": "the quick brown fox",
+                                         "reference_text": "The quick brown fox.",
+                                         "score": 100.0, "passed": True},
+                                    ]},
+                                   {"id": "b", "first_score": 10.0,
+                                    "last_score": 10.0,
+                                    "outcome": "unfinished",
+                                    "takes": [
+                                        {"user_text": "",
+                                         "reference_text": "Hello world.",
+                                         "score": 0.0, "passed": False},
+                                    ]},
+                               ]},
+            export_json=lambda: None,
+            export_csv=lambda: None,
+        )
+        cls.view = StatsView(cls.root, cls.cb)
+        cls.view.refresh()
+
+    @classmethod
+    def tearDownClass(cls):
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
+
+    def _dictation_canvases(self):
+        out = []
+
+        def walk(w):
+            import tkinter as tk
+            if isinstance(w, tk.Canvas):
+                out.append(w)
+            for c in w.winfo_children():
+                walk(c)
+        walk(self.view._dictation)
+        return out
+
+    def test_dictation_tab_renders_four_charts(self):
+        # 2x2 grid of charts: balance, spelling, slope, donut.
+        self.assertEqual(len(self._dictation_canvases()), 4)
+
+    def test_dictation_slope_draws_both_sessions(self):
+        slope = None
+        for cv in self._dictation_canvases():
+            items = cv.find_all()
+            if any(cv.type(i) == "line" for i in items):
+                slope = cv
+                break
+        self.assertIsNotNone(slope, "no line-chart canvas found")
+
+    def test_dictation_donut_has_mastery_arc(self):
+        # The donut draws an arc only when mastered > 0 (one session mastered).
+        donut = self._dictation_canvases()[-1]
+        arcs = [i for i in donut.find_all() if donut.type(i) == "arc"]
+        self.assertEqual(len(arcs), 1)
+
+class DictationEmptyStateTest(unittest.TestCase):
+    """A view with no dictation sessions shows an empty-state label instead of
+    charts. Own class with its own root (the fast suite shares one process, so
+    a second root must not be created while another class root is alive)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from mimora.ui_stats import StatsView, StatsCallbacks
+        from tests._tk import make_root
+        cls.root = make_root()
+        cls.cb = StatsCallbacks(
+            load_data=lambda: {"sessions": [], "all_takes": [],
+                               "dictation_sessions": []},
+            export_json=lambda: None,
+            export_csv=lambda: None,
+        )
+        cls.view = StatsView(cls.root, cls.cb)
+        cls.view.refresh()
+
+    @classmethod
+    def tearDownClass(cls):
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
+
+    def test_dictation_empty_state(self):
+        self.view._show_tab("dictation")
+        texts = []
+
+        def walk(w):
+            try:
+                texts.append(w.cget("text"))
+            except Exception:
+                pass
+            for c in w.winfo_children():
+                walk(c)
+        walk(self.view._dictation)
+        self.assertTrue(any("No dictation sessions" in t for t in texts))
 
 
 class HeatmapThemeTest(unittest.TestCase):
