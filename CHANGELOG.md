@@ -271,6 +271,27 @@ and stay in the user data directory across upgrades.
 
 ### Fixed
 
+- **Stats saves no longer drop a take on a transient Windows lock.** The
+  atomic `stats.json` write (`os.replace`) can fail with
+  `PermissionError`/WinError 5 when a sync client or antivirus briefly holds
+  the target even though the write would succeed moments later; the failed
+  swap silently swallowed the persistence exception and lost the just-scored
+  take. `_write_atomic` now retries the replace a bounded number of times
+  (3 attempts, 0.15s apart) before propagating, so a transient lock no longer
+  drops a take. A persistent failure still raises and the callers keep their
+  best-effort behaviour.
+- **Model cache is no longer trusted when a snapshot is corrupt.** A model
+  repo whose snapshot blob is 0 bytes (an interrupted download that wrote its
+  finish marker) was reported as fully cached, so the offline gate set
+  `HF_HUB_OFFLINE=1` and transformers loaded a zero-byte weight — the NLLB-200
+  translator raised `EOFError` on load. `models_cached` now additionally
+  requires the snapshot named by `refs/main` and verifies, via the tree
+  manifest, that every recorded file resolves to exactly its recorded size
+  (catching broken symlinks, missing and truncated blobs), falling back to a
+  non-zero scan when no manifest is cached. `ensure_hf_models` purges corrupt
+  snapshot entries before downloading, because a present snapshot entry is
+  otherwise treated as present and never re-fetched.
+
 - **Code review feedback (third round): analysis layer and stats interface.**
   The drill-take origin split in the advance tab is now three-way —
   `referenced` / `reference_deleted` / `never_scored` — instead of collapsing

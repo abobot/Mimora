@@ -1,3 +1,6 @@
+==2026-11-02 00:20==
+  -[done] 运行时故障修复：stats.json 原子替换对瞬时 WinError 5 重试（避免丢失刚评分的 take）；NLLB 翻译器 EOFError 根因（0 字节缓存条目）→ loader 清单校验 + model_fetch 清除损坏快照 + 重新下载验证 (2026-11-02 00:24)
+
 ==2026-11-01 21:50==
   -[done] 第三轮代码审查反馈修复：drill_take_origin 三态拆分（referenced/reference_deleted/never_scored）、drill_ipa_no_practice 消费、dictation compare_sentences 缓存、pearson 小方差阈值、ISO 日期解析统一到 time_utils.py、phoneme_averages 单次调用、ui_weakness 时间窗用 parse_ts (2026-11-01 22:18)
 
