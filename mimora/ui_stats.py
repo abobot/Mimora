@@ -222,7 +222,11 @@ class _CanvasChart:
         pad_l, pad_r, pad_t, pad_b = 32, 8, 12, 28
         plot_w = self._width - pad_l - pad_r
         plot_h = self._height - pad_t - pad_b
-        totals = [sum(vals) for _, vals in series]
+        # Totals are per LABEL (one stack per label); segments contribute to
+        # the label's stack, so the length is len(labels), not len(series).
+        totals = [sum((vals[i] if i < len(vals) else 0.0)
+                      for _, vals in series)
+                  for i in range(len(labels))]
         max_value = max(max(totals or [0.0]), 1.0)
         # Grid.
         for i in range(5):
@@ -372,7 +376,7 @@ class _CanvasChart:
                           fill=THEME["text_emph"],
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
 
-    def draw_line_series(self, series: List[Tuple[str, List[float], str]],
+    def draw_line_series(self, series: List[Tuple[str, List[Optional[float]], str]],
                          labels: List[str],
                          max_value: float = 100.0,
                          title: str = "",
@@ -380,11 +384,14 @@ class _CanvasChart:
         """Draw one or more coloured line series over shared x labels.
 
         ``series`` is ``[(name, [values...], color)]`` and each value list is
-        aligned with ``labels``. Points are drawn as small dots; the series
-        names are rendered as a compact legend along the top-right (set
-        ``legend=False`` to omit it — for many series the legend would
-        overflow). Used for the per-attempt pass-rate curve (one series) and
-        the error-type three-line trend.
+        aligned with ``labels``. A ``None`` value is a gap: the line is
+        broken there (the point is not drawn), so a target that skipped a
+        week does not connect across the hole. Points are drawn as small
+        dots; the series names are rendered as a compact legend along the
+        top-right (set ``legend=False`` to omit it — for many series the
+        legend would overflow). Used for the per-attempt pass-rate curve
+        (one series), the error-type three-line trend, and the same-target
+        progress curves (with gaps).
         """
         c = self.canvas
         c.delete("all")
@@ -400,7 +407,7 @@ class _CanvasChart:
             c.create_text(pad_l - 4, y, text=f"{val:.0f}", anchor="e",
                           fill=THEME["text_dim"],
                           font=(FONT_FAMILY, FONT_SIZE_CAPTION))
-        if not labels or not any(s[1] for s in series):
+        if not labels or not any(any(v is not None for v in s[1]) for s in series):
             c.create_text(self._width / 2, self._height / 2,
                           text=i18n.tr("No data"), fill=THEME["text_dim"],
                           font=(FONT_FAMILY, FONT_SIZE_BODY))
@@ -411,12 +418,15 @@ class _CanvasChart:
             for i, v in enumerate(values):
                 if i >= n:
                     break
+                if v is None:
+                    continue
                 x = pad_l + plot_w * i / max(n - 1, 1)
                 y = pad_t + plot_h * (1 - min(v, max_value) / max_value)
                 points.append((x, y))
-            if len(points) >= 2:
-                flat = [coord for pt in points for coord in pt]
-                c.create_line(*flat, fill=color, width=2)
+            # Draw line segments only across consecutive present points, so
+            # a gap (None) breaks the line instead of connecting across it.
+            for a, b in zip(points, points[1:]):
+                c.create_line(a[0], a[1], b[0], b[1], fill=color, width=2)
             for x, y in points:
                 c.create_oval(x - 2.5, y - 2.5, x + 2.5, y + 2.5,
                               fill=color, outline="")
@@ -430,6 +440,64 @@ class _CanvasChart:
                               fill=THEME["text_dim"],
                               font=(FONT_FAMILY, FONT_SIZE_CAPTION))
                 legend_x -= 20 + len(name) * 7 + 20
+        if title:
+            c.create_text(pad_l, 6, text=title, anchor="nw",
+                          fill=THEME["text_emph"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION, "bold"))
+
+    def draw_scatter(self, points: List[Tuple[float, float]],
+                     title: str = "",
+                     x_label: str = "",
+                     y_label: str = "",
+                     max_x: Optional[float] = None,
+                     max_y: float = 100.0) -> None:
+        """Draw a scatter plot of ``(x, y)`` points.
+
+        Used by the drill investment-vs-outcome chart: x is total attempts,
+        y is the last score. The x-axis scales to the data (or ``max_x`` if
+        given); the y-axis is 0..``max_y`` (scores are 0-100). A point is a
+        small filled dot; the axes are labelled.
+        """
+        c = self.canvas
+        c.delete("all")
+        pad_l, pad_r, pad_t, pad_b = 36, 8, 12, 28
+        plot_w = self._width - pad_l - pad_r
+        plot_h = self._height - pad_t - pad_b
+        if not points:
+            c.create_text(self._width / 2, self._height / 2,
+                          text=i18n.tr("No data"), fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_BODY))
+            return
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            c.create_line(pad_l, y, pad_l + plot_w, y, fill=THEME["chart_grid"])
+        for i in range(5):
+            y = pad_t + plot_h * i / 4
+            val = max_y * (1 - i / 4)
+            c.create_text(pad_l - 4, y, text=f"{val:.0f}", anchor="e",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if max_x is None:
+            max_x = max(max(x for x, _ in points), 1.0)
+        for i in range(5):
+            x = pad_l + plot_w * i / 4
+            val = max_x * i / 4
+            c.create_text(x, pad_t + plot_h + 4, text=f"{val:.0f}", anchor="n",
+                          fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        for x, y in points:
+            px = pad_l + plot_w * min(x, max_x) / max_x
+            py = pad_t + plot_h * (1 - min(y, max_y) / max_y)
+            c.create_oval(px - 3, py - 3, px + 3, py + 3,
+                          fill=THEME["accent"], outline="")
+        if x_label:
+            c.create_text(pad_l + plot_w / 2, pad_t + plot_h + 16,
+                          text=x_label, anchor="n", fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
+        if y_label:
+            c.create_text(8, pad_t + plot_h / 2, text=y_label, angle=90,
+                          anchor="n", fill=THEME["text_dim"],
+                          font=(FONT_FAMILY, FONT_SIZE_CAPTION))
         if title:
             c.create_text(pad_l, 6, text=title, anchor="nw",
                           fill=THEME["text_emph"],
@@ -897,11 +965,13 @@ class StatsView:
         self._tab_review = tk.Frame(self._nb, bg=THEME["bg_main"])
         self._tab_sessions = tk.Frame(self._nb, bg=THEME["bg_main"])
         self._tab_dictation = tk.Frame(self._nb, bg=THEME["bg_main"])
+        self._tab_drill = tk.Frame(self._nb, bg=THEME["bg_main"])
         self._nb.add(self._tab_overview, text=i18n.tr("Overview"))
         self._nb.add(self._tab_trends, text=i18n.tr("Trends"))
         self._nb.add(self._tab_review, text=i18n.tr("Review pool"))
         self._nb.add(self._tab_sessions, text=i18n.tr("Sessions"))
         self._nb.add(self._tab_dictation, text=i18n.tr("Dictation"))
+        self._nb.add(self._tab_drill, text=i18n.tr("Drill"))
 
         # Overview tab: summary cards + the two headline charts.
         self._cards = tk.Frame(self._tab_overview, bg=THEME["bg_main"])
@@ -942,6 +1012,12 @@ class StatsView:
         self._dictation = tk.Frame(self._tab_dictation, bg=THEME["bg_main"])
         self._dictation.pack(fill=tk.X, padx=8, pady=4)
 
+        # Drill tab: mastery by target type, progress, phoneme averages,
+        # attempt distributions, investment, trajectories and audio
+        # coverage — the full drill analysis in the same 2-column grid.
+        self._drill = tk.Frame(self._tab_drill, bg=THEME["bg_main"])
+        self._drill.pack(fill=tk.X, padx=8, pady=4)
+
     def _on_content_configure(self, _event=None) -> None:
         """Keep the scrollable content width matched to the canvas."""
         self._body_canvas.configure(
@@ -967,6 +1043,7 @@ class StatsView:
                             data.get("review_history") or [])
         self._render_recent(sessions)
         self._render_dictation(data.get("dictation_sessions") or [])
+        self._render_drill(data.get("drill_sessions") or [])
 
     def _show_tab(self, tab: str) -> None:
         """Switch the visible tab and re-scroll to its top.
@@ -976,7 +1053,7 @@ class StatsView:
         the canvas adjusts to the newly visible tab's height automatically.
         """
         index = {"overview": 0, "trends": 1, "review": 2, "sessions": 3,
-                 "dictation": 4}[tab]
+                 "dictation": 4, "drill": 5}[tab]
         self._nb.select(index)
         self._body_canvas.yview_moveto(0.0)
 
@@ -1591,6 +1668,212 @@ class StatsView:
                       font=(FONT_FAMILY, FONT_SIZE_CAPTION))
 
     # ------------------------------------------------------------------
+    # Drill tab
+    # ------------------------------------------------------------------
+
+    def _render_drill(self, sessions: List[Dict]) -> None:
+        """Render the drill tab.
+
+        The layout follows the drill design: a KPI row on top (total
+        sessions, mastery rate, phoneme average, stubborn targets), then a
+        two-column grid of charts - mastery by type, progress per session,
+        phoneme averages, attempt distributions, pass-rate curves,
+        investment, same-target progress, trajectories, weekly volume, the
+        investment-vs-outcome scatter, and the target-by-week heatmap.
+
+        All the aggregation happens in :mod:`mimora.drill_analysis`
+        (pure, Tk-free); this method only draws. ``sessions`` is the store's
+        ``drill_sessions`` list (empty when none have been recorded).
+        """
+        for child in self._drill.winfo_children():
+            child.destroy()
+        import mimora.drill_analysis as da
+        if not sessions:
+            tk.Label(self._drill, text=i18n.tr(
+                "No drill sessions yet. Open the Drill mode to start one."),
+                font=(FONT_FAMILY, FONT_SIZE_BODY, "italic"),
+                fg=THEME["text_dim"], bg=THEME["bg_main"]
+                ).pack(anchor="w")
+            return
+        tk.Label(self._drill, text=i18n.tr("Drill"),
+                 font=(FONT_FAMILY, FONT_SIZE_SUBTITLE, "bold"),
+                 bg=THEME["bg_main"], fg=THEME["text_emph"]
+                 ).pack(anchor="w", pady=(8, 2))
+
+        # KPI row: sessions, mastery rate, phoneme average, stubborn targets.
+        kpi = _CanvasChart(self._drill, width=430, height=60)
+        kpi.canvas.pack(padx=4, pady=(4, 0), fill=tk.X)
+        overall_mastered = sum(d["mastered"] for _, d in da.mastery_by_type(sessions))
+        phoneme_avg = (
+            sum(a for _, a, _ in da.phoneme_averages(sessions))
+            / len(da.phoneme_averages(sessions))
+            if da.phoneme_averages(sessions) else 0.0)
+        kpi.draw_kpi_cards([
+            (i18n.tr("Sessions"), f"{len(sessions)}"),
+            (i18n.tr("Mastery"),
+             f"{overall_mastered / len(sessions):.0%}"),
+            (i18n.tr("Phoneme avg"), f"{phoneme_avg:.0f}"),
+            (i18n.tr("Stubborn targets"), f"{da.stubborn_targets(sessions)}"),
+        ])
+
+        # Two-column chart grid (same pattern as the dictation tab).
+        grid = tk.Frame(self._drill, bg=THEME["bg_main"])
+        grid.pack(fill=tk.X)
+
+        def cell(row, col):
+            c = tk.Frame(grid, bg=THEME["bg_main"])
+            c.grid(row=row, column=col, sticky="nsew", padx=4, pady=4)
+            grid.columnconfigure(col, weight=1, uniform="drill")
+            return c
+
+        def chart(cell_frame, height=170):
+            ch = _CanvasChart(cell_frame, width=430, height=height)
+            ch.canvas.pack(padx=4, pady=4)
+            return ch
+
+        # (1) Mastery by type: stacked bars (mastered green over unfinished
+        # red) per target type.
+        mastery = da.mastery_by_type(sessions)
+        type_labels = [i18n.tr(_type_name(t)) for t, _ in mastery]
+        mastery_chart = chart(cell(0, 0))
+        mastery_chart.draw_stacked_bars(
+            [
+                (i18n.tr("mastered"), [float(d["mastered"]) for _, d in mastery]),
+                (i18n.tr("unfinished"), [float(d["unfinished"]) for _, d in mastery]),
+            ],
+            type_labels,
+            title=i18n.tr("Mastery by type"))
+
+        # (2) Weekly volume by type: stacked bars of attempts per week.
+        weekly = da.weekly_volume_by_type(sessions)
+        weekly_weeks = [w for w, _ in weekly]
+        weekly_chart = chart(cell(0, 1))
+        weekly_chart.draw_stacked_bars(
+            [
+                (_type_label(t, "single_word"),
+                 [float(b.get(t, 0)) for _, b in weekly])
+                for t in ("phoneme", "word", "single_word")
+            ],
+            weekly_weeks,
+            title=i18n.tr("Weekly volume by type"))
+
+        # (3) Progress per session: dumbbell first→last, coloured by type.
+        progress = da.progress_by_type(sessions)
+        dumbbell_items = []
+        type_colors = {"phoneme": THEME["info"], "word": THEME["accent"],
+                       "single_word": THEME["good"], "free_form": THEME["warn"]}
+        for t, rows in progress:
+            for sid, first, last, attempts in rows:
+                dumbbell_items.append((sid.replace("d-", "")[:10],
+                                       first, last))
+        prog_chart = chart(cell(1, 0))
+        prog_chart.draw_dumbbell(dumbbell_items,
+                                 title=i18n.tr("Progress per session"))
+
+        # (4) Phoneme averages: horizontal bars, weakest on top.
+        pa = da.phoneme_averages(sessions)
+        pa_chart = chart(cell(1, 1))
+        pa_chart.draw_hbars([(f"/{ipa}/", avg) for ipa, avg, _ in pa],
+                            title=i18n.tr("Phoneme averages"),
+                            color=THEME["info"])
+
+        # (5) Attempts histogram by type (session counts).
+        hist = da.attempts_histogram_by_type(sessions)
+        max_n = max((n for _, pts in hist for n, _ in pts), default=0)
+        hist_chart = chart(cell(2, 0))
+        hist_chart.draw_stacked_bars(
+            [
+                (_type_label(t, "single_word"),
+                 [float(dict(pts).get(n, 0)) for n in range(max_n + 1)])
+                for t, pts in hist
+            ],
+            [str(n) for n in range(max_n + 1)],
+            title=i18n.tr("Attempts per session by type"))
+
+        # (6) Pass-rate curve by type (per attempt number).
+        rates = da.pass_rate_by_attempt_by_type(sessions)
+        all_n = sorted({n for _, pts in rates for n, _ in pts})
+        rate_chart = chart(cell(2, 1))
+        rate_series = []
+        for t, pts in rates:
+            rate_series.append((
+                _type_label(t, "single_word"),
+                [float(dict(pts).get(n, 0.0)) for n in all_n],
+                type_colors.get(t, THEME["accent"]),
+            ))
+        rate_chart.draw_line_series(rate_series, [str(n) for n in all_n],
+                                    max_value=1.0,
+                                    title=i18n.tr("Pass rate by attempt by type"))
+
+        # (7) Investment vs outcome scatter: attempts vs last score.
+        sc = da.investment_scatter(sessions)
+        scatter = chart(cell(3, 0))
+        scatter.draw_scatter(
+            [(float(attempts), float(last)) for _, _, attempts, last in sc],
+            title=i18n.tr("Investment vs outcome"),
+            x_label=i18n.tr("Attempts"), y_label=i18n.tr("Last score"))
+
+        # (8) Same target over time: one line series per target value.
+        # Aligned to the union of all dates; a None value is a gap (the
+        # target had no session that week), so the line breaks there.
+        tps = da.target_progress_series(sessions)
+        all_dates = sorted({date for _, _, series in tps for date, _ in series})
+        tp_series = []
+        for t, value, series in tps:
+            value_map = {date: avg for date, avg in series}
+            tp_series.append((
+                f"/{value}/" if t == "phoneme" else value,
+                [value_map.get(d) for d in all_dates],
+                type_colors.get(t, THEME["accent"]),
+            ))
+        tp_chart = chart(cell(3, 1))
+        tp_chart.draw_line_series(tp_series, [str(d) for d in all_dates],
+                                  max_value=100.0,
+                                  title=i18n.tr("Same target over time"))
+
+        # (9) Session trajectories: overlay lines per session.
+        traj = da.session_trajectories(sessions)
+        traj_chart = chart(cell(4, 0))
+        traj_series = []
+        max_len = max((len(scores) for _, _, _, scores in traj), default=0)
+        for sid, t, outcome, scores in traj:
+            traj_series.append((
+                sid.replace("d-", "")[:8],
+                scores,
+                THEME["good"] if outcome == "mastered" else THEME["accent"],
+            ))
+        traj_chart.draw_line_series(
+            traj_series,
+            [str(i + 1) for i in range(max_len)],
+            max_value=100.0,
+            title=i18n.tr("Session trajectories"),
+            legend=False)
+
+        # (10) Target-by-week heatmap.
+        targets, weeks, matrix = da.target_by_week_heatmap(sessions)
+        heat = chart(cell(4, 1))
+        heat.draw_heatmap_matrix(targets, weeks, matrix,
+                                 GITHUB_HEATMAP_LEVELS,
+                                 title=i18n.tr("Target × week"))
+
+        # (11) Audio coverage: with-audio vs no-audio stacked bar.
+        with_audio, total = da.audio_coverage(sessions)
+        audio_chart = chart(cell(5, 0))
+        audio_chart.draw_stacked_bars(
+            [
+                (i18n.tr("With audio"), [float(with_audio)]),
+                (i18n.tr("No audio"), [float(total - with_audio)]),
+            ],
+            [i18n.tr("Audio coverage")],
+            title=i18n.tr("Audio coverage"))
+
+        # (12) Outcome donut (mastered vs unfinished) reused from dictation.
+        outcome = {"mastered": overall_mastered,
+                   "unfinished": len(sessions) - overall_mastered}
+        donut = chart(cell(5, 1))
+        self._draw_dictation_donut(donut, outcome)
+
+    # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
 
@@ -1661,3 +1944,32 @@ def _compute_streak(sessions: List[Dict],
         else:
             break
     return streak
+
+
+def _type_name(target_type: str) -> str:
+    """The i18n display name of a drill target type.
+
+    The drill engine's stored types are ``phoneme`` / ``word`` /
+    ``single_word`` / ``free_form``; the charts label them with these
+    short names (the full i18n keys live in the drill tab's key block).
+    """
+    names = {
+        "phoneme": "Phoneme",
+        "word": "Word",
+        "single_word": "Single word",
+        "free_form": "Free form",
+    }
+    return names.get(target_type, target_type)
+
+
+def _type_label(target_type: str, fallback: str) -> str:
+    """The i18n label for a target type, defaulting to ``fallback``.
+
+    Used by the stacked-bar and line-series legends so a type that the
+    engine has never stored still gets a stable label instead of an empty
+    legend entry.
+    """
+    name = _type_name(target_type)
+    if name == target_type:
+        return fallback
+    return i18n.tr(name)

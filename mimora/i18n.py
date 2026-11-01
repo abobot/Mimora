@@ -528,6 +528,37 @@ _ZH: Dict[str, str] = {
     "Sessions": "会话数",
 
     # ------------------------------------------------------------------
+    # Drill stats tab (ui_stats.py _render_drill)
+    # ------------------------------------------------------------------
+    "No drill sessions yet. Open the Drill mode to start one.":
+        "还没有练习会话。打开练习模式开始一次。",
+    "Drill": "练习",
+    "Mastery by type": "按类型掌握率",
+    "Progress per session": "各会话进步幅度",
+    "Phoneme averages": "音素平均分",
+    "Attempts per session by type": "各类型尝试次数分布",
+    "Pass rate by attempt by type": "各类型各次尝试通过率",
+    "Investment by type": "各类型训练投入",
+    "Investment vs outcome": "投入与产出",
+    "Same target over time": "同目标多次训练",
+    "Session trajectories": "会话内得分轨迹",
+    "Audio coverage": "音频关联",
+    "Stubborn targets": "顽固目标",
+    "Phoneme avg": "音素均分",
+    "Avg attempts": "平均尝试次数",
+    "Phoneme": "音标",
+    "Single word": "单词（单句）",
+    "Free form": "自由文本",
+    "With audio": "有音频",
+    "No audio": "无音频",
+    "Weekly volume by type": "每周训练量",
+    "Score": "得分",
+    "Attempts": "尝试次数",
+    "Target": "目标",
+    "Last score": "末次得分",
+    "Target × week": "目标×周",
+
+    # ------------------------------------------------------------------
     # Drill mode (ui_drill.py)
     # ------------------------------------------------------------------
     "Drill · {value}": "练习 · {value}",

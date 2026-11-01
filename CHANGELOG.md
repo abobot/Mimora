@@ -32,6 +32,18 @@ and stay in the user data directory across upgrades.
   documents the two data-semantics limits that shape every time-based chart
   (no per-take timestamps, so `ended_at` is the only time axis; outcome has
   exactly two categories).
+- **Stats dashboard: drill analysis tab.** The stats dashboard gains a sixth
+  Drill tab with the full drill analysis set: a KPI row (session count, mastery
+  rate, phoneme average, stubborn targets), mastery by target type stacked by
+  week, the progress dumbbell (first-to-last per session, coloured by type), the
+  phoneme averages as horizontal bars, the attempts histogram and pass-rate
+  curve per type, the investment-vs-outcome scatter, same-target progress over
+  time, per-session score trajectories, the target-by-week heatmap, the audio
+  coverage split and the mastery outcome donut. `mimora/drill_analysis.py` is a
+  new pure aggregation module; it documents the data-semantics limits that
+  shape the charts (no stored duration, so investment is measured in attempts;
+  `word` and `single_word` targets are the same semantic target and are merged
+  in per-target charts; `free_form` targets are excluded from them).
 - **UI redesign: semantic design tokens and theme contrast audit.** A new
   `mimora/ui_tokens.py` centralises every colour *meaning* that panels used to
   interpret independently (score bands, word quality levels, weakness statuses),

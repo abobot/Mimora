@@ -25,6 +25,32 @@ def _callbacks(**overrides):
     return StatsCallbacks(**base)
 
 
+def _drill_session(sid, ttype, value, scores, outcome="unfinished",
+                   ended="2026-10-28T09:00:00+08:00"):
+    """A minimal drill session dict in the stored shape, for the tab render
+    tests. ``scores`` becomes the takes list (attempt 1-indexed)."""
+    takes = [{"phrase": value, "score": float(s), "attempt": i + 1,
+              "passed": i >= 1,
+              "audio_session_id": "as-1", "audio_take_id": "at-1",
+              "audio_files": {"normalized.wav": "x.wav"}}
+             for i, s in enumerate(scores)]
+    first = float(scores[0]) if scores else 0.0
+    last = float(scores[-1]) if scores else 0.0
+    return {
+        "id": sid,
+        "target": {"type": ttype, "value": value},
+        "attempts": len(scores),
+        "passed": 1 if outcome == "mastered" else 0,
+        "first_score": first,
+        "last_score": last,
+        "avg_score": float(sum(scores) / len(scores)) if scores else 0.0,
+        "outcome": outcome,
+        "started_at": ended,
+        "ended_at": ended,
+        "takes": takes,
+    }
+
+
 class StatsCallbacksTest(unittest.TestCase):
     def test_report_handlers_default_to_none(self):
         cb = _callbacks()
@@ -463,13 +489,13 @@ class StatsTabsTest(unittest.TestCase):
         from tests._tk import destroy_root
         destroy_root(cls.root)
 
-    def test_five_tabs_present(self):
+    def test_six_tabs_present(self):
         import ttkbootstrap as ttk
         self.assertIsInstance(self.view._nb, ttk.Notebook)
-        self.assertEqual(self.view._nb.index("end"), 5)
-        texts = [self.view._nb.tab(i, "text") for i in range(5)]
+        self.assertEqual(self.view._nb.index("end"), 6)
+        texts = [self.view._nb.tab(i, "text") for i in range(6)]
         self.assertEqual(texts, ["Overview", "Trends", "Review pool",
-                                 "Sessions", "Dictation"])
+                                 "Sessions", "Dictation", "Drill"])
 
     def test_show_tab_selects_and_scrolls_to_top(self):
         self.view._show_tab("review")
@@ -478,12 +504,14 @@ class StatsTabsTest(unittest.TestCase):
         self.assertEqual(self.view._nb.index("current"), 0)
         self.view._show_tab("dictation")
         self.assertEqual(self.view._nb.index("current"), 4)
+        self.view._show_tab("drill")
+        self.assertEqual(self.view._nb.index("current"), 5)
 
     def test_tabs_are_frames(self):
         import tkinter as tk
         for tab in (self.view._tab_overview, self.view._tab_trends,
                     self.view._tab_review, self.view._tab_sessions,
-                    self.view._tab_dictation):
+                    self.view._tab_dictation, self.view._tab_drill):
             self.assertIsInstance(tab, tk.Frame)
 
     def test_summary_cards_wrap_at_four_per_row(self):
@@ -831,6 +859,172 @@ class DictationEmptyStateTest(unittest.TestCase):
                 walk(c)
         walk(self.view._dictation)
         self.assertTrue(any("No dictation sessions" in t for t in texts))
+
+
+class DrillTabTest(unittest.TestCase):
+    """The drill tab renders the full analysis set: a KPI row plus a chart grid
+    (mastery by type, weekly volume, progress dumbbell, phoneme averages,
+    attempts histogram, pass-rate curve, investment scatter, same-target
+    progress, session trajectories, target×week heatmap, audio coverage and
+    the outcome donut). Empty input renders an empty-state label instead."""
+
+    @classmethod
+    def setUpClass(cls):
+        from mimora.ui_stats import StatsView, StatsCallbacks
+        from tests._tk import make_root
+        cls.root = make_root()
+        cls.cb = StatsCallbacks(
+            load_data=lambda: {"sessions": [], "all_takes": [],
+                               "drill_sessions": [
+                                   _drill_session(
+                                       "d-1", "single_word", "hello",
+                                       [40, 70, 90], "mastered",
+                                       ended="2026-10-28T03:11:24+08:00"),
+                                   _drill_session(
+                                       "d-1b", "word", "hello",
+                                       [50, 80], "mastered",
+                                       ended="2026-10-30T03:11:24+08:00"),
+                                   _drill_session(
+                                       "d-2", "phoneme", "r",
+                                       [30, 50], "unfinished",
+                                       ended="2026-10-29T03:11:24+08:00"),
+                               ]},
+            export_json=lambda: None,
+            export_csv=lambda: None,
+        )
+        cls.view = StatsView(cls.root, cls.cb)
+        cls.view.refresh()
+
+    @classmethod
+    def tearDownClass(cls):
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
+
+    def _drill_canvases(self):
+        out = []
+
+        def walk(w):
+            import tkinter as tk
+            if isinstance(w, tk.Canvas):
+                out.append(w)
+            for c in w.winfo_children():
+                walk(c)
+        walk(self.view._drill)
+        return out
+
+    def test_drill_tab_renders_dashboard(self):
+        # KPI row + 2-col grid: mastery, weekly volume, dumbbell, phoneme
+        # averages, attempts hist, pass rate, scatter, same-target, trajectories,
+        # heatmap, audio coverage, donut = 12 charts + KPI = 13 canvases.
+        self.assertEqual(len(self._drill_canvases()), 13)
+
+    def test_drill_kpi_row_present(self):
+        kpi = self._drill_canvases()[0]
+        texts = [kpi.itemcget(i, "text") for i in kpi.find_all()
+                 if kpi.type(i) == "text"]
+        self.assertTrue(any("Mastery" in t for t in texts))
+        self.assertTrue(any("67%" in t for t in texts))  # 2 mastered of 3
+
+    def test_drill_mastery_by_type_stacked(self):
+        stacked = None
+        for cv in self._drill_canvases():
+            texts = [cv.itemcget(i, "text") for i in cv.find_all()
+                     if cv.type(i) == "text"]
+            if any("Mastery by type" in t for t in texts):
+                stacked = cv
+                break
+        self.assertIsNotNone(stacked, "no mastery-by-type chart")
+        # 2 type labels (single_word, phoneme), each with a stacked bar.
+        self.assertGreater(len(stacked.find_all()), 0)
+
+    def test_drill_phoneme_averages_hbars(self):
+        hbar = None
+        for cv in self._drill_canvases():
+            texts = [cv.itemcget(i, "text") for i in cv.find_all()
+                     if cv.type(i) == "text"]
+            if any("Phoneme averages" in t for t in texts):
+                hbar = cv
+                break
+        self.assertIsNotNone(hbar, "no phoneme-averages chart")
+        # /r/ is drawn as a bar label.
+        texts = [hbar.itemcget(i, "text") for i in hbar.find_all()
+                 if hbar.type(i) == "text"]
+        self.assertTrue(any("r" in t for t in texts))
+
+    def test_drill_same_target_over_time(self):
+        series = None
+        for cv in self._drill_canvases():
+            texts = [cv.itemcget(i, "text") for i in cv.find_all()
+                     if cv.type(i) == "text"]
+            if any("Same target over time" in t for t in texts):
+                series = cv
+                break
+        self.assertIsNotNone(series, "no same-target series chart")
+        lines = [i for i in series.find_all() if series.type(i) == "line"]
+        self.assertGreaterEqual(len(lines), 1)
+
+    def test_drill_session_trajectories(self):
+        traj = None
+        for cv in self._drill_canvases():
+            texts = [cv.itemcget(i, "text") for i in cv.find_all()
+                     if cv.type(i) == "text"]
+            if any("Session trajectories" in t for t in texts):
+                traj = cv
+                break
+        self.assertIsNotNone(traj, "no session-trajectories chart")
+        # A mastered trajectory (3 points) draws a line.
+        lines = [i for i in traj.find_all() if traj.type(i) == "line"]
+        self.assertGreaterEqual(len(lines), 1)
+
+    def test_drill_outcome_donut(self):
+        # 1 mastered of 2 → a single green arc.
+        donut = None
+        for cv in self._drill_canvases():
+            if any(cv.type(i) == "arc" for i in cv.find_all()):
+                donut = cv
+                break
+        self.assertIsNotNone(donut, "no donut canvas found")
+        arcs = [i for i in donut.find_all() if donut.type(i) == "arc"]
+        self.assertEqual(len(arcs), 1)
+
+
+class DrillEmptyStateTest(unittest.TestCase):
+    """A view with no drill sessions shows an empty-state label. Own root (the
+    fast suite shares one process, so a second root must not be created while
+    another class root is alive)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from mimora.ui_stats import StatsView, StatsCallbacks
+        from tests._tk import make_root
+        cls.root = make_root()
+        cls.cb = StatsCallbacks(
+            load_data=lambda: {"sessions": [], "all_takes": [],
+                               "drill_sessions": []},
+            export_json=lambda: None,
+            export_csv=lambda: None,
+        )
+        cls.view = StatsView(cls.root, cls.cb)
+        cls.view.refresh()
+
+    @classmethod
+    def tearDownClass(cls):
+        from tests._tk import destroy_root
+        destroy_root(cls.root)
+
+    def test_drill_empty_state(self):
+        self.view._show_tab("drill")
+        texts = []
+
+        def walk(w):
+            try:
+                texts.append(w.cget("text"))
+            except Exception:
+                pass
+            for c in w.winfo_children():
+                walk(c)
+        walk(self.view._drill)
+        self.assertTrue(any("No drill sessions" in t for t in texts))
 
 
 class HeatmapThemeTest(unittest.TestCase):
