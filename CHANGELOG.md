@@ -271,6 +271,23 @@ and stay in the user data directory across upgrades.
 
 ### Fixed
 
+- **Code review feedback: P0/P1/P2.** The word-leaderboard sort no longer
+  reverses a reverse-sorted list (the first rate/count click now reads
+  worst-first, and the sort direction is folded into the sort itself instead of
+  a post-hoc `reverse()` that cancelled it). Hero, history and weakness panels
+  now derive every score colour from the shared `ui_tokens` semantic bands
+  (`score_color` / `SEMANTIC`, with a new `score.near_miss` token) so the same
+  numeric score can never render as different colours. The stats dashboard's
+  chart primitives moved into a new `mimora/ui_chart.py` (`_CanvasChart` and the
+  heatmap layout helpers), leaving `ui_stats.py` as tab rendering only, and the
+  four analysis modules it uses are imported at module top instead of inside
+  render functions. The hero card's unused double-click word-playback deferral
+  (`_DOUBLE_CLICK_DELAY_MS`, `_schedule_word_playback`, the pending `after` id
+  and its cancel hook) is removed — a single click already plays immediately.
+  Also removed: a duplicate `import tkinter as tk` in `ui_drill.py` and a stale
+  long-press comment in `ui_theme.py` (only the slow-speed control uses
+  long-press; speed is a plain button).
+
 - **Stats dashboard: bottom tables are no longer cut off.** The practice
   duration table and the recent-sessions list sat below the fixed 640px window
   with no way to reach them. The dashboard body now lives on a vertically

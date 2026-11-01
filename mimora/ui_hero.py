@@ -36,14 +36,6 @@ from mimora.ui_theme import (
     Tooltip,
 )
 
-# A single click on a phrase word plays it immediately (no deferral). The old
-# 250ms double-click deferral existed so a double-click could cancel the
-# playback and start a drill instead; the redesign moves the drill onto the
-# right-click context menu, so the single click no longer has to wait (see the
-# design doc: "单击播放，右键菜单（含"钻取此词"）"). Kept only as the
-# fallback constant name for any future re-introduction; no longer used.
-_DOUBLE_CLICK_DELAY_MS = 250
-
 # Maximum wrapped lines the phrase Text grows to before it becomes scrollable.
 # A very long generated phrase would otherwise push the score row (and the WORK
 # ON badges) out of the card's visible height, clipping them off the bottom of
@@ -113,10 +105,6 @@ class HeroCard:
         self._on_sound_example = on_sound_example
         self._on_word_drill_clicked = on_word_drill_clicked
         self._on_word_single_drill_clicked = on_word_single_drill_clicked
-        # Pending single-click word playback (a right-click context menu and a
-        # new phrase both cancel it so a word does not play after the user has
-        # already chosen another action). See _schedule_word_playback.
-        self._scheduled_word_after_id = None
 
         # Drawn on bg_card, the lightest of the three surfaces (bg_main <
         # bg_panel < bg_card), so the card visually leads the whole window.
@@ -375,9 +363,6 @@ class HeroCard:
         self.phrase_text.configure(state=tk.NORMAL)
         self.phrase_text.tag_remove("hover", "1.0", tk.END)
         self.phrase_text.delete("1.0", tk.END)
-        # Drop any pending single-click playback: the word it was scheduled for
-        # no longer exists in the rendered phrase.
-        self._cancel_scheduled_word_playback()
         last = len(tokens) - 1
         for i, (word, is_miss) in enumerate(tokens):
             tags = ("center", "word", "miss") if is_miss else ("center", "word")
@@ -560,30 +545,10 @@ class HeroCard:
         if word:
             self._play_scheduled_word(word)
 
-    def _schedule_word_playback(self, word: str):
-        """Arrange for ``word`` to be played after the double-click window.
-
-        Kept for test compat and as the single chokepoint for word playback;
-        the single-click path now calls :meth:`_play_scheduled_word` directly.
-        """
-        self._cancel_scheduled_word_playback()
-        self._scheduled_word_after_id = self.root.after(
-            _DOUBLE_CLICK_DELAY_MS, lambda: self._play_scheduled_word(word))
-
     def _play_scheduled_word(self, word: str):
         """Play a word (single-click path, immediate)."""
-        self._scheduled_word_after_id = None
         if word:
             self._on_word_clicked(word)
-
-    def _cancel_scheduled_word_playback(self):
-        """Drop any pending single-click playback (context menu or new phrase)."""
-        if self._scheduled_word_after_id is not None:
-            try:
-                self.root.after_cancel(self._scheduled_word_after_id)
-            except tk.TclError:
-                pass
-            self._scheduled_word_after_id = None
 
     def _on_phrase_word_right_clicked(self, event):
         """Right-click any phrase word: open a context menu of drill actions.
@@ -593,11 +558,10 @@ class HeroCard:
         sentence context (``on_word_drill_clicked``) or drill the word alone
         (``on_word_single_drill_clicked``). The menu only appears when the
         relevant callback exists - a card built without drill callbacks has
-        nothing to offer. Also cancels any pending single-click playback.
+        nothing to offer.
         """
         word = self._phrase_word_at(event)
         self.root.focus_set()
-        self._cancel_scheduled_word_playback()
         if not word:
             return
         menu = tk.Menu(self.root, tearoff=0)

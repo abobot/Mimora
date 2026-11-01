@@ -38,7 +38,6 @@ from mimora.ui_theme import (
     make_icon_button,
 )
 import logging
-import tkinter as tk
 import ttkbootstrap as ttk
 
 

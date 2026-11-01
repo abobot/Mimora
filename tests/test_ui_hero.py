@@ -170,14 +170,12 @@ class HeroCardWordDrillTests(unittest.TestCase):
         HeroCardWordDrillTests.played = []
         HeroCardWordDrillTests.drilled = []
         HeroCardWordDrillTests.single_drilled = []
-        self.card._cancel_scheduled_word_playback()
 
     def test_single_click_plays_immediately(self):
         # The redesign removed the double-click drill: a single click plays the
         # word at once (no deferral, no pending after-id).
         self.card._play_scheduled_word("helping")
         self.assertEqual(HeroCardWordDrillTests.played, ["helping"])
-        self.assertIsNone(self.card._scheduled_word_after_id)
 
     def test_click_on_gap_does_not_play(self):
         from unittest import mock
@@ -220,12 +218,6 @@ class HeroCardWordDrillTests(unittest.TestCase):
             card._on_phrase_word_right_clicked(
                 type("E", (), {"x_root": 0, "y_root": 0})())
         self.assertEqual(popped, [])
-
-    def test_new_phrase_cancels_pending_playback(self):
-        self.card._schedule_word_playback("helping")
-        self.card.set_phrase("a brand new phrase")
-        self.assertIsNone(self.card._scheduled_word_after_id)
-        self.assertEqual(HeroCardWordDrillTests.played, [])
 
 
 class HeroCardPhraseHeightCapTests(unittest.TestCase):

@@ -117,9 +117,9 @@ class CatalogIntegrityTests(unittest.TestCase):
         catalog = i18n._CATALOGS["zh"]
         modules = (
             "app.py", "ui.py", "ui_hero.py", "ui_practice.py", "ui_history.py",
-            "ui_prosody.py", "ui_stats.py", "ui_weakness.py", "ui_dictation.py",
-            "ui_drill.py", "ui_history_browse.py", "settings_window.py",
-            "settings_ctl.py", "progress_widget.py",
+            "ui_prosody.py", "ui_stats.py", "ui_chart.py", "ui_weakness.py",
+            "ui_dictation.py", "ui_drill.py", "ui_history_browse.py",
+            "settings_window.py", "settings_ctl.py", "progress_widget.py",
         )
         missing = []
         for name in modules:

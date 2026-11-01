@@ -133,9 +133,9 @@ class FontScaleEnforcementTests(unittest.TestCase):
 
     _MODULES = (
         "ui.py", "ui_hero.py", "ui_practice.py", "ui_history.py",
-        "ui_prosody.py", "ui_stats.py", "ui_weakness.py", "ui_dictation.py",
-        "ui_drill.py", "ui_history_browse.py", "ui_feedback_strip.py",
-        "ui_long_press_popup.py",
+        "ui_prosody.py", "ui_stats.py", "ui_chart.py", "ui_weakness.py",
+        "ui_dictation.py", "ui_drill.py", "ui_history_browse.py",
+        "ui_feedback_strip.py", "ui_long_press_popup.py",
     )
 
     def test_font_size_in_font_tuples_is_a_constant_not_a_literal(self):

@@ -403,20 +403,23 @@ class WeaknessView:
             # Error rate reads best worst-first; the text columns read
             # alphabetically. Pick a sensible initial direction per column.
             self._words_sort_desc = key in ("rate", "count")
+        # Sort with the direction folded into the sort itself (never a
+        # separate reverse(): rate/count default to descending, so a
+        # sort(reverse=True) followed by a manual reverse() would undo it).
         rank = {"need_practice": 0, "watch": 1, "improving": 2, "other": 3}
+        desc = self._words_sort_desc
         if key == "status":
             self._words_data.sort(
-                key=lambda w: rank.get(w[1].get("status", "other"), 3))
+                key=lambda w: rank.get(w[1].get("status", "other"), 3),
+                reverse=desc)
         elif key == "word":
-            self._words_data.sort(key=lambda w: w[0].lower())
+            self._words_data.sort(key=lambda w: w[0].lower(), reverse=desc)
         elif key == "rate":
             self._words_data.sort(
-                key=lambda w: w[1].get("error_rate", 0), reverse=True)
+                key=lambda w: w[1].get("error_rate", 0), reverse=desc)
         elif key == "count":
             self._words_data.sort(
-                key=lambda w: w[1].get("count", 0), reverse=True)
-        if self._words_sort_desc and key != "status":
-            self._words_data.reverse()
+                key=lambda w: w[1].get("count", 0), reverse=desc)
         self._insert_word_rows(self._word_tree)
 
     def _on_word_tree_click(self, event) -> None:
