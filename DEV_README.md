@@ -66,6 +66,7 @@ Get-Content "C:\Users\abobot\AppData\Roaming\Mimora\logs\main.log" -Tail 50
 | `mimora/drill/` | Drill 练习引擎 |
 | `mimora/ui_history_browse.py` | 历史浏览界面 |
 | `mimora/ui_stats.py` | 统计面板 |
+| `mimora/ui_chart.py` | 统计面板的 Tk 画布图表原语（_CanvasChart + heatmap 布局） |
 | `mimora/ui_weakness.py` | 薄弱项分析 |
 | `mimora/ui_drill.py` | Drill 模式界面 |
 

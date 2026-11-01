@@ -31,6 +31,7 @@ SEMANTIC = {
     "score.excellent":  THEME["good"],          # top band of a score
     "score.ok":         THEME["text_emph"],     # mid-high band (passable)
     "score.mid":        THEME["text_dim"],      # mid-low band (needs work)
+    "score.near_miss":  THEME["warn"],          # calibrated-bucket near-miss (amber)
     "score.weak":       THEME["bad"],           # low band (weak)
     "surface.page":     THEME["bg_main"],       # window background
     "surface.panel":    THEME["bg_panel"],      # panel background

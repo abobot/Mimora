@@ -69,6 +69,7 @@ from mimora.ui_hero import HeroCard
 from mimora.ui_history import HistoryPanel
 from mimora.ui_practice import PracticePanel
 from mimora.ui_prosody import ProsodyPanel
+from mimora.ui_tokens import SEMANTIC, score_color
 
 if TYPE_CHECKING:  # only for the show_feedback annotation; no runtime import
     from pronunciation.common import PronunciationResult
@@ -978,16 +979,19 @@ class TrainerView:
     # (no calibrated bucket) and as the fallback colour for the score read-out. The
     # phoneme engine uses _bucket_quality instead; show_feedback picks one basis so
     # the status line, the face and the Score bar always agree (see show_feedback).
+    # The colour comes from the shared score_color() bands so the hero card, the
+    # history browser and the weakness panel can never disagree on a numeric score.
     def _quality_label(self, score: float) -> tuple[str, str]:
+        color = score_color(score)
         if score < 40:
-            return i18n.tr("Weak"), THEME["bad"]
+            return i18n.tr("Weak"), color
         if score < 55:
-            return i18n.tr("Poor"), THEME["bad"]
+            return i18n.tr("Poor"), color
         if score < 70:
-            return i18n.tr("Needs work"), THEME["warn"]
+            return i18n.tr("Needs work"), color
         if score < 85:
-            return i18n.tr("Good"), THEME["good"]
-        return i18n.tr("Excellent"), THEME["good"]
+            return i18n.tr("Good"), color
+        return i18n.tr("Excellent"), color
 
     def _bucket_quality(self, bucket: int) -> tuple[str, str]:
         """Qualitative label + colour for a calibrated 0-5 bucket (phoneme engine).
@@ -995,22 +999,32 @@ class TrainerView:
         Keyed to the engine's pass bucket (4): bucket >= 4 is a pass and reads
         green, so the label, the score colour and the face can never contradict
         result.passed. Bucket 3 is the amber near-miss; buckets 0-2 are red.
+        The colour uses the semantic tokens directly (a 0-5 bucket cannot be
+        mapped through score_color's percentage bands without losing the
+        bucket>=4-is-pass guarantee), but the *meaning* is the same as the
+        percentage path so the two engines agree.
         """
         if bucket >= 5:
-            return i18n.tr("Excellent"), THEME["good"]
+            return i18n.tr("Excellent"), SEMANTIC["score.excellent"]
         if bucket >= 4:
-            return i18n.tr("Good"), THEME["good"]
+            return i18n.tr("Good"), SEMANTIC["score.excellent"]
         if bucket >= 3:
-            return i18n.tr("Needs work"), THEME["warn"]
+            return i18n.tr("Needs work"), SEMANTIC["score.near_miss"]
         if bucket >= 2:
-            return i18n.tr("Poor"), THEME["bad"]
-        return i18n.tr("Weak"), THEME["bad"]
+            return i18n.tr("Poor"), SEMANTIC["score.weak"]
+        return i18n.tr("Weak"), SEMANTIC["score.weak"]
 
     def _quality_expression(self, color: str) -> str:
-        """Map a resolved quality colour to a face expression so the two agree."""
-        if color == THEME["good"]:
+        """Map a resolved quality colour to a face expression so the two agree.
+
+        The colour is always one of the semantic score bands (from
+        ``score_color`` or ``_bucket_quality``), never a raw ``THEME`` value,
+        so the face follows the same meaning the score row and the history
+        browser use.
+        """
+        if color in (SEMANTIC["score.excellent"], SEMANTIC["score.ok"]):
             return "happy"
-        if color == THEME["warn"]:
+        if color in (SEMANTIC["score.near_miss"], SEMANTIC["score.mid"]):
             return "neutral"
         return "sad"
 

@@ -159,8 +159,9 @@ class FlatButton(tk.Label):
         self._focused = False
         # Long-press: optional second action fired when button 1 is held for
         # LONG_PRESS_DELAY_MS, consumed so the release does not also fire the
-        # click command. Used for the speed/slow popups (A and B) on the
-        # reference controls; None (default) keeps the button a plain click.
+        # click command. Only the slow-speed reference control uses it (the
+        # speed popup is a ▾ button, a plain click); None (default) keeps the
+        # button a plain click.
         self._on_long_press = on_long_press
         self._long_press_after = None
         self._long_press_fired = False
