@@ -221,6 +221,112 @@ class ModelsCachedTests(unittest.TestCase):
             "", encoding="utf-8")
         self.assertFalse(loader.models_cached(self.hub, self.repos))
 
+    def test_zero_size_snapshot_file_is_not_cached(self):
+        # A download that wrote its marker but left a 0-byte file is NOT a
+        # complete repo: transformers would raise EOFError loading it. The
+        # check must follow the snapshot's symlink to the blob (Path.stat
+        # does), so a broken link or empty blob is caught here.
+        self._make_cached("org/model-a")
+        (self._repo_dir("org/model-a") / "snapshots" / "abc123" /
+         "model.bin").write_text("", encoding="utf-8")
+        self.assertFalse(loader.models_cached(self.hub, self.repos))
+
+    def test_broken_snapshot_link_is_not_cached(self):
+        self._make_cached("org/model-a")
+        link = (self._repo_dir("org/model-a") / "snapshots" / "abc123" /
+                "model.bin")
+        try:
+            link.symlink_to("..\\..\\blobs\\missing-blob")
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks unavailable on this platform")
+        self.assertFalse(loader.models_cached(self.hub, self.repos))
+
+    def test_all_snapshot_files_nonzero_is_cached(self):
+        self._make_cached("org/model-a")
+        (self._repo_dir("org/model-a") / "snapshots" / "abc123" /
+         "model.bin").write_text("weights", encoding="utf-8")
+        self.assertTrue(loader.models_cached(self.hub, self.repos))
+
+    def test_missing_manifest_file_is_not_cached(self):
+        # A manifest entry names a file the snapshot does not hold (e.g. a
+        # purge removed a corrupt blob): the repo must be reported missing so
+        # the download re-fetches it, not True because the leftovers look fine.
+        self._make_cached("org/model-a")
+        snap = self._repo_dir("org/model-a") / "snapshots" / "abc123"
+        (snap / "model.bin").write_text("weights", encoding="utf-8")
+        trees = self._repo_dir("org/model-a") / "trees"
+        trees.mkdir()
+        manifest = {
+            "format_version": 1,
+            "files": {
+                "config.json": {"size": 2, "blob_id": "x"},
+                "model.bin": {"size": 7, "blob_id": "y"},
+                "extra.bin": {"size": 5, "blob_id": "z"},  # missing on disk
+            },
+        }
+        (trees / "abc123.json").write_text(json.dumps(manifest),
+                                           encoding="utf-8")
+        self.assertFalse(loader.models_cached(self.hub, self.repos))
+
+    def test_mismatched_manifest_size_is_not_cached(self):
+        self._make_cached("org/model-a")
+        snap = self._repo_dir("org/model-a") / "snapshots" / "abc123"
+        (snap / "model.bin").write_text("weights", encoding="utf-8")  # 7 bytes
+        trees = self._repo_dir("org/model-a") / "trees"
+        trees.mkdir()
+        manifest = {
+            "format_version": 1,
+            "files": {
+                "config.json": {"size": 2, "blob_id": "x"},
+                "model.bin": {"size": 999, "blob_id": "y"},  # wrong size
+            },
+        }
+        (trees / "abc123.json").write_text(json.dumps(manifest),
+                                           encoding="utf-8")
+        self.assertFalse(loader.models_cached(self.hub, self.repos))
+
+    def test_matching_manifest_is_cached(self):
+        self._make_cached("org/model-a")
+        snap = self._repo_dir("org/model-a") / "snapshots" / "abc123"
+        (snap / "model.bin").write_text("weights", encoding="utf-8")  # 7 bytes
+        trees = self._repo_dir("org/model-a") / "trees"
+        trees.mkdir()
+        manifest = {
+            "format_version": 1,
+            "files": {
+                "config.json": {"size": 2, "blob_id": "x"},
+                "model.bin": {"size": 7, "blob_id": "y"},
+            },
+        }
+        (trees / "abc123.json").write_text(json.dumps(manifest),
+                                           encoding="utf-8")
+        self.assertTrue(loader.models_cached(self.hub, self.repos))
+
+    def test_refs_main_selects_current_snapshot(self):
+        # When refs/main names a commit, only that snapshot is verified; a
+        # stale extra snapshot must not make a partial repo look complete.
+        self._make_cached("org/model-a")
+        # The ref points at "deadbeef" - a snapshot that does not exist, so
+        # there is nothing to verify and the repo is not cached.
+        refs = self._repo_dir("org/model-a") / "refs"
+        refs.mkdir()
+        (refs / "main").write_text("deadbeef", encoding="utf-8")
+        self.assertFalse(loader.models_cached(self.hub, self.repos))
+
+    def test_refs_main_skips_stale_other_snapshot(self):
+        # The current snapshot (named by refs/main) is complete, but an extra
+        # stale snapshot dir also exists - the stale one must not be picked.
+        self._make_cached("org/model-a")
+        snap = self._repo_dir("org/model-a") / "snapshots" / "abc123"
+        (snap / "model.bin").write_text("weights", encoding="utf-8")
+        stale = self._repo_dir("org/model-a") / "snapshots" / "deadbeef"
+        stale.mkdir()
+        (stale / "model.bin").write_text("", encoding="utf-8")
+        refs = self._repo_dir("org/model-a") / "refs"
+        refs.mkdir()
+        (refs / "main").write_text("abc123", encoding="utf-8")
+        self.assertTrue(loader.models_cached(self.hub, self.repos))
+
 
 class _FakeTorch:
     """Stand-in for the torch module, so these tests need neither it nor a GPU.

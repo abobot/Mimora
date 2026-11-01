@@ -210,9 +210,29 @@ def server_url(address: str, default_port: int) -> str:
 def models_cached(hub_dir: Path, repos) -> bool:
     """True only when every repo in *repos* is fully present under *hub_dir*.
 
-    Besides a non-empty snapshots dir, the blobs dir must hold no *.incomplete
-    files - those are partial downloads left by an interrupted first run, and
-    flipping to offline mode with one present would crash model loading.
+    Three conditions must hold, all per repo:
+
+    1. The current snapshot directory (``refs/main``, or any snapshot when
+       refs are absent) is non-empty and its blobs dir holds no ``*.incomplete``
+       files - those are partial downloads left by an interrupted first run,
+       and flipping to offline mode with one present would crash model loading.
+    2. Every file listed in the repo's tree manifest (``trees/<commit>.json``,
+       written by ``snapshot_download``) resolves to a **non-zero** size that
+       matches the recorded ``lfs_size``. ``Path.stat`` follows the snapshot's
+       symlink to the blob, so a broken link, a missing blob and a
+       truncated/empty blob are all caught here.
+    3. When no tree manifest exists (a cache filled file-by-file by
+       transformers, which does not write one), the fallback is the same
+       non-zero scan over whatever the snapshot holds - it catches the
+       empty-blob case even though it cannot verify completeness.
+
+    The size checks exist because a download that finished its marker but wrote
+    an empty (or truncated) blob is otherwise invisible to the checks above: no
+    ``*.incomplete`` is left, the snapshots dir is non-empty, and the repo would
+    be answered True for a model that the app then cannot load (transformers
+    raises ``EOFError``/``UnpicklingError`` on a zero-byte weight). They also
+    close the gap where a purge removed a corrupt file: the manifest still
+    names it, so the repo is reported missing and the download re-fetches it.
     """
     for repo in repos:
         repo_dir = hub_dir / ("models--" + repo.replace("/", "--"))
@@ -220,6 +240,65 @@ def models_cached(hub_dir: Path, repos) -> bool:
         if not snapshots.is_dir() or not any(snapshots.iterdir()):
             return False
         if any(repo_dir.glob("blobs/*.incomplete")):
+            return False
+        try:
+            current = _current_snapshot(repo_dir)
+            if not _snapshot_complete(repo_dir, current):
+                return False
+        except (OSError, StopIteration):
+            # A snapshot that cannot be listed, or one with no entries at all,
+            # is not a completed download.
+            return False
+    return True
+
+
+def _current_snapshot(repo_dir: Path) -> Path:
+    """The snapshot directory that is the repo's current revision.
+
+    ``refs/main`` names the commit huggingface_hub last resolved. When the ref
+    exists but names no snapshot, the repo is not cached - the ref is the
+    source of truth and the recorded revision is simply gone. When refs are
+    absent (a cache filled without a network resolve) any snapshot is taken.
+    """
+    snapshots = repo_dir / "snapshots"
+    refs = repo_dir / "refs" / "main"
+    if refs.is_file():
+        commit = refs.read_text(encoding="utf-8").strip()
+        candidate = snapshots / commit
+        if candidate.is_dir():
+            return candidate
+        raise StopIteration(f"refs/main names a missing snapshot: {commit}")
+    return next(snapshots.iterdir())
+
+
+def _snapshot_complete(repo_dir: Path, snapshot: Path) -> bool:
+    """True when every file the tree manifest expects is present and non-empty.
+
+    Falls back to scanning the snapshot itself when no manifest is cached
+    (see :func:`models_cached`).
+    """
+    manifest_path = repo_dir / "trees" / (snapshot.name + ".json")
+    expected = None
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            expected = manifest.get("files")
+        except (OSError, ValueError):
+            expected = None
+    if expected is not None:
+        for name, entry in expected.items():
+            try:
+                if isinstance(entry, dict) and entry.get("size"):
+                    if snapshot.joinpath(name).stat().st_size != entry["size"]:
+                        return False
+                elif snapshot.joinpath(name).stat().st_size == 0:
+                    return False
+            except OSError:
+                return False
+        return True
+    # No manifest: at least catch empty/broken entries in the snapshot.
+    for f in snapshot.iterdir():
+        if f.stat().st_size == 0:
             return False
     return True
 
