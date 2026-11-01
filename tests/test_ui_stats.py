@@ -522,10 +522,10 @@ class StatsTabsTest(unittest.TestCase):
     def test_six_tabs_present(self):
         import ttkbootstrap as ttk
         self.assertIsInstance(self.view._nb, ttk.Notebook)
-        self.assertEqual(self.view._nb.index("end"), 6)
-        texts = [self.view._nb.tab(i, "text") for i in range(6)]
+        self.assertEqual(self.view._nb.index("end"), 7)
+        texts = [self.view._nb.tab(i, "text") for i in range(7)]
         self.assertEqual(texts, ["Overview", "Trends", "Review pool",
-                                 "Sessions", "Dictation", "Drill"])
+                                 "Sessions", "Dictation", "Drill", "Advance"])
 
     def test_show_tab_selects_and_scrolls_to_top(self):
         self.view._show_tab("review")
@@ -536,12 +536,15 @@ class StatsTabsTest(unittest.TestCase):
         self.assertEqual(self.view._nb.index("current"), 4)
         self.view._show_tab("drill")
         self.assertEqual(self.view._nb.index("current"), 5)
+        self.view._show_tab("advance")
+        self.assertEqual(self.view._nb.index("current"), 6)
 
     def test_tabs_are_frames(self):
         import tkinter as tk
         for tab in (self.view._tab_overview, self.view._tab_trends,
                     self.view._tab_review, self.view._tab_sessions,
-                    self.view._tab_dictation, self.view._tab_drill):
+                    self.view._tab_dictation, self.view._tab_drill,
+                    self.view._tab_advance):
             self.assertIsInstance(tab, tk.Frame)
 
     def test_summary_cards_wrap_at_four_per_row(self):

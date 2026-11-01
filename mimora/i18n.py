@@ -559,6 +559,47 @@ _ZH: Dict[str, str] = {
     "Target × week": "目标×周",
 
     # ------------------------------------------------------------------
+    # Advance stats tab (ui_stats.py _render_advance)
+    # ------------------------------------------------------------------
+    "No activity yet. Practice, drill or dictate to populate the advance analysis.":
+        "还没有活动。练习、训练或听写以填充进阶分析。",
+    "Advance": "进阶",
+    "Practice takes": "练习次数",
+    "Error words": "错误单词",
+    "Review pool": "复习池",
+    "Drill sessions": "练习会话数",
+    "Dictation sessions": "听写会话数",
+    "Audio coverage": "音频覆盖",
+    "Mastered drills": "已掌握训练",
+    "Error words → drill → mastery": "错误单词 → 练习 → 掌握",
+    "Weak phonemes (coverage: {d}/{w})": "弱音素（覆盖：{d}/{w}）",
+    "Drill takes linked to practice": "练习次数关联到练习会话",
+    "Drill takes": "练习次数",
+    "Activity by day": "每日活动",
+    "Phrase funnel": "句子漏斗",
+    "Day correlation ({d} days)": "日相关（{d} 天）",
+    "Join notes": "关联说明",
+    "Linked": "已关联",
+    "Unlinked": "未关联",
+    "Practice": "练习",
+    "Practice-Drill": "练习-训练",
+    "Practice-Dictation": "练习-听写",
+    "Drill-Dictation": "训练-听写",
+    "Practice phrases": "练习句子",
+    "With errors": "有错误",
+    "In review": "在复习池",
+    "Drilled": "已训练",
+    "Passed": "已通过",
+    "review.json is keyed by exact phrase text; the joins here normalise both sides (lower-case, punctuation stripped, whitespace collapsed).":
+        "review.json 以句子原文为键；此处关联将两侧规范化（小写、去标点、折叠空白）。",
+    "Drill take audio refs point to the practice take that produced the phrase; the drill score is that take's score, not an independent grade.":
+        "训练取样的音频引用指向产生该句的练习取样；训练得分即该取样得分，而非独立评分。",
+    "phoneme_scores[].score is a 0-1 similarity, not a 0-100 grade; the weak threshold is on that scale.":
+        "phoneme_scores[].score 是 0-1 相似度而非 0-100 分；弱音素阈值基于该标度。",
+    "Drill and dictation sessions record started_at as the save time, so the timeline and correlation use ended_at for those modes.":
+        "训练与听写会话把 started_at 记为保存时间，故时间线与相关性对这两种模式使用 ended_at。",
+
+    # ------------------------------------------------------------------
     # Drill mode (ui_drill.py)
     # ------------------------------------------------------------------
     "Drill · {value}": "练习 · {value}",
