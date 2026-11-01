@@ -271,6 +271,25 @@ and stay in the user data directory across upgrades.
 
 ### Fixed
 
+- **Code review feedback (third round): analysis layer and stats interface.**
+  The drill-take origin split in the advance tab is now three-way —
+  `referenced` / `reference_deleted` / `never_scored` — instead of collapsing
+  "reference points at a deleted practice take" and "never scored" into one
+  bucket; the previous two-way check also misclassified a take with no audio
+  reference as `reference_deleted` because a `(None, None)` tuple is truthy,
+  so the components are now tested directly. The `drill_ipa_no_practice` list
+  (phonemes drilled with no practice data) is now shown as a diagnostic on the
+  phoneme-weakness chart instead of being computed and dropped. All ISO date
+  parsing is unified into a new pure `mimora/time_utils.py` (`iso_date`,
+  `week_start`, `parse_ts`), and `drill_analysis`, `dictation_analysis`,
+  `advance_analysis`, `ui_stats` and `ui_weakness` delegate to it instead of
+  carrying five copies of the same inline `fromisoformat` logic.
+  `dictation_analysis` now runs `compare_sentences` once per take through a
+  shared `_all_take_details` cache instead of re-running it inside each of the
+  six per-take aggregations. The day-level activity correlation guards on a
+  `1e-12` variance threshold for numerical stability, and `phoneme_averages`
+  is computed once rather than three times in the stats dashboard.
+
 - **Code review feedback: P0/P1/P2.** The word-leaderboard sort no longer
   reverses a reverse-sorted list (the first rate/count click now reads
   worst-first, and the sort direction is folded into the sort itself instead of
