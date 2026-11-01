@@ -32,7 +32,7 @@ from tkinter import messagebox
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
-from mimora import config, i18n, window_icon
+from mimora import config, i18n, time_utils, window_icon
 from mimora import (  # noqa: F401  (analysis modules used below)
     advance_analysis,
     dictation_analysis,
@@ -91,13 +91,7 @@ def _avg_score_for_session(session: Dict[str, Any]) -> float:
 
 def _session_date_key(session: Dict[str, Any]) -> str:
     """The calendar date (YYYY-MM-DD) a session belongs to."""
-    ts = session.get("started_at") or ""
-    if not ts:
-        return ""
-    try:
-        return datetime.fromisoformat(ts).strftime("%Y-%m-%d")
-    except ValueError:
-        return ts[:10]
+    return time_utils.iso_date(session.get("started_at") or "") or ""
 
 from mimora.ui_chart import (  # noqa: F401  (re-exported for tests/back-compat)
     GITHUB_HEATMAP_LEVELS,
@@ -358,10 +352,8 @@ class StatsView:
         # Daily average scores for the last 30 days.
         daily = defaultdict(list)
         for t in takes:
-            ts = t.get("timestamp") or ""
-            try:
-                day = datetime.fromisoformat(ts).strftime("%Y-%m-%d")
-            except ValueError:
+            day = time_utils.iso_date(t.get("timestamp") or "")
+            if day is None:
                 continue
             daily[day].append(float(t.get("score") or 0))
         # Sort by date.
@@ -953,10 +945,8 @@ class StatsView:
         kpi = _CanvasChart(self._drill, width=430, height=60)
         kpi.canvas.pack(padx=4, pady=(4, 0), fill=tk.X)
         overall_mastered = sum(d["mastered"] for _, d in drill_analysis.mastery_by_type(sessions))
-        phoneme_avg = (
-            sum(a for _, a, _ in drill_analysis.phoneme_averages(sessions))
-            / len(drill_analysis.phoneme_averages(sessions))
-            if drill_analysis.phoneme_averages(sessions) else 0.0)
+        pa = drill_analysis.phoneme_averages(sessions)
+        phoneme_avg = (sum(a for _, a, _ in pa) / len(pa)) if pa else 0.0
         kpi.draw_kpi_cards([
             (i18n.tr("Sessions"), f"{len(sessions)}"),
             (i18n.tr("Mastery"),
@@ -1210,21 +1200,39 @@ class StatsView:
         pw = advance_analysis.phoneme_weakness(takes, drill_sessions)
         weak_items = [(f"/{ipa}/", avg * 100.0)
                       for ipa, avg, _, _ in pw["weak"][:8]]
-        weak = chart(cell(0, 1))
+        weak_cell = cell(0, 1)
+        weak = chart(weak_cell)
         weak.draw_hbars(weak_items,
                         title=i18n.tr("Weak phonemes (coverage: {d}/{w})"
                                       .format(d=pw["drilled_count"],
                                               w=pw["weak_count"])),
                         color=THEME["info"])
+        # Diagnostic: drilled phonemes the practice data never shows (a drill
+        # target with no take evidence). Normally empty; shown only when not.
+        if pw["drill_ipa_no_practice"]:
+            tk.Label(
+                weak_cell,
+                text=i18n.tr("Drilled but no practice data: {list}")
+                .format(list=", ".join(pw["drill_ipa_no_practice"])),
+                font=(FONT_FAMILY, FONT_SIZE_CAPTION),
+                fg=THEME["warn"], bg=THEME["bg_main"],
+                wraplength=400, justify="left",
+            ).pack(anchor="w", padx=6)
 
         # (3) Drill take origin (the score-consistency question answered
         # structurally: a drill take IS the practice take it references).
+        # Split into referenced / reference_deleted / never_scored so a bar
+        # does not imply "never scored" for a reference that was removed.
         origin = advance_analysis.drill_take_origin(drill_sessions, takes)
         origin_chart = chart(cell(1, 0))
         origin_chart.draw_stacked_bars(
             [
-                (i18n.tr("Linked"), [float(origin["referenced"])]),
-                (i18n.tr("Unlinked"), [float(origin["unreferenced"])]),
+                (i18n.tr("Linked"),
+                 [float(origin["referenced"])]),
+                (i18n.tr("Reference removed"),
+                 [float(origin["reference_deleted"])]),
+                (i18n.tr("Never scored"),
+                 [float(origin["never_scored"])]),
             ],
             [i18n.tr("Drill takes")],
             title=i18n.tr("Drill takes linked to practice"))
@@ -1347,10 +1355,8 @@ def _compute_streak(sessions: List[Dict],
         return 0
     day_seconds: Dict[str, int] = defaultdict(int)
     for s in sessions:
-        try:
-            day = datetime.fromisoformat(s.get("started_at") or "").strftime(
-                "%Y-%m-%d")
-        except ValueError:
+        day = time_utils.iso_date(s.get("started_at") or "")
+        if day is None:
             continue
         day_seconds[day] += int(s.get("duration_sec") or 0)
     target_sec = target_minutes * 60

@@ -195,7 +195,7 @@ class WordFlowTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class DrillTakeOriginTest(unittest.TestCase):
-    def test_linked_and_unlinked(self):
+    def test_three_way_split(self):
         takes = [
             _take("t-1", session_id="s-1"),
             _take("t-2", session_id="s-1"),
@@ -204,7 +204,7 @@ class DrillTakeOriginTest(unittest.TestCase):
             _drill_session("d-1", takes=[
                 _drill_take(audio_session_id="s-1", audio_take_id="t-1"),
                 _drill_take(audio_session_id="s-1", audio_take_id="t-2"),
-                # dangling ref (no resolving practice take)
+                # dangling ref: a practice take that has since been deleted
                 _drill_take(audio_session_id="s-9", audio_take_id="t-9"),
             ]),
             _drill_session("d-2", takes=[
@@ -212,10 +212,13 @@ class DrillTakeOriginTest(unittest.TestCase):
             ]),
         ]
         result = aa.drill_take_origin(drill, takes)
-        self.assertEqual(result, {"referenced": 2, "unreferenced": 2})
+        self.assertEqual(result, {"referenced": 2, "reference_deleted": 1,
+                                  "never_scored": 1})
 
     def test_empty(self):
-        self.assertEqual(aa.drill_take_origin([], []), {"referenced": 0, "unreferenced": 0})
+        self.assertEqual(aa.drill_take_origin([], []),
+                         {"referenced": 0, "reference_deleted": 0,
+                          "never_scored": 0})
 
 
 # ---------------------------------------------------------------------------
