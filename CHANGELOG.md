@@ -18,6 +18,20 @@ and stay in the user data directory across upgrades.
   states from the take texts via the same `compare_sentences` alignment the
   live scoring uses, so older sessions that predate the stored word
   diagnostics are counted exactly as the user saw them.
+- **Stats dashboard: full dictation analysis.** The dictation tab is expanded
+  from four charts to the full analysis set: a KPI row (mastery rate, average
+  attempts, average first-to-last gain, session count), the attempts histogram
+  with the pass-rate curve, the three error kinds (missed / extra / spelling)
+  stacked by week, the top-N wrong words, the first-to-last score dumbbell, the
+  score distribution split by pass/fail, the word-by-week heatmap, the
+  per-session attempt series and the mastery donut. `mimora/dictation_analysis.py`
+  gains the corresponding pure aggregation functions, and the chart primitives
+  gain stacked-bar, horizontal-bar, stacked-histogram, line-series, heatmap
+  matrix, dumbbell and KPI-card painters. The error-type categories are the
+  three distinct learning gaps (漏写 / 多写 / 拼错), and the analysis module
+  documents the two data-semantics limits that shape every time-based chart
+  (no per-take timestamps, so `ended_at` is the only time axis; outcome has
+  exactly two categories).
 - **UI redesign: semantic design tokens and theme contrast audit.** A new
   `mimora/ui_tokens.py` centralises every colour *meaning* that panels used to
   interpret independently (score bands, word quality levels, weakness statuses),
