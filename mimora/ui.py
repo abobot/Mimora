@@ -85,6 +85,10 @@ class ViewCallbacks:
     ``Callable[..., None]`` signatures for those.
     """
     on_settings_clicked: Callable[[], None]
+    # The auto-pilot loop toggle (🔁 header button). Fired when the user flips
+    # the main-window master switch; the controller applies it live (persist +
+    # apply) and reflects the state back through set_autopilot_active.
+    on_autopilot_toggled: Callable[[bool], None]
     # New in v2: entry points for the persistent stats / history / weakness
     # features. Each opens its own Toplevel; all state lives in the
     # controller (app.py), the view only forwards the click.
@@ -404,6 +408,24 @@ class TrainerView:
                        leave={"bg": THEME["bg_main"], "fg": THEME["text_dim"]})
             Tooltip(btn, tip)
 
+        # Auto-pilot master toggle (🔁). Unlike the open-a-window buttons above,
+        # this is a state toggle: its appearance reflects whether the loop is on.
+        # The controller applies it live and mirrors the state back through
+        # set_autopilot_active; the button itself only flips and reports.
+        self._autopilot_btn = FlatButton(
+            header_frame, text="\U0001f501", command=self._on_autopilot_btn,
+            font=(FONT_FAMILY, FONT_SIZE_ICON),
+            bg=THEME["bg_main"], fg=THEME["text_dim"],
+            activebackground=THEME["bg_accent_active"],
+            activeforeground=THEME["text_bright"],
+            bd=0, padx=8, pady=2, cursor="hand2")
+        self._autopilot_btn.pack(side=tk.RIGHT, padx=2)
+        bind_hover(self._autopilot_btn,
+                   enter={"bg": THEME["bg_panel"], "fg": THEME["text_bright"]},
+                   leave={"bg": THEME["bg_main"], "fg": THEME["text_dim"]})
+        Tooltip(self._autopilot_btn, i18n.tr("Auto-pilot loop (score > threshold)"))
+        self.set_autopilot_active(config.AUTO_PILOT_ENABLED)
+
         # Hairline separator under the header anchors the top of the page and
         # separates the chrome from the content region.
         tk.Frame(self.root, height=1, bg=THEME["border"]).pack(side=tk.TOP, fill=tk.X)
@@ -720,6 +742,24 @@ class TrainerView:
     def toggle_prosody(self):
         """Show/hide the whole prosody body to match the show_prosody flag."""
         self._prosody.toggle()
+
+    def _on_autopilot_btn(self) -> None:
+        """The 🔁 header button was clicked: flip and report the new state."""
+        self._cb.on_autopilot_toggled(not config.AUTO_PILOT_ENABLED)
+
+    def set_autopilot_active(self, active: bool) -> None:
+        """Reflect the auto-pilot loop's on/off state on the 🔁 button.
+
+        The button is a state indicator, not just an action: when the loop is
+        running, the glyph reads as active (accent-coloured) so the user can
+        see at a glance whether auto-pilot is driving the flow.
+        """
+        if active:
+            self._autopilot_btn.config(fg=THEME["accent"])
+            self._autopilot_btn.config(bg=THEME["bg_accent_active"])
+        else:
+            self._autopilot_btn.config(fg=THEME["text_dim"])
+            self._autopilot_btn.config(bg=THEME["bg_main"])
 
     # ------------------------------------------------------------------
     # Enabled-state queries (hotkey gating mirrors button gating)

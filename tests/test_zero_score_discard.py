@@ -146,6 +146,7 @@ class ZeroScoreViewTests(unittest.TestCase):
             on_word_single_drill_clicked=lambda w: None,
             on_take_scored=lambda *a, **k: None,
             on_history_entry=lambda e: None, on_replay_take=lambda a, b: None,
+            on_autopilot_toggled=lambda en: None,
         )
         cls.view = TrainerView(cls.root, callbacks)
 

@@ -327,6 +327,28 @@ def build_sections() -> tuple:
                   minimum=1, maximum=30,
                   help=i18n.tr("Delay before auto-generating the next phrase. "
                                "Longer delay gives time to read error feedback.")),
+            Field("auto_pilot_enabled", i18n.tr("Auto-pilot loop"), "bool",
+                  lambda: config.user_setting("auto_pilot_enabled",
+                                              config.AUTO_PILOT_ENABLED),
+                  help=i18n.tr("When on, a take scoring above the threshold "
+                               "automatically advances to the next phrase, "
+                               "plays it, then records after the delay - and "
+                               "repeats. A take at or below the threshold pauses "
+                               "the loop until you repeat and pass.")),
+            Field("auto_pilot_score_threshold", i18n.tr("Auto-pilot score threshold"), "number",
+                  lambda: config.user_setting("auto_pilot_score_threshold",
+                                              config.AUTO_PILOT_SCORE_THRESHOLD),
+                  minimum=0, maximum=100,
+                  help=i18n.tr("Score (0-100) the take must exceed to keep the "
+                               "auto-pilot loop going. Lower = loop keeps more "
+                               "takes; higher = only excellent takes advance.")),
+            Field("auto_pilot_record_delay", i18n.tr("Auto-pilot record delay (seconds)"), "number",
+                  lambda: config.user_setting("auto_pilot_record_delay",
+                                              config.AUTO_PILOT_RECORD_DELAY),
+                  minimum=0, maximum=30,
+                  help=i18n.tr("How long to wait after the reference audio "
+                               "finishes before auto-starting the recording. "
+                               "Gives you a beat to prepare.")),
             Field("pass_gating_enabled", i18n.tr("Require passing score for next phrase"), "bool",
                   lambda: config.user_setting("pass_gating_enabled",
                                               config.PASS_GATING_ENABLED),

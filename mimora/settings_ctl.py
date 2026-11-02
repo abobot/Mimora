@@ -62,6 +62,12 @@ LIVE_CONFIG_ATTRS = {
     # and the take is auto-started at the next prompt, so no restart needed.
     "shadowing_enabled": ("SHADOWING_ENABLED", bool),
     "shadowing_weight": ("SHADOWING_WEIGHT", float),
+    # Auto-pilot loop. All apply live: the loop reads these at each scored take
+    # and at each phrase-ready, so flipping the master toggle (or the threshold
+    # / record delay) takes effect on the next take without a restart.
+    "auto_pilot_enabled": ("AUTO_PILOT_ENABLED", bool),
+    "auto_pilot_score_threshold": ("AUTO_PILOT_SCORE_THRESHOLD", float),
+    "auto_pilot_record_delay": ("AUTO_PILOT_RECORD_DELAY", float),
 }
 
 # settings.json key -> config attribute holding the value the running app

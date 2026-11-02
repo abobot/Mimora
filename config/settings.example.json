@@ -54,5 +54,11 @@
   "_show_face": "Show the articulation face in the hero card's score row. Toggled from the settings window ('Show articulation face').",
   "show_face": true,
   "_user_name": "Display name of the practicing user; editable in the settings window ('Your name') and saved automatically.",
-  "user_name": ""
+  "user_name": "",
+  "_auto_pilot_enabled": "Auto-pilot loop (also toggled by the 🔁 button in the main window): when a take scores strictly above the threshold, automatically advance to the next phrase, play the reference, wait the record delay, then start recording - repeating until a take fails the threshold (or the toggle is switched off).",
+  "auto_pilot_enabled": false,
+  "_auto_pilot_score_threshold": "Auto-pilot advance threshold on the raw 0-100 engine score. A take must score strictly above this to advance (an exact hit pauses the loop).",
+  "auto_pilot_score_threshold": 80,
+  "_auto_pilot_record_delay": "Seconds to wait after the reference finishes playing before auto-pilot starts the recording.",
+  "auto_pilot_record_delay": 2.0
 }

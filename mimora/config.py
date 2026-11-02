@@ -111,6 +111,9 @@ _KNOWN_USER_KEYS = {
     "auto_play_phrase",
     "auto_next_phrase",
     "auto_next_delay",
+    "auto_pilot_enabled",
+    "auto_pilot_score_threshold",
+    "auto_pilot_record_delay",
     "silence_timeout",
     "silence_threshold",
     "translation_language",
@@ -188,6 +191,9 @@ USER_SETTING_DEFAULTS = {
     "auto_play_phrase": True,
     "auto_next_phrase": False,
     "auto_next_delay": 5.0,
+    "auto_pilot_enabled": False,
+    "auto_pilot_score_threshold": 80.0,
+    "auto_pilot_record_delay": 2.0,
     "silence_timeout": 3.0,
     "silence_threshold": 0.01,
     "translation_language": "",
@@ -1233,6 +1239,30 @@ AUTO_NEXT_PHRASE = _bool("auto_next_phrase", False)
 # Delay in seconds before auto-generating the next phrase after scoring.
 # Longer delay gives the user time to read error feedback on the current phrase.
 AUTO_NEXT_DELAY = _num("auto_next_delay", 5.0, minimum=1, maximum=30)
+
+# =====================================================================
+# Auto-pilot loop (main-window practice loop)
+# =====================================================================
+# Master toggle for the auto-pilot loop. When on and a scored take clears the
+# threshold, the loop advances by itself: next phrase -> play reference ->
+# wait record_delay -> start recording -> analyze -> score -> repeat. A take
+# that does NOT clear the threshold pauses the loop back to manual (the user
+# repeats until it does, or turns auto-pilot off).
+AUTO_PILOT_ENABLED = _bool("auto_pilot_enabled", False)
+
+# Score threshold ("x分") on the raw 0-100 engine score. Only a take whose raw
+# score is STRICTLY GREATER than this advances the loop; a take at or below it
+# pauses it (mirrors the pass gate's "repeat until it passes" semantics). The
+# threshold is on the raw 0-100 axis, NOT the 0-5 grade shown for the phoneme
+# engine, so it means the same thing across all engines.
+AUTO_PILOT_SCORE_THRESHOLD = _num("auto_pilot_score_threshold", 80.0,
+                                  minimum=0, maximum=100)
+
+# Wait ("y秒") after the reference audio finishes before auto-starting the
+# recording, giving the user a beat to prepare. 0 = record immediately after
+# the reference stops.
+AUTO_PILOT_RECORD_DELAY = _num("auto_pilot_record_delay", 2.0,
+                               minimum=0, maximum=30)
 
 # Collapsed state of the editable practice-text box, toggled by clicking the
 # "Practice text:" caption in the app and persisted on change. The selector
