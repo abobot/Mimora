@@ -333,8 +333,9 @@ def build_sections() -> tuple:
                   help=i18n.tr("When on, a take scoring above the threshold "
                                "automatically advances to the next phrase, "
                                "plays it, then records after the delay - and "
-                               "repeats. A take at or below the threshold pauses "
-                               "the loop until you repeat and pass.")),
+                               "repeats. A take at or below the threshold "
+                               "re-records the same phrase after the delay until "
+                               "it clears.")),
             Field("auto_pilot_score_threshold", i18n.tr("Auto-pilot score threshold"), "number",
                   lambda: config.user_setting("auto_pilot_score_threshold",
                                               config.AUTO_PILOT_SCORE_THRESHOLD),

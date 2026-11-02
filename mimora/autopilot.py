@@ -16,8 +16,9 @@ def should_advance(enabled: bool, raw_score: float, threshold: float,
     engine score is STRICTLY GREATER than the threshold (the user's "x分"),
     and the take is allowed to advance anyway: either the pass gate is off, or
     the take actually passed it. A take at or below the threshold - or one the
-    gate refuses - pauses the loop back to manual, so the user repeats until it
-    clears (mirrors the pass gate's "repeat until it passes" semantics).
+    gate refuses - does NOT advance: the loop stays on the same phrase and
+    re-records it after the record delay (mirrors the pass gate's "repeat
+    until it passes" semantics).
 
     ``raw_score`` is the engine's raw 0-100 score, NOT the 0-5 grade shown for
     the phoneme engine: the threshold must mean the same thing across every

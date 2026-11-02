@@ -1246,15 +1246,16 @@ AUTO_NEXT_DELAY = _num("auto_next_delay", 5.0, minimum=1, maximum=30)
 # Master toggle for the auto-pilot loop. When on and a scored take clears the
 # threshold, the loop advances by itself: next phrase -> play reference ->
 # wait record_delay -> start recording -> analyze -> score -> repeat. A take
-# that does NOT clear the threshold pauses the loop back to manual (the user
-# repeats until it does, or turns auto-pilot off).
+# that does NOT clear the threshold stays on the SAME phrase and re-records
+# after the record delay (the loop keeps running until it clears, or the user
+# turns auto-pilot off).
 AUTO_PILOT_ENABLED = _bool("auto_pilot_enabled", False)
 
 # Score threshold ("x分") on the raw 0-100 engine score. Only a take whose raw
 # score is STRICTLY GREATER than this advances the loop; a take at or below it
-# pauses it (mirrors the pass gate's "repeat until it passes" semantics). The
-# threshold is on the raw 0-100 axis, NOT the 0-5 grade shown for the phoneme
-# engine, so it means the same thing across all engines.
+# re-records the same phrase (mirrors the pass gate's "repeat until it passes"
+# semantics). The threshold is on the raw 0-100 axis, NOT the 0-5 grade shown
+# for the phoneme engine, so it means the same thing across all engines.
 AUTO_PILOT_SCORE_THRESHOLD = _num("auto_pilot_score_threshold", 80.0,
                                   minimum=0, maximum=100)
 

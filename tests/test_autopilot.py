@@ -3,8 +3,9 @@
 The auto-pilot loop is a pure gate over the existing practice flow: when the
 master toggle is on and a scored take clears the score threshold, the loop
 advances to the next phrase and records it automatically; a take that does not
-clear the threshold (or that the pass gate refuses) pauses the loop back to
-manual. The decision lives in the pure module ``mimora/autopilot.py`` so it
+clear the threshold (or that the pass gate refuses) does NOT advance - the
+loop stays on the same phrase and re-records it after the record delay, until
+it clears. The decision lives in the pure module ``mimora/autopilot.py`` so it
 can be tested without the GUI stack; ``app.py`` delegates to it.
 
 Also covers the settings keys the loop reads (must be known and defaulted), so
@@ -32,7 +33,8 @@ class AutopilotShouldAdvanceTest(unittest.TestCase):
 
     def test_exactly_threshold_does_not_advance(self):
         # The user's spec is "score > x" (strictly greater), so an exact hit
-        # pauses the loop just like a miss - the take must be strictly better.
+        # does not advance - the take must be strictly better, and the loop
+        # re-records the same phrase instead.
         self.assertFalse(self._advance(80.0))
 
     def test_below_threshold_does_not_advance(self):
@@ -78,6 +80,21 @@ class AutopilotSettingsKeysTest(unittest.TestCase):
 
     def test_record_delay_default_nonnegative(self):
         self.assertGreaterEqual(config.AUTO_PILOT_RECORD_DELAY, 0)
+
+
+class AutopilotViewCallbacksTest(unittest.TestCase):
+    """The view contract the loop depends on is present on ViewCallbacks.
+
+    The controller wiring for the auto-pilot loop and its parameters popup is
+    driven by two required callbacks; a future view refactor that drops one
+    would fail at construction, so pin them here.
+    """
+
+    def test_callbacks_exist(self):
+        from mimora.ui import ViewCallbacks
+        fields = ViewCallbacks.__dataclass_fields__
+        self.assertIn("on_autopilot_toggled", fields)
+        self.assertIn("on_autopilot_settings", fields)
 
 
 if __name__ == "__main__":

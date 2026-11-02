@@ -89,6 +89,10 @@ class ViewCallbacks:
     # the main-window master switch; the controller applies it live (persist +
     # apply) and reflects the state back through set_autopilot_active.
     on_autopilot_toggled: Callable[[bool], None]
+    # Right-click on the 🔁 button: edit the auto-pilot parameters (score
+    # threshold / record delay) in a popup near the button. The controller
+    # positions the popup at the given screen x/y and applies the values live.
+    on_autopilot_settings: Callable[[int, int], None]
     # New in v2: entry points for the persistent stats / history / weakness
     # features. Each opens its own Toplevel; all state lives in the
     # controller (app.py), the view only forwards the click.
@@ -420,10 +424,22 @@ class TrainerView:
             activeforeground=THEME["text_bright"],
             bd=0, padx=8, pady=2, cursor="hand2")
         self._autopilot_btn.pack(side=tk.RIGHT, padx=2)
-        bind_hover(self._autopilot_btn,
-                   enter={"bg": THEME["bg_panel"], "fg": THEME["text_bright"]},
-                   leave={"bg": THEME["bg_main"], "fg": THEME["text_dim"]})
+        # No bind_hover here: the autopilot button is a state indicator, and
+        # bind_hover's <Leave> handler resets to bg_main/text_dim, which would
+        # override the ON colour the moment the mouse leaves (the bug the
+        # phrase-source switcher in ui_practice.py already avoids by using no
+        # hover). The resting colour store (updated by set_autopilot_active)
+        # keeps the state visible; press/release still flash the active colours.
         Tooltip(self._autopilot_btn, i18n.tr("Auto-pilot loop (score > threshold)"))
+        # Right-click: edit the auto-pilot parameters (threshold / record
+        # delay) in a popup, so the loop can be tuned without opening the
+        # settings window. The controller positions the popup at the button.
+        self._autopilot_btn.bind(
+            "<Button-3>",
+            lambda _e: self._cb.on_autopilot_settings(
+                self._autopilot_btn.winfo_rootx(),
+                self._autopilot_btn.winfo_rooty()),
+            add="+")
         self.set_autopilot_active(config.AUTO_PILOT_ENABLED)
 
         # Hairline separator under the header anchors the top of the page and

@@ -443,6 +443,7 @@ class PronunciationTrainerGUI:
         self.view = TrainerView(self.root, ViewCallbacks(
             on_settings_clicked=self.on_settings_clicked,
             on_autopilot_toggled=self.on_autopilot_toggled,
+            on_autopilot_settings=self.on_autopilot_settings,
             on_history_clicked=self.on_history_clicked,
             on_stats_clicked=self.on_stats_clicked,
             on_weakness_clicked=self.on_weakness_clicked,
@@ -1952,6 +1953,62 @@ class PronunciationTrainerGUI:
             self.view.set_autopilot_active(False)
             self.view.append_system_msg(i18n.tr("Auto-pilot off"))
 
+    def on_autopilot_settings(self, x: int, y: int) -> None:
+        """Right-click the 🔁 button: tune the auto-pilot parameters (popup).
+
+        Opens a small popup near the button with the score threshold and the
+        record delay, so the loop can be tuned live without opening the
+        settings window. Applying persists both keys (via the same live path
+        the settings window uses) and updates the threshold readout.
+        """
+        win, catcher = self._make_popup(x, y)
+        tk.Label(win, text=i18n.tr("Auto-pilot parameters"),
+                 font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"),
+                 bg=THEME["bg_panel"], fg=THEME["text"]).pack(pady=(8, 2))
+
+        threshold_label = tk.Label(
+            win, text=f"{config.AUTO_PILOT_SCORE_THRESHOLD:g}",
+            font=(FONT_FAMILY, FONT_SIZE_BODY),
+            bg=THEME["bg_panel"], fg=THEME["accent"])
+        threshold_label.pack()
+        threshold_scale = tk.Scale(
+            win, from_=0, to=100, resolution=1, orient=tk.HORIZONTAL,
+            length=220, variable=tk.DoubleVar(value=config.AUTO_PILOT_SCORE_THRESHOLD),
+            bg=THEME["bg_panel"], fg=THEME["text"],
+            highlightthickness=0,
+            command=lambda _v: threshold_label.config(
+                text=f"{float(threshold_scale.get()):g}"))
+        threshold_scale.pack(padx=10, pady=(0, 4))
+
+        delay_label = tk.Label(
+            win, text=f"{config.AUTO_PILOT_RECORD_DELAY:g}",
+            font=(FONT_FAMILY, FONT_SIZE_BODY),
+            bg=THEME["bg_panel"], fg=THEME["accent"])
+        delay_label.pack()
+        delay_scale = tk.Scale(
+            win, from_=0, to=30, resolution=0.5, orient=tk.HORIZONTAL,
+            length=220, variable=tk.DoubleVar(value=config.AUTO_PILOT_RECORD_DELAY),
+            bg=THEME["bg_panel"], fg=THEME["text"],
+            highlightthickness=0,
+            command=lambda _v: delay_label.config(
+                text=f"{float(delay_scale.get()):g}"))
+        delay_scale.pack(padx=10, pady=(0, 4))
+
+        def apply():
+            self._dismiss_popup(win, catcher)
+            self.settings_ctl.persist_and_apply_live(
+                "auto_pilot_score_threshold", float(threshold_scale.get()))
+            self.settings_ctl.persist_and_apply_live(
+                "auto_pilot_record_delay", float(delay_scale.get()))
+            self.view.append_system_msg(i18n.tr(
+                "Auto-pilot on: advance on score > {x}",
+                x=f"{config.AUTO_PILOT_SCORE_THRESHOLD:g}"))
+
+        self._popup_buttons(
+            win, i18n.tr("Apply"), apply,
+            i18n.tr("Cancel"),
+            lambda: self._dismiss_popup(win, catcher))
+
     def _autopilot_schedule_auto_record(self) -> None:
         """Schedule the auto-record after the reference has been heard (Tk).
 
@@ -3141,9 +3198,11 @@ class PronunciationTrainerGUI:
         # Auto-pilot loop: when enabled and the take cleared the threshold, keep
         # the loop going (advance to the next phrase, which will play the
         # reference and then auto-record). A take that did NOT clear the
-        # threshold - or that the pass gate refuses - pauses the loop back to
-        # manual, so the user repeats until it clears (same "repeat until it
-        # passes" spirit as the pass gate).
+        # threshold - or that the pass gate refuses - does NOT advance, but the
+        # loop keeps running: it re-records the SAME phrase after the record
+        # delay, so the user keeps trying until it clears (the "repeat until it
+        # passes" spirit). Only a toggle-off / drill / dictation switch / failed
+        # generation actually stops the loop.
         if self._autopilot_should_advance(
                 config.AUTO_PILOT_ENABLED, raw_score,
                 config.AUTO_PILOT_SCORE_THRESHOLD,
@@ -3152,12 +3211,14 @@ class PronunciationTrainerGUI:
             delay_ms = int(config.AUTO_NEXT_DELAY * 1000)
             self.root.after(delay_ms, self.on_generate_phrase)
         elif self._autopilot_running:
-            # A take that did not clear the threshold (or the gate) pauses the
-            # loop. Keep the toggle on, but return to manual flow.
-            self._autopilot_running = False
+            # Below the threshold (or refused by the gate): stay on the same
+            # phrase and re-record after the record delay. The loop is still
+            # running; _autopilot_fire_auto_record re-checks the flag and the
+            # recording guards, so a stop mid-delay cancels cleanly.
             self.view.append_system_msg(i18n.tr(
-                "Auto-pilot paused (score {score} not above {x})",
+                "Auto-pilot retrying (score {score} not above {x})",
                 score=f"{raw_score:.0f}", x=f"{config.AUTO_PILOT_SCORE_THRESHOLD:g}"))
+            self._autopilot_schedule_auto_record()
 
     def _persist_take(self, phrase: str, score: float, graded: bool,
                       details: dict) -> None:

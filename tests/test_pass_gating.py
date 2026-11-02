@@ -171,6 +171,7 @@ class GateTests(unittest.TestCase):
             on_take_scored=lambda *a, **k: None,
             on_history_entry=lambda e: None, on_replay_take=lambda a, b: None,
             on_autopilot_toggled=lambda en: None,
+            on_autopilot_settings=lambda x, y: None,
         )
         cls.view = TrainerView(cls.root, callbacks)
         # Swap the real hero/prosody for stand-ins that record calls without
@@ -290,6 +291,7 @@ class ControlRowLayoutTests(unittest.TestCase):
             on_take_scored=lambda *a, **k: None,
             on_history_entry=lambda e: None, on_replay_take=lambda a, b: None,
             on_autopilot_toggled=lambda en: None,
+            on_autopilot_settings=lambda x, y: None,
         )
         cls.view = TrainerView(cls.root, callbacks)
         # _apply_control_column_widths runs via after_idle; force the idle
