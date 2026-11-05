@@ -1966,46 +1966,37 @@ class PronunciationTrainerGUI:
                  font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"),
                  bg=THEME["bg_panel"], fg=THEME["text"]).pack(pady=(8, 2))
 
-        # One block per parameter, two lines each: the name on its own line,
-        # then the slider with the live value beneath it. Stacking the label
-        # above the control (rather than beside it) keeps the popup narrow and
-        # reads as a form field instead of a bare slider.
-        def _param_block(name: str, scale: tk.Scale, value_label: tk.Label) -> None:
-            tk.Label(win, text=name, font=(FONT_FAMILY, FONT_SIZE_SMALL),
-                     bg=THEME["bg_panel"], fg=THEME["text"]).pack(
-                anchor=tk.W, padx=10, pady=(6, 0))
+        # One row per parameter: the name on the left, the slider in the
+        # middle and the live value on the right. Each widget is created with
+        # the row frame as its master and packed into that frame, so nothing
+        # leaks into the popup's own packing order (which would scatter the
+        # labels and sliders into separate visual lines).
+        def _param_row(name: str, from_: int, to: int, resolution: float,
+                       initial: float) -> tk.Scale:
             row = tk.Frame(win, bg=THEME["bg_panel"])
-            row.pack(fill=tk.X, padx=10)
-            scale.pack(side=tk.LEFT)
+            row.pack(fill=tk.X, padx=10, pady=(6, 2))
+            tk.Label(row, text=name, font=(FONT_FAMILY, FONT_SIZE_SMALL),
+                     bg=THEME["bg_panel"], fg=THEME["text"]).pack(side=tk.LEFT)
+            value_label = tk.Label(
+                row, text=f"{initial:g}", font=(FONT_FAMILY, FONT_SIZE_BODY),
+                bg=THEME["bg_panel"], fg=THEME["accent"])
+            scale = tk.Scale(
+                row, from_=from_, to=to, resolution=resolution,
+                orient=tk.HORIZONTAL, length=200,
+                variable=tk.DoubleVar(value=initial),
+                bg=THEME["bg_panel"], fg=THEME["text"], highlightthickness=0,
+                command=lambda _v: value_label.config(
+                    text=f"{float(scale.get()):g}"))
+            scale.pack(side=tk.LEFT, padx=(10, 0))
             value_label.pack(side=tk.LEFT, padx=(10, 0))
+            return scale
 
-        threshold_label = tk.Label(
-            win, text=f"{config.AUTO_PILOT_SCORE_THRESHOLD:g}",
-            font=(FONT_FAMILY, FONT_SIZE_BODY),
-            bg=THEME["bg_panel"], fg=THEME["accent"])
-        threshold_scale = tk.Scale(
-            win, from_=0, to=100, resolution=1, orient=tk.HORIZONTAL,
-            length=200, variable=tk.DoubleVar(value=config.AUTO_PILOT_SCORE_THRESHOLD),
-            bg=THEME["bg_panel"], fg=THEME["text"],
-            highlightthickness=0,
-            command=lambda _v: threshold_label.config(
-                text=f"{float(threshold_scale.get()):g}"))
-        _param_block(i18n.tr("Auto-pilot score threshold"), threshold_scale,
-                     threshold_label)
-
-        delay_label = tk.Label(
-            win, text=f"{config.AUTO_PILOT_RECORD_DELAY:g}",
-            font=(FONT_FAMILY, FONT_SIZE_BODY),
-            bg=THEME["bg_panel"], fg=THEME["accent"])
-        delay_scale = tk.Scale(
-            win, from_=0, to=30, resolution=0.5, orient=tk.HORIZONTAL,
-            length=200, variable=tk.DoubleVar(value=config.AUTO_PILOT_RECORD_DELAY),
-            bg=THEME["bg_panel"], fg=THEME["text"],
-            highlightthickness=0,
-            command=lambda _v: delay_label.config(
-                text=f"{float(delay_scale.get()):g}"))
-        _param_block(i18n.tr("Auto-pilot record delay"), delay_scale,
-                     delay_label)
+        threshold_scale = _param_row(
+            i18n.tr("Auto-pilot score threshold"), 0, 100, 1,
+            config.AUTO_PILOT_SCORE_THRESHOLD)
+        delay_scale = _param_row(
+            i18n.tr("Auto-pilot record delay"), 0, 30, 0.5,
+            config.AUTO_PILOT_RECORD_DELAY)
 
         def apply():
             self._dismiss_popup(win, catcher)
