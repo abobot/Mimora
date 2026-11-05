@@ -10,6 +10,11 @@ and stay in the user data directory across upgrades.
 
 ### Added
 
+- **Drill window recording indicator.** The drill's Record button now swaps
+  its glyph to a red dot while a take is being captured, and back to the mic
+  when it ends, so a drill session shows at a glance that the shared recording
+  path is live.
+
 - **Auto-pilot loop (autopilot).** A 🔁 toggle in the main-window header: when
   a take scores **strictly above** the configured threshold on the raw 0-100
   engine score, the loop advances by itself — next phrase → play the reference
