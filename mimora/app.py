@@ -1966,15 +1966,17 @@ class PronunciationTrainerGUI:
                  font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"),
                  bg=THEME["bg_panel"], fg=THEME["text"]).pack(pady=(8, 2))
 
-        # One row per parameter: the name on the left, the slider in the
-        # middle and the live value on the right, so each control reads as a
-        # labelled field rather than a bare slider.
-        def _param_row(name: str, scale: tk.Scale, value_label: tk.Label) -> None:
+        # One block per parameter, two lines each: the name on its own line,
+        # then the slider with the live value beneath it. Stacking the label
+        # above the control (rather than beside it) keeps the popup narrow and
+        # reads as a form field instead of a bare slider.
+        def _param_block(name: str, scale: tk.Scale, value_label: tk.Label) -> None:
+            tk.Label(win, text=name, font=(FONT_FAMILY, FONT_SIZE_SMALL),
+                     bg=THEME["bg_panel"], fg=THEME["text"]).pack(
+                anchor=tk.W, padx=10, pady=(6, 0))
             row = tk.Frame(win, bg=THEME["bg_panel"])
-            row.pack(fill=tk.X, padx=10, pady=(6, 2))
-            tk.Label(row, text=name, font=(FONT_FAMILY, FONT_SIZE_SMALL),
-                     bg=THEME["bg_panel"], fg=THEME["text"]).pack(side=tk.LEFT)
-            scale.pack(side=tk.LEFT, padx=(10, 0))
+            row.pack(fill=tk.X, padx=10)
+            scale.pack(side=tk.LEFT)
             value_label.pack(side=tk.LEFT, padx=(10, 0))
 
         threshold_label = tk.Label(
@@ -1988,8 +1990,8 @@ class PronunciationTrainerGUI:
             highlightthickness=0,
             command=lambda _v: threshold_label.config(
                 text=f"{float(threshold_scale.get()):g}"))
-        _param_row(i18n.tr("Auto-pilot score threshold"), threshold_scale,
-                   threshold_label)
+        _param_block(i18n.tr("Auto-pilot score threshold"), threshold_scale,
+                     threshold_label)
 
         delay_label = tk.Label(
             win, text=f"{config.AUTO_PILOT_RECORD_DELAY:g}",
@@ -2002,8 +2004,8 @@ class PronunciationTrainerGUI:
             highlightthickness=0,
             command=lambda _v: delay_label.config(
                 text=f"{float(delay_scale.get()):g}"))
-        _param_row(i18n.tr("Auto-pilot record delay"), delay_scale,
-                   delay_label)
+        _param_block(i18n.tr("Auto-pilot record delay"), delay_scale,
+                     delay_label)
 
         def apply():
             self._dismiss_popup(win, catcher)
