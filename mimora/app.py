@@ -1966,33 +1966,44 @@ class PronunciationTrainerGUI:
                  font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"),
                  bg=THEME["bg_panel"], fg=THEME["text"]).pack(pady=(8, 2))
 
+        # One row per parameter: the name on the left, the slider in the
+        # middle and the live value on the right, so each control reads as a
+        # labelled field rather than a bare slider.
+        def _param_row(name: str, scale: tk.Scale, value_label: tk.Label) -> None:
+            row = tk.Frame(win, bg=THEME["bg_panel"])
+            row.pack(fill=tk.X, padx=10, pady=(6, 2))
+            tk.Label(row, text=name, font=(FONT_FAMILY, FONT_SIZE_SMALL),
+                     bg=THEME["bg_panel"], fg=THEME["text"]).pack(side=tk.LEFT)
+            scale.pack(side=tk.LEFT, padx=(10, 0))
+            value_label.pack(side=tk.LEFT, padx=(10, 0))
+
         threshold_label = tk.Label(
             win, text=f"{config.AUTO_PILOT_SCORE_THRESHOLD:g}",
             font=(FONT_FAMILY, FONT_SIZE_BODY),
             bg=THEME["bg_panel"], fg=THEME["accent"])
-        threshold_label.pack()
         threshold_scale = tk.Scale(
             win, from_=0, to=100, resolution=1, orient=tk.HORIZONTAL,
-            length=220, variable=tk.DoubleVar(value=config.AUTO_PILOT_SCORE_THRESHOLD),
+            length=200, variable=tk.DoubleVar(value=config.AUTO_PILOT_SCORE_THRESHOLD),
             bg=THEME["bg_panel"], fg=THEME["text"],
             highlightthickness=0,
             command=lambda _v: threshold_label.config(
                 text=f"{float(threshold_scale.get()):g}"))
-        threshold_scale.pack(padx=10, pady=(0, 4))
+        _param_row(i18n.tr("Auto-pilot score threshold"), threshold_scale,
+                   threshold_label)
 
         delay_label = tk.Label(
             win, text=f"{config.AUTO_PILOT_RECORD_DELAY:g}",
             font=(FONT_FAMILY, FONT_SIZE_BODY),
             bg=THEME["bg_panel"], fg=THEME["accent"])
-        delay_label.pack()
         delay_scale = tk.Scale(
             win, from_=0, to=30, resolution=0.5, orient=tk.HORIZONTAL,
-            length=220, variable=tk.DoubleVar(value=config.AUTO_PILOT_RECORD_DELAY),
+            length=200, variable=tk.DoubleVar(value=config.AUTO_PILOT_RECORD_DELAY),
             bg=THEME["bg_panel"], fg=THEME["text"],
             highlightthickness=0,
             command=lambda _v: delay_label.config(
                 text=f"{float(delay_scale.get()):g}"))
-        delay_scale.pack(padx=10, pady=(0, 4))
+        _param_row(i18n.tr("Auto-pilot record delay"), delay_scale,
+                   delay_label)
 
         def apply():
             self._dismiss_popup(win, catcher)
