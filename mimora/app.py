@@ -2423,6 +2423,11 @@ class PronunciationTrainerGUI:
         # microphone would end up inside the recording and corrupt analysis.
         # Re-enabled in show_feedback / _reset_to_retry.
         self.view.enter_recording()
+        # A drill session shows its own Record button; reflect the take state
+        # there too (mic glyph -> red dot) so the drill window is not
+        # misleading while the shared recording path is capturing.
+        if self._drill_view is not None:
+            self._drill_view.set_recording(True)
 
     def _start_shadowing_take(self):
         """Start a take *while* the reference keeps playing (shadowing mode).
@@ -2445,6 +2450,11 @@ class PronunciationTrainerGUI:
     def trigger_recording_stop(self):
         if not self.recorder.stop():
             return
+
+        # Back to the resting mic glyph on the drill window's Record button
+        # (the take ended; the shared path set it to the red dot at start).
+        if self._drill_view is not None:
+            self._drill_view.set_recording(False)
 
         # Claim the analysis slot *synchronously, before* spawning the worker.
         # Claiming it inside the worker left a gap in which a 'New phrase' click

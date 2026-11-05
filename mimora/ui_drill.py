@@ -225,6 +225,16 @@ class DrillView:
     def _on_record(self) -> None:
         self._cb.on_record_clicked()
 
+    def set_recording(self, active: bool) -> None:
+        """Swap the record button glyph to a red dot while recording.
+
+        The tooltip ("Record (Space)") stays the same either way; only the
+        glyph changes, so a drill session shows at a glance that a take is
+        being captured. The controller calls this on record start/stop (the
+        drill shares the main loop's recording path).
+        """
+        self._record_btn.configure(text="🔴" if active else "🎙")
+
     def _on_play_reference(self) -> None:
         """Play the reference audio for the current drill phrase."""
         self._cb.on_play_reference_clicked()
