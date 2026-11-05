@@ -43,9 +43,9 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 import numpy as np
 
-from mimora import (config, detect_hardware, first_run, first_run_window,
-                    i18n, lifecycle, models_info, prosody, spacy_model_fetch,
-                    splash, window_icon)
+from mimora import (autopilot, config, detect_hardware, first_run,
+                    first_run_window, i18n, lifecycle, models_info, prosody,
+                    spacy_model_fetch, splash, window_icon)
 from mimora.llm import LLMManager, phrase_sampling
 from mimora.llm_server_ctl import LLMServerController
 from mimora.phrase_source import SourceTextPhraseProvider, split_sentences
@@ -429,9 +429,21 @@ class PronunciationTrainerGUI:
         # Session id used to file take audio while the stats store is off, so a
         # replay button still works without touching the stats file.
         self._audio_session_id: Optional[str] = None
+        # Whether the auto-pilot loop is currently driving the practice flow.
+        # Set true when a scored take clears the threshold and the next phrase
+        # is scheduled; cleared on toggle-off, on a take that does not clear the
+        # threshold (the loop pauses back to manual), on phrase-generation
+        # failure, and when a drill/dictation window opens (a drill take must
+        # never hijack the main loop). Only ever touched on the Tk thread.
+        self._autopilot_running: bool = False
+        # The scheduled auto-record after id (root.after handle), so a toggle-off
+        # or a window switch can cancel it before it fires.
+        self._autopilot_record_after_id: Optional[str] = None
 
         self.view = TrainerView(self.root, ViewCallbacks(
             on_settings_clicked=self.on_settings_clicked,
+            on_autopilot_toggled=self.on_autopilot_toggled,
+            on_autopilot_settings=self.on_autopilot_settings,
             on_history_clicked=self.on_history_clicked,
             on_stats_clicked=self.on_stats_clicked,
             on_weakness_clicked=self.on_weakness_clicked,
@@ -1225,6 +1237,10 @@ class PronunciationTrainerGUI:
 
     def _start_drill(self, target: dict) -> None:
         logging.info("Drill: _start_drill called with target=%r", target)
+        # The auto-pilot loop drives the MAIN practice loop; a drill takes over
+        # the recording path, so the loop must stop (its pending auto-record
+        # would otherwise fire into the drill's recorder).
+        self._autopilot_stop()
         self._cancel_drill_if_active()
         self._saved_current_phrase = self.current_phrase
         logging.info("Drill: saved current_phrase=%r", self._saved_current_phrase)
@@ -1417,6 +1433,11 @@ class PronunciationTrainerGUI:
         text as phrase generation so the sentences come from the practice text
         the user is working on.
         """
+        # The auto-pilot loop drives the main practice loop; dictation takes
+        # over the prompt path entirely (its own phrase selection), so the loop
+        # must stop (its pending auto-record would otherwise fire into the
+        # dictation window's playback).
+        self._autopilot_stop()
         self._cancel_dictation_if_active()
         engine = DictationEngine(
             source_text=self._get_source_text(),
@@ -1797,6 +1818,17 @@ class PronunciationTrainerGUI:
             self.on_preview_voice(config.TTS_VOICE)
         elif key == "practice_text_file":
             self._load_practice_file(value)
+        elif key == "auto_pilot_enabled":
+            # Apply live (LIVE_CONFIG_ATTRS handles the config attribute), but
+            # the master toggle also drives the 🔁 button state and the running
+            # flag: flipping it off mid-loop must stop the loop, not just flip
+            # the config boolean.
+            self.settings_ctl.persist_and_apply_live(key, bool(value))
+            if bool(value):
+                self.view.set_autopilot_active(True)
+            else:
+                self._autopilot_stop()
+                self.view.set_autopilot_active(False)
         else:
             self.settings_ctl.persist_and_apply_live(key, value)
 
@@ -1864,6 +1896,148 @@ class PronunciationTrainerGUI:
         if hasattr(self, "view"):
             self.view._practice.set_phrase_source(mode)
 
+    @staticmethod
+    def _autopilot_should_advance(enabled: bool, raw_score: float,
+                                  threshold: float, gate_enabled: bool,
+                                  passed: bool) -> bool:
+        """Decide whether the auto-pilot loop advances past this take (pure).
+
+        The loop advances only when the master toggle is on, the take's raw
+        0-100 engine score is STRICTLY GREATER than the threshold (the user's
+        "x分"), and the take is allowed to advance anyway: either the pass
+        gate is off, or the take actually passed it. A take at or below the
+        threshold - or one the gate refuses - pauses the loop back to manual,
+        so the user repeats until it clears (mirrors the pass gate's
+        "repeat until it passes" semantics).
+
+        ``raw_score`` is the engine's raw 0-100 score, NOT the 0-5 grade shown
+        for the phoneme engine: the threshold must mean the same thing across
+        every engine, and the pass bucket is itself derived from the raw score.
+
+        The decision itself lives in ``mimora/autopilot.py`` (pure, no Tk or
+        engine imports) so it is testable without the GUI stack; this wrapper
+        keeps the call sites stable.
+        """
+        return autopilot.should_advance(enabled, raw_score, threshold,
+                                        gate_enabled, passed)
+
+    def _autopilot_stop(self) -> None:
+        """Cancel the auto-pilot loop (toggle-off or a window switch).
+
+        Clears the running flag and cancels any pending auto-record callback,
+        so the loop never fires into a window it no longer owns.
+        """
+        self._autopilot_running = False
+        if self._autopilot_record_after_id is not None:
+            try:
+                self.root.after_cancel(self._autopilot_record_after_id)
+            except Exception:  # noqa: BLE001 - after id may already be stale
+                pass
+            self._autopilot_record_after_id = None
+
+    def on_autopilot_toggled(self, enabled: bool) -> None:
+        """Flip the auto-pilot master toggle (main-window 🔁 button).
+
+        Applies live (no restart): the loop reads the flag at each scored take
+        and each phrase-ready. Turning the loop off mid-flight cancels the
+        pending auto-record and returns the flow to manual.
+        """
+        config.AUTO_PILOT_ENABLED = bool(enabled)
+        self.settings_ctl.persist("auto_pilot_enabled", bool(enabled))
+        if enabled:
+            self.view.set_autopilot_active(True)
+            self.view.append_system_msg(i18n.tr("Auto-pilot on: advance on score > {x}",
+                                                x=f"{config.AUTO_PILOT_SCORE_THRESHOLD:g}"))
+        else:
+            self._autopilot_stop()
+            self.view.set_autopilot_active(False)
+            self.view.append_system_msg(i18n.tr("Auto-pilot off"))
+
+    def on_autopilot_settings(self, x: int, y: int) -> None:
+        """Right-click the 🔁 button: tune the auto-pilot parameters (popup).
+
+        Opens a small popup near the button with the score threshold and the
+        record delay, so the loop can be tuned live without opening the
+        settings window. Applying persists both keys (via the same live path
+        the settings window uses) and updates the threshold readout.
+        """
+        win, catcher = self._make_popup(x, y)
+        tk.Label(win, text=i18n.tr("Auto-pilot parameters"),
+                 font=(FONT_FAMILY, FONT_SIZE_SMALL, "bold"),
+                 bg=THEME["bg_panel"], fg=THEME["text"]).pack(pady=(8, 2))
+
+        # One row per parameter: the name on the left, the slider in the
+        # middle and the live value on the right. Each widget is created with
+        # the row frame as its master and packed into that frame, so nothing
+        # leaks into the popup's own packing order (which would scatter the
+        # labels and sliders into separate visual lines).
+        def _param_row(name: str, from_: int, to: int, resolution: float,
+                       initial: float) -> tk.Scale:
+            row = tk.Frame(win, bg=THEME["bg_panel"])
+            row.pack(fill=tk.X, padx=10, pady=(6, 2))
+            tk.Label(row, text=name, font=(FONT_FAMILY, FONT_SIZE_SMALL),
+                     bg=THEME["bg_panel"], fg=THEME["text"]).pack(side=tk.LEFT)
+            value_label = tk.Label(
+                row, text=f"{initial:g}", font=(FONT_FAMILY, FONT_SIZE_BODY),
+                bg=THEME["bg_panel"], fg=THEME["accent"])
+            scale = tk.Scale(
+                row, from_=from_, to=to, resolution=resolution,
+                orient=tk.HORIZONTAL, length=200,
+                variable=tk.DoubleVar(value=initial),
+                bg=THEME["bg_panel"], fg=THEME["text"], highlightthickness=0,
+                showvalue=0,
+                command=lambda _v: value_label.config(
+                    text=f"{float(scale.get()):g}"))
+            scale.pack(side=tk.LEFT, padx=(10, 0))
+            value_label.pack(side=tk.LEFT, padx=(10, 0))
+            return scale
+
+        threshold_scale = _param_row(
+            i18n.tr("Auto-pilot score threshold"), 0, 100, 1,
+            config.AUTO_PILOT_SCORE_THRESHOLD)
+        delay_scale = _param_row(
+            i18n.tr("Auto-pilot record delay"), 0, 30, 0.5,
+            config.AUTO_PILOT_RECORD_DELAY)
+
+        def apply():
+            self._dismiss_popup(win, catcher)
+            self.settings_ctl.persist_and_apply_live(
+                "auto_pilot_score_threshold", float(threshold_scale.get()))
+            self.settings_ctl.persist_and_apply_live(
+                "auto_pilot_record_delay", float(delay_scale.get()))
+            self.view.append_system_msg(i18n.tr(
+                "Auto-pilot on: advance on score > {x}",
+                x=f"{config.AUTO_PILOT_SCORE_THRESHOLD:g}"))
+
+        self._popup_buttons(
+            win, i18n.tr("Apply"), apply,
+            i18n.tr("Cancel"),
+            lambda: self._dismiss_popup(win, catcher))
+
+    def _autopilot_schedule_auto_record(self) -> None:
+        """Schedule the auto-record after the reference has been heard (Tk).
+
+        Called from ``_phrase_ready`` when the loop is running: wait the
+        configured record delay, then start the recording if the loop is still
+        running and the guards allow it. Cancelled by ``_autopilot_stop`` (a
+        toggle-off or a drill/dictation switch) so the loop never records into
+        a window it no longer owns.
+        """
+        if not self._autopilot_running:
+            return
+        delay_ms = int(config.AUTO_PILOT_RECORD_DELAY * 1000)
+        self._autopilot_record_after_id = self.root.after(
+            delay_ms, self._autopilot_fire_auto_record)
+
+    def _autopilot_fire_auto_record(self) -> None:
+        """The delayed auto-record actually firing (Tk thread)."""
+        self._autopilot_record_after_id = None
+        if not self._autopilot_running:
+            return
+        # The guards on trigger_recording_start are the same as a manual click:
+        # app_ready, not generating, a phrase present, not mid-analysis.
+        self.trigger_recording_start()
+
     def on_generate_phrase(self):
         if not self.app_ready or self.is_generating:
             return
@@ -1894,10 +2068,14 @@ class PronunciationTrainerGUI:
         speed = self._selected_speed()
         self.playback.stop()  # silence any current playback first
         stop_event = self.playback.new_event()
+        # Capture the auto-pilot intent on the main thread: the worker must
+        # never read the Tk-thread flag directly. A manual "Next phrase" click
+        # during a paused loop should not resurrect it (autopilot=False).
+        autopilot = self._autopilot_running
 
         threading.Thread(target=self._generate_and_prompt,
                          args=(source_text, length, language, voice, speed,
-                               self._phrase_source_mode, stop_event),
+                               self._phrase_source_mode, stop_event, autopilot),
                          daemon=True).start()
 
     def _select_phrase(self, source_text: str, length: str,
@@ -1989,7 +2167,8 @@ class PronunciationTrainerGUI:
     def _generate_and_prompt(self, source_text: str, length: str,
                              language: str, voice: str, speed: float,
                              phrase_source: str,
-                             stop_event: threading.Event):
+                             stop_event: threading.Event,
+                             autopilot: bool = False):
         """Generate one phrase, synthesize the reference, and play it. (Background thread.)
 
         All selector values (``length``, ``language``, ``voice``, ``speed``,
@@ -1997,6 +2176,12 @@ class PronunciationTrainerGUI:
         passed in as plain values, and ``stop_event`` was installed there as
         well (see PlaybackController.new_event): this worker must never read
         widgets or mutate the shared playback state (Tk is not thread-safe).
+
+        ``autopilot`` is captured on the main thread too (the auto-pilot loop's
+        running flag is Tk-thread state; the worker must not read it directly).
+        When true, the reference is force-played (the user is being driven by
+        the loop, so hearing the example is not optional) and the loop
+        schedules the auto-record once the phrase is ready.
         """
         try:
             phrase = self._select_phrase(source_text, length, phrase_source)
@@ -2035,8 +2220,11 @@ class PronunciationTrainerGUI:
             # Auto-play the reference only when the setting is on. When off,
             # the user can press "Reference ▶" to hear it manually. Shadowing
             # mode forces auto-play: there is nothing to shadow without the
-            # reference being heard.
-            if config.AUTO_PLAY_PHRASE or config.SHADOWING_ENABLED:
+            # reference being heard. The auto-pilot loop forces it too: the
+            # loop's contract is "play the example, then record", so a phrase
+            # the loop generated must be heard even if the user's setting says
+            # otherwise.
+            if config.AUTO_PLAY_PHRASE or config.SHADOWING_ENABLED or autopilot:
                 # Honor the selected reference speed (see _play_reference_at):
                 # time-stretch preserves pitch, so a slow replay does not shift
                 # the voice's timbre.
@@ -2053,7 +2241,7 @@ class PronunciationTrainerGUI:
             # latency-tolerant and (on its first call) pays a one-time model load,
             # so it must not gate the app's readiness. The panel stays at its "-"
             # placeholder until the translation arrives.
-            self.root.after(0, self._phrase_ready)
+            self.root.after(0, self._phrase_ready, autopilot)
             self._translate_into_panel(phrase, language)
 
         except Exception as e:
@@ -2113,13 +2301,24 @@ class PronunciationTrainerGUI:
         self.view.enter_reference_playing(phrase, self.current_translation)
         self.view.append_system_msg(i18n.tr("New phrase: {phrase}", phrase=phrase))
 
-    def _phrase_ready(self):
+    def _phrase_ready(self, autopilot: bool = False):
         self.is_generating = False
         # Enables replay + self-test now that a reference exists.
         self.view.enter_phrase_ready()
+        # Auto-pilot loop: the reference has been heard, so wait the record
+        # delay, then auto-start the recording - unless the loop was stopped
+        # (toggle-off / drill / dictation switch) while the phrase was being
+        # generated. _autopilot_schedule_auto_record re-checks the flag, so a
+        # stopped loop simply never schedules.
+        if autopilot:
+            self._autopilot_schedule_auto_record()
 
     def _phrase_generation_failed(self, message: str):
         self.is_generating = False
+        # A failed generation also halts the auto-pilot loop: there is no
+        # phrase to record, and retrying automatically would silently loop
+        # on the same error. The user fixes the cause and starts again.
+        self._autopilot_running = False
         self.view.generation_failed(message)
 
     # ------------------------------------------------------------------
@@ -3000,6 +3199,31 @@ class PronunciationTrainerGUI:
             if (not config.PASS_GATING_ENABLED) or (result is not None and getattr(result, "passed", True)):
                 delay_ms = int(config.AUTO_NEXT_DELAY * 1000)
                 self.root.after(delay_ms, self.on_generate_phrase)
+
+        # Auto-pilot loop: when enabled and the take cleared the threshold, keep
+        # the loop going (advance to the next phrase, which will play the
+        # reference and then auto-record). A take that did NOT clear the
+        # threshold - or that the pass gate refuses - does NOT advance, but the
+        # loop keeps running: it re-records the SAME phrase after the record
+        # delay, so the user keeps trying until it clears (the "repeat until it
+        # passes" spirit). Only a toggle-off / drill / dictation switch / failed
+        # generation actually stops the loop.
+        if self._autopilot_should_advance(
+                config.AUTO_PILOT_ENABLED, raw_score,
+                config.AUTO_PILOT_SCORE_THRESHOLD,
+                config.PASS_GATING_ENABLED, passed):
+            self._autopilot_running = True
+            delay_ms = int(config.AUTO_NEXT_DELAY * 1000)
+            self.root.after(delay_ms, self.on_generate_phrase)
+        elif self._autopilot_running:
+            # Below the threshold (or refused by the gate): stay on the same
+            # phrase and re-record after the record delay. The loop is still
+            # running; _autopilot_fire_auto_record re-checks the flag and the
+            # recording guards, so a stop mid-delay cancels cleanly.
+            self.view.append_system_msg(i18n.tr(
+                "Auto-pilot retrying (score {score} not above {x})",
+                score=f"{raw_score:.0f}", x=f"{config.AUTO_PILOT_SCORE_THRESHOLD:g}"))
+            self._autopilot_schedule_auto_record()
 
     def _persist_take(self, phrase: str, score: float, graded: bool,
                       details: dict) -> None:

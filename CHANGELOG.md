@@ -10,6 +10,17 @@ and stay in the user data directory across upgrades.
 
 ### Added
 
+- **Auto-pilot loop (autopilot).** A 🔁 toggle in the main-window header: when
+  a take scores **strictly above** the configured threshold on the raw 0-100
+  engine score, the loop advances by itself — next phrase → play the reference
+  → wait the record delay → start recording → score → repeat. A take at or
+  below the threshold re-records the **same** phrase after the delay until it
+  clears, so the loop keeps running (only a toggle-off, a drill/dictation
+  switch or a failed generation stops it). The threshold and the record delay
+  are editable in the settings window, and right-clicking the 🔁 button opens a
+  popup with two labelled sliders (threshold / delay) that apply live. The loop
+  is off by default.
+
 - **Stats dashboard: dictation analysis tab.** The stats dashboard gains a
   fifth Dictation tab with four charts over the dictation sessions: the
   wrong-vs-extra word balance, the most-misspelled words, the first-to-last
