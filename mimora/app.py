@@ -1985,6 +1985,7 @@ class PronunciationTrainerGUI:
                 orient=tk.HORIZONTAL, length=200,
                 variable=tk.DoubleVar(value=initial),
                 bg=THEME["bg_panel"], fg=THEME["text"], highlightthickness=0,
+                showvalue=0,
                 command=lambda _v: value_label.config(
                     text=f"{float(scale.get()):g}"))
             scale.pack(side=tk.LEFT, padx=(10, 0))
