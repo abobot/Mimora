@@ -178,13 +178,13 @@ class DrillView:
         controls = tk.Frame(self._window, bg=THEME["bg_main"])
         controls.pack(fill=tk.X, padx=16, pady=(0, 16))
         self._record_btn = make_icon_button(
-            controls, i18n.tr("▶"), i18n.tr("Record (Space)"), self._on_record)
+            controls, i18n.tr("🎙"), i18n.tr("Record (Space)"), self._on_record)
         self._record_btn.pack(side=tk.LEFT, padx=4)
         make_icon_button(
             controls, i18n.tr("🔊"), i18n.tr("Example"), self._on_play_reference
         ).pack(side=tk.LEFT, padx=4)
         self._play_rec_btn = make_icon_button(
-            controls, i18n.tr("🎙"), i18n.tr("My recording"), self._on_play_recording)
+            controls, i18n.tr("▶"), i18n.tr("My recording"), self._on_play_recording)
         self._play_rec_btn.pack(side=tk.LEFT, padx=4)
         self._play_rec_btn.config(state=tk.DISABLED)
         make_icon_button(
